@@ -233,6 +233,8 @@ a:hover { color: var(--m-turkus-d); text-decoration: underline; }
   justify-content: center;
 }
 
+.m-modal[hidden] { display: none !important; }
+
 .m-modal__backdrop {
   position: absolute;
   inset: 0;
