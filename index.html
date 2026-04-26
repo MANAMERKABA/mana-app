@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MANA — Horyzont</title>
+  <meta name="description" content="MANA aplikacja główna — Faza A z5.A — Horyzont, kalendarz prywatny.">
+
+  <!-- Fonts: Fraunces (display, serif) + JetBrains Mono (data/czas) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Shared design tokens -->
+  <link rel="stylesheet" href="shared/styles.css">
+  <!-- Pokój Horyzont — styling lokalny -->
+  <link rel="stylesheet" href="rooms/horyzont/horyzont.css">
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header class="m-header">
+    <div class="m-header__brand">
+      <span class="m-header__logo">◇</span>
+      <h1 class="m-header__title">MANA</h1>
+      <span class="m-header__divider">·</span>
+      <span class="m-header__room">Horyzont</span>
+    </div>
+    <nav class="m-header__nav" aria-label="Widoki kalendarza">
+      <button class="m-toggle" data-view="day"   aria-pressed="false">Dzień</button>
+      <button class="m-toggle" data-view="week"  aria-pressed="true">Tydzień</button>
+      <button class="m-toggle" data-view="month" aria-pressed="false">Miesiąc</button>
+    </nav>
+  </header>
+
+  <!-- VIEW NAVIGATION (poprzedni / dziś / następny) -->
+  <section class="m-subnav">
+    <button id="m-prev" class="m-subnav__btn" aria-label="Poprzedni okres">←</button>
+    <button id="m-today" class="m-subnav__today">Dziś</button>
+    <button id="m-next" class="m-subnav__btn" aria-label="Następny okres">→</button>
+    <span id="m-period-label" class="m-subnav__label"></span>
+    <button id="m-add" class="m-subnav__add">+ Nowy event</button>
+  </section>
+
+  <!-- VIEW CONTAINER -->
+  <main class="m-view" aria-live="polite">
+    <div id="m-view-day"   class="m-view__panel" hidden></div>
+    <div id="m-view-week"  class="m-view__panel"></div>
+    <div id="m-view-month" class="m-view__panel" hidden></div>
+    <p id="m-status" class="m-status" role="status"></p>
+  </main>
+
+  <!-- MODAL CRUD -->
+  <div id="m-modal" class="m-modal" hidden role="dialog" aria-modal="true" aria-labelledby="m-modal-title">
+    <div class="m-modal__backdrop" data-close></div>
+    <form id="m-form" class="m-modal__panel">
+      <header class="m-modal__header">
+        <h2 id="m-modal-title" class="m-modal__title">Nowy event</h2>
+        <button type="button" class="m-modal__close" data-close aria-label="Zamknij">×</button>
+      </header>
+
+      <div class="m-modal__body">
+        <input type="hidden" id="f-id" name="id">
+
+        <label class="m-field">
+          <span class="m-field__label">Tytuł <em>*</em></span>
+          <input type="text" id="f-tytul" name="tytul" required maxlength="200" autocomplete="off">
+        </label>
+
+        <div class="m-field-row">
+          <label class="m-field">
+            <span class="m-field__label">Data i godzina <em>*</em></span>
+            <input type="datetime-local" id="f-data-czas" name="data_czas" required>
+          </label>
+          <label class="m-field">
+            <span class="m-field__label">Czas trwania (min)</span>
+            <input type="number" id="f-czas-trwania" name="czas_trwania_min" min="1" max="1440" value="60">
+          </label>
+        </div>
+
+        <label class="m-field">
+          <span class="m-field__label">Opis</span>
+          <textarea id="f-opis" name="opis" rows="3" maxlength="2000"></textarea>
+        </label>
+
+        <div class="m-field-row">
+          <label class="m-field">
+            <span class="m-field__label">Lokalizacja</span>
+            <input type="text" id="f-lokalizacja" name="lokalizacja" maxlength="200" autocomplete="off">
+          </label>
+          <label class="m-field">
+            <span class="m-field__label">Przypomnienie (min przed)</span>
+            <input type="number" id="f-przypomnienie" name="przypomnienie_min_przed" min="0" max="10080">
+          </label>
+        </div>
+
+        <p id="m-form-error" class="m-form-error" hidden></p>
+      </div>
+
+      <footer class="m-modal__footer">
+        <button type="button" id="m-delete" class="m-btn m-btn--danger" hidden>Usuń</button>
+        <span class="m-modal__spacer"></span>
+        <button type="button" class="m-btn m-btn--ghost" data-close>Anuluj</button>
+        <button type="submit" id="m-save" class="m-btn m-btn--primary">Zapisz</button>
+      </footer>
+    </form>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="m-footer">
+    <span>MANA · Faza A z5.A · Horyzont MVP</span>
+    <span class="m-footer__pulse" title="Trwa MVP, brzydki bo szczery"></span>
+  </footer>
+
+  <!-- Logic: ES module -->
+  <script type="module" src="rooms/horyzont/horyzont.js"></script>
+</body>
+</html>
