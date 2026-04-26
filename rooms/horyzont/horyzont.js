@@ -34,7 +34,7 @@ const MIESIACE = [
 
 const DNI_KROTKO = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"];
 
-const GODZINY = Array.from({ length: 19 }, (_, i) => i + 6); // 6..24
+const GODZINY = Array.from({ length: 18 }, (_, i) => i + 6); // 6..23
 
 /* ============================================================
    POMOCNICZE — daty
