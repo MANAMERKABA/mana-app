@@ -1,0 +1,275 @@
+/* asystent/asystent.css */
+/* Paleta: turkus #4A9E8E (Asystent), tło #fafaf7, akcent #2c5e58 */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  color: #2a2a28;
+  background: #fafaf7;
+  height: 100%;
+}
+
+body { display: flex; flex-direction: column; min-height: 100vh; }
+
+/* ============= HEADER ============= */
+.hdr {
+  background: #4A9E8E;
+  color: white;
+  padding: 0.85rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+.hdr h1 { margin: 0; font-size: 1.3rem; font-weight: 600; }
+.hdr-link {
+  color: white;
+  text-decoration: none;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+.hdr-link:hover { opacity: 1; text-decoration: underline; }
+
+/* ============= LAYOUT ============= */
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 1px;
+  background: #e8e8e3;
+  min-height: 0;
+}
+@media (max-width: 720px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { max-height: 200px; overflow-y: auto; }
+}
+
+.sidebar {
+  background: #f3f3ef;
+  padding: 1.2rem 1rem;
+  overflow-y: auto;
+}
+.sidebar h2 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6a6a65;
+  margin: 0 0 0.8rem;
+}
+.sidebar .pamiec-tresc {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: #4a4a45;
+  white-space: pre-wrap;
+}
+.sidebar .pamiec-pusta {
+  font-size: 0.85rem;
+  color: #999;
+  font-style: italic;
+}
+
+.main-area {
+  background: #fafaf7;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ============= CHAT PANEL ============= */
+.chat-historia {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.chat-wiadomosc {
+  max-width: 75%;
+  padding: 0.7rem 1rem;
+  border-radius: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.chat-wiadomosc.user {
+  align-self: flex-end;
+  background: #4A9E8E;
+  color: white;
+  border-bottom-right-radius: 4px;
+}
+.chat-wiadomosc.asystent {
+  align-self: flex-start;
+  background: white;
+  color: #2a2a28;
+  border: 1px solid #e3e3de;
+  border-bottom-left-radius: 4px;
+}
+.chat-wiadomosc.blad {
+  align-self: stretch;
+  background: #fdecec;
+  color: #a33;
+  border: 1px solid #f3c5c5;
+  font-size: 0.88rem;
+}
+.chat-spinner {
+  align-self: flex-start;
+  font-size: 0.85rem;
+  color: #6a6a65;
+  font-style: italic;
+  padding: 0.5rem 0.9rem;
+}
+
+.chat-input-row {
+  border-top: 1px solid #e8e8e3;
+  background: white;
+  padding: 0.8rem 1rem;
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-end;
+}
+.chat-input {
+  flex: 1;
+  border: 1px solid #d6d6d0;
+  border-radius: 10px;
+  padding: 0.6rem 0.8rem;
+  font: inherit;
+  resize: none;
+  min-height: 2.4rem;
+  max-height: 8rem;
+  font-family: inherit;
+}
+.chat-input:focus { outline: 2px solid #4A9E8E; outline-offset: -1px; }
+
+.btn {
+  border: none;
+  border-radius: 10px;
+  padding: 0.55rem 1rem;
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-primary { background: #4A9E8E; color: white; }
+.btn-primary:hover { background: #3d8a7c; }
+.btn-primary:disabled { background: #aac6c0; cursor: not-allowed; }
+.btn-secondary {
+  background: white;
+  color: #2c5e58;
+  border: 1px solid #4A9E8E;
+}
+.btn-secondary:hover { background: #f0f7f5; }
+.btn-zakoncz {
+  background: white;
+  color: #6a6a65;
+  border: 1px solid #d6d6d0;
+  font-size: 0.85rem;
+}
+.btn-zakoncz:hover { background: #f3f3ef; }
+
+/* ============= DIALOG PODSUMOWANIE ============= */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 18, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+.dialog {
+  background: white;
+  border-radius: 14px;
+  max-width: 560px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 1.5rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+.dialog h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.15rem;
+  color: #2c5e58;
+}
+.dialog .dialog-podpowiedz {
+  font-size: 0.88rem;
+  color: #6a6a65;
+  margin: 0 0 1.1rem;
+}
+.dialog .propozycje { display: flex; flex-direction: column; gap: 0.6rem; }
+.propozycja {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #e3e3de;
+  border-radius: 10px;
+  background: #fafaf7;
+  cursor: pointer;
+  align-items: flex-start;
+}
+.propozycja:hover { background: #f3f3ef; }
+.propozycja input[type="checkbox"] { margin-top: 0.25rem; }
+.propozycja .prop-tresc { flex: 1; line-height: 1.4; }
+.propozycja .prop-typ {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #4A9E8E;
+  letter-spacing: 0.04em;
+  margin-top: 0.15rem;
+  font-weight: 600;
+}
+.propozycja .prop-meta {
+  font-size: 0.8rem;
+  color: #888;
+  margin-top: 0.15rem;
+}
+.dialog-aktcje {
+  display: flex;
+  gap: 0.7rem;
+  justify-content: flex-end;
+  margin-top: 1.2rem;
+  flex-wrap: wrap;
+}
+.dialog-spinner {
+  text-align: center;
+  padding: 1.2rem;
+  color: #6a6a65;
+  font-style: italic;
+}
+.dialog-pusto {
+  text-align: center;
+  padding: 1rem;
+  color: #888;
+}
+
+/* ============= TOAST ============= */
+.toast-root {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 200;
+  pointer-events: none;
+}
+.toast {
+  background: #2c5e58;
+  color: white;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.25s, transform 0.25s;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  max-width: 320px;
+  pointer-events: auto;
+}
+.toast.toast-show { opacity: 1; transform: translateY(0); }
+.toast-success { background: #2d7a4a; }
+.toast-error { background: #a33; }
