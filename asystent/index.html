@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Asystent — MANA</title>
+  <link rel="stylesheet" href="./asystent.css" />
+</head>
+<body>
+  <header class="hdr">
+    <h1 id="asystent-tytul">Asystent</h1>
+    <a href="/" class="hdr-link">← Horyzont</a>
+  </header>
+
+  <main class="layout">
+    <aside id="kontekst-pamieci" class="sidebar">
+      <!-- KontekstPamięci montuje się tutaj -->
+    </aside>
+
+    <section id="chat-panel" class="main-area">
+      <!-- ChatPanel montuje się tutaj -->
+    </section>
+  </main>
+
+  <div id="dialog-podsumowanie-root">
+    <!-- DialogPodsumowanie wstrzykuje modal po kliknięciu "Skończ rozmowę" -->
+  </div>
+
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+  <script type="module" src="./asystent.js"></script>
+</body>
+</html>
