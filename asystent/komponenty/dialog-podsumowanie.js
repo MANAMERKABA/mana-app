@@ -37,7 +37,6 @@ export async function pokazDialog({ travelerId, asystentNazwa, rozmowa, rootEl, 
   rootEl.querySelector("#dialog-anuluj").addEventListener("click", zamknij);
   rootEl.querySelector("#dialog-nic").addEventListener("click", zamknij);
 
-  // Klik poza dialog zamyka
   overlayEl.addEventListener("click", (e) => {
     if (e.target === overlayEl) zamknij();
   });
@@ -54,12 +53,15 @@ export async function pokazDialog({ travelerId, asystentNazwa, rozmowa, rootEl, 
       transcript: transcript,
     });
 
-    if (!result.ok) {
-      throw new Error(`summarize-conversation HTTP ${result.status}`);
+    // Defensywnie: callEdge.ok bywa false nawet przy HTTP 200 — sprawdzamy obecność pola propozycje
+    const lista = result.data?.propozycje;
+    if (Array.isArray(lista)) {
+      propozycje = lista;
+    } else if (result.data?.error) {
+      throw new Error(result.data.error);
+    } else {
+      throw new Error(`HTTP ${result.status}: ${JSON.stringify(result.data)}`);
     }
-    propozycje = Array.isArray(result.data?.propozycje)
-      ? result.data.propozycje
-      : [];
   } catch (err) {
     trescEl.innerHTML = `<div class="dialog-pusto" style="color:#a33">
       Nie udało się wygenerować propozycji: ${err.message}
@@ -78,7 +80,6 @@ export async function pokazDialog({ travelerId, asystentNazwa, rozmowa, rootEl, 
     return;
   }
 
-  // Renderuj checkboxy — domyślnie WSZYSTKIE odhaczone (Adam może odznaczyć)
   trescEl.innerHTML = `<div class="propozycje" id="propozycje-list"></div>`;
   const listaEl = rootEl.querySelector("#propozycje-list");
 
@@ -120,7 +121,7 @@ export async function pokazDialog({ travelerId, asystentNazwa, rozmowa, rootEl, 
           const insertData = {
             traveler_id: travelerId,
             tytul: p.tytul || p.tresc,
-            data_czas: p.data_czas, // ISO timestamptz
+            data_czas: p.data_czas,
           };
           if (p.czas_trwania_min) insertData.czas_trwania_min = p.czas_trwania_min;
           if (p.opis) insertData.opis = p.opis;
@@ -129,9 +130,8 @@ export async function pokazDialog({ travelerId, asystentNazwa, rozmowa, rootEl, 
           if (error) throw error;
           okEvents++;
         } else {
-          // typ ∈ zadanie | sen | odczucie → stones
           const insertData = {
-            traveler_id: String(travelerId), // META#4 — stones.traveler_id to TEXT
+            traveler_id: String(travelerId),
             tresc: p.tresc,
             typ: p.typ || "odczucie",
             status: "aktywny",
