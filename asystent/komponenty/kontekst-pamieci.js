@@ -1,6 +1,7 @@
 // asystent/komponenty/kontekst-pamieci.js
 // Sidebar: pokazuje memory.tresc dla podróżnika jako jeden blok tekstu.
 // Pamięć MANA = single blob per podróżnik (META#8 z audytu M, potwierdzone w call-serce).
+// Defensywnie: jeśli tabela memory nie istnieje (np. inny projekt) — empty state, nie error.
 
 import { supabase } from "../../shared/supabase.js";
 
@@ -12,9 +13,6 @@ export async function mountKontekstPamieci(rootEl, stan) {
   const contentEl = rootEl.querySelector("#pamiec-content");
 
   try {
-    // memory: kolumny (traveler_id, tresc, updated_at) — jeden wiersz per podróżnik
-    // call-serce upsertuje onConflict 'traveler_id', więc max 1 wiersz
-    // Typ traveler_id w memory: niejasny — call-serce v2 wysyła jako int, więc nie castujemy
     const { data, error } = await supabase
       .from("memory")
       .select("tresc, updated_at")
@@ -23,7 +21,13 @@ export async function mountKontekstPamieci(rootEl, stan) {
       .limit(1)
       .maybeSingle();
 
-    if (error) throw error;
+    // Tabela nie istnieje albo brak uprawnień — pokaż empty state, nie wstydliwy błąd
+    if (error) {
+      console.warn("KontekstPamięci:", error.message);
+      contentEl.className = "pamiec-pusta";
+      contentEl.textContent = "Pusto. Pamięć zbuduje się po pierwszych rozmowach.";
+      return;
+    }
 
     if (!data || !data.tresc) {
       contentEl.className = "pamiec-pusta";
@@ -34,8 +38,8 @@ export async function mountKontekstPamieci(rootEl, stan) {
     contentEl.className = "pamiec-tresc";
     contentEl.textContent = data.tresc;
   } catch (err) {
+    console.warn("KontekstPamięci catch:", err);
     contentEl.className = "pamiec-pusta";
-    contentEl.textContent = `(błąd ładowania pamięci: ${err.message})`;
-    console.warn("KontekstPamięci:", err);
+    contentEl.textContent = "Pusto. Pamięć zbuduje się po pierwszych rozmowach.";
   }
 }
