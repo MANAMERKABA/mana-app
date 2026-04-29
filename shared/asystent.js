@@ -22,7 +22,6 @@ export async function getAsystentNazwa() {
       .maybeSingle();
     if (error) throw error;
     if (!data) return FALLBACK_NAZWA;
-    // value to jsonb — może być stringiem ("Krystyna") lub obiektem
     const v = data.value;
     if (typeof v === "string") return v;
     if (v && typeof v === "object" && v.nazwa) return v.nazwa;
@@ -45,16 +44,6 @@ export async function setAsystentNazwa(nazwa) {
 // SILNIK ROZMOWY — call-serce v2 z parametrem aktywny_duch
 // ============================================================
 
-/**
- * Wysyła wiadomość do Asystenta przez call-serce v2.
- * call-serce v2 (potwierdzone na live 28.04): parametr aktywny_duch domyślnie
- * 'duch_asystent_prywatny'. Czyta serce_konstytucja_fundament + ducha z prompts.
- * Pole odpowiedzi: 'response' (META#7).
- *
- * @param {string|number} travelerId
- * @param {string} message
- * @returns {Promise<{response: string, error?: string}>}
- */
 export async function wyslijDoAsystenta(travelerId, message) {
   const result = await callEdge("call-serce", {
     traveler_id: travelerId,
@@ -62,26 +51,21 @@ export async function wyslijDoAsystenta(travelerId, message) {
     aktywny_duch: "duch_asystent_prywatny",
   });
 
-  if (!result.ok) {
-    return {
-      response: "",
-      error: `call-serce HTTP ${result.status}: ${JSON.stringify(result.data)}`,
-    };
+  // Defensywnie: callEdge.ok bywa false nawet przy HTTP 200 — sprawdzamy obecność pola response
+  const response = result.data?.response;
+  if (response) {
+    return { response };
   }
-  return { response: result.data?.response || "" };
+  return {
+    response: "",
+    error: `call-serce HTTP ${result.status}: ${JSON.stringify(result.data)}`,
+  };
 }
 
 // ============================================================
 // BRIEF DNIA (F1) — automatyczne otwarcie rozmowy z faktami z Horyzontu
 // ============================================================
 
-/**
- * Generuje brief dnia. Czyta events na dziś + stones aktywne, składa krótki
- * kontekst i wysyła do call-serce z marker-promptem żeby Asystent rozpoczął.
- *
- * @param {string|number} travelerId
- * @returns {Promise<{response: string, kontekst: object, error?: string}>}
- */
 export async function briefDnia(travelerId) {
   const dziś = new Date();
   const startDnia = new Date(dziś);
@@ -89,8 +73,6 @@ export async function briefDnia(travelerId) {
   const koniecDnia = new Date(dziś);
   koniecDnia.setHours(23, 59, 59, 999);
 
-  // events: filtr po data_czas (single timestamptz, nie data_start/data_koniec)
-  // kolumny realne: tytul, data_czas, czas_trwania_min, opis, lokalizacja, traveler_id
   const eventsResp = await supabase
     .from("events")
     .select("tytul, data_czas, czas_trwania_min, opis, lokalizacja")
@@ -99,7 +81,6 @@ export async function briefDnia(travelerId) {
     .lte("data_czas", koniecDnia.toISOString())
     .order("data_czas", { ascending: true });
 
-  // stones aktywne — traveler_id w stones to TEXT (META#4), trzeba castować
   const stonesResp = await supabase
     .from("stones")
     .select("tresc, typ, due_date, sekcja")
@@ -111,7 +92,6 @@ export async function briefDnia(travelerId) {
   const events = eventsResp.data || [];
   const stones = stonesResp.data || [];
 
-  // Marker dla Asystenta — krótki sygnał że to brief otwierający, nie pytanie podróżnika
   const marker = "[BRIEF_DNIA_START]";
   const kontekstStr =
     events.length === 0 && stones.length === 0
