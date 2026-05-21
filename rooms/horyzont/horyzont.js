@@ -10,6 +10,8 @@
 // - 3 widoki: dzień (godziny 6-24), tydzień (pon-nd × godziny 6-24), miesiąc (siatka)
 //
 // Powiązane: [602] brief Faza A, [604] folder layout, [600] RLS twardy w z-security.
+//
+// 21.05.2026: dodana czerwona linia "teraz" (Dzień + Tydzień), płynie co minutę.
 
 import { supabase, callEdge } from "../../shared/supabase.js";
 import { getCurrentTraveler } from "../../shared/auth.js";
@@ -240,6 +242,7 @@ function renderDay() {
   panel.innerHTML = html;
   attachSlotClicks(panel);
   attachEventClicks(panel);
+  renderNowLine(panel, "day");          // ← czerwona linia "teraz"
 }
 
 /* ---- RENDER WEEK ---- */
@@ -288,6 +291,7 @@ function renderWeek() {
   panel.innerHTML = `<div class="week-grid">${header}${body}</div>`;
   attachSlotClicks(panel);
   attachEventClicks(panel);
+  renderNowLine(panel, "week");         // ← czerwona linia "teraz"
 }
 
 /* ---- RENDER MONTH ---- */
@@ -335,6 +339,86 @@ function renderMonth() {
   panel.innerHTML = html;
   attachSlotClicks(panel);
   attachEventClicks(panel);
+  // Miesiąc: bez linii "teraz" (komórki to dni, nie godziny).
+  // Dzisiejszy dzień jest wyróżniony klasą month-cell__num--today.
+}
+
+/* ============================================================
+   CZERWONA LINIA "TERAZ"  (Dzień + Tydzień)
+   ------------------------------------------------------------
+   Pozycję liczymy z realnych elementów DOM (getBoundingClientRect),
+   więc działa niezależnie od dokładnych wysokości w CSS.
+   - Dzień:   linia przez całą szerokość slotu aktualnej godziny
+   - Tydzień: linia tylko w kolumnie dzisiejszego dnia
+   - poza zakresem 6:00–23:59 → linia się nie pokazuje
+   ============================================================ */
+
+function renderNowLine(panel, view) {
+  // usuń poprzednią linię (przy ponownym rysowaniu / co minutę)
+  panel.querySelectorAll(".m-now-line, .m-now-label").forEach((e) => e.remove());
+
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMinutes();
+
+  // poza siatką godzin (6–23) — nie rysujemy
+  if (h < GODZINY[0] || h > GODZINY[GODZINY.length - 1]) return;
+
+  // znajdź komórkę odpowiadającą aktualnej godzinie
+  let cell = null;
+
+  if (view === "day") {
+    const slots = panel.querySelectorAll(".day-slot");
+    const idx = h - GODZINY[0];
+    cell = slots[idx] || null;
+  } else if (view === "week") {
+    // czy dzisiejszy dzień jest w aktualnie wyświetlanym tygodniu?
+    const weekStart = startOfWeek(state.refDate);
+    const dayIdx = Math.round((startOfDay(now) - weekStart) / 86400000);
+    if (dayIdx < 0 || dayIdx > 6) return; // dziś poza widzianym tygodniem
+    const cells = panel.querySelectorAll(".week-cell");
+    const idx = (h - GODZINY[0]) * 7 + dayIdx; // 7 komórek na godzinę
+    cell = cells[idx] || null;
+  }
+
+  if (!cell) return;
+
+  // panel musi być punktem odniesienia dla pozycji absolutnej
+  panel.style.position = "relative";
+
+  const panelRect = panel.getBoundingClientRect();
+  const cellRect = cell.getBoundingClientRect();
+
+  const top = (cellRect.top - panelRect.top) + (m / 60) * cellRect.height;
+  const left = cellRect.left - panelRect.left;
+  const width = cellRect.width;
+
+  // linia
+  const line = document.createElement("div");
+  line.className = "m-now-line";
+  line.style.cssText =
+    `position:absolute; top:${top}px; left:${left}px; width:${width}px;` +
+    `height:2px; background:#dc2626; z-index:5; pointer-events:none;`;
+
+  // kropka na początku linii
+  const dot = document.createElement("div");
+  dot.style.cssText =
+    `position:absolute; left:-4px; top:-3px; width:8px; height:8px;` +
+    `border-radius:50%; background:#dc2626;`;
+  line.appendChild(dot);
+
+  // etykieta godziny (po lewej, w kolumnie godzin)
+  const label = document.createElement("div");
+  label.className = "m-now-label";
+  label.textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  label.style.cssText =
+    `position:absolute; top:${top - 8}px; left:2px;` +
+    `font-family:var(--m-font-mono, monospace); font-size:10px; font-weight:600;` +
+    `color:#dc2626; background:var(--m-bg, #fff); padding:0 3px; z-index:6;` +
+    `pointer-events:none;`;
+
+  panel.appendChild(line);
+  panel.appendChild(label);
 }
 
 /* ---- RENDER karta eventu ---- */
@@ -572,6 +656,14 @@ function init() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closeModal();
   });
+
+  // Czerwona linia "teraz" — odświeżaj co minutę (płynie sama, bez przeładowania)
+  setInterval(() => {
+    if (state.view === "day" || state.view === "week") {
+      const panel = document.getElementById(`m-view-${state.view}`);
+      if (panel && !panel.hidden) renderNowLine(panel, state.view);
+    }
+  }, 60000);
 
   // Pierwszy render
   reloadAndRender();
