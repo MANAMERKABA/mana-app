@@ -7,11 +7,13 @@
 // - SELECT przez supabase-js bezpośrednio (RLS anon_all dla MVP)
 // - INSERT/UPDATE/DELETE przez Edge Functions (event-create/update/delete)
 // - traveler_id z shared/auth.js (MVP_TRAVELER_ID = 17 hardcoded)
-// - 3 widoki: dzień (godziny 6-24), tydzień (pon-nd × godziny 6-24), miesiąc (siatka)
 //
-// Powiązane: [602] brief Faza A, [604] folder layout, [600] RLS twardy w z-security.
-//
-// 21.05.2026: dodana czerwona linia "teraz" (Dzień + Tydzień), płynie co minutę.
+// 21.05.2026 — zmiany:
+//   * pełna doba 0:00–23:00 (było 6:00–23:00)
+//   * czerwona linia "teraz" (Dzień + Tydzień), płynie co minutę, naprawiony start (nie 6:00)
+//   * dzisiejszy dzień na CZERWONO (było turkus)
+//   * auto-scroll do aktualnej godziny przy otwarciu
+//   * sticky nagłówki dni/dat przy scrollu
 
 import { supabase, callEdge } from "../../shared/supabase.js";
 import { getCurrentTraveler } from "../../shared/auth.js";
@@ -21,10 +23,11 @@ import { getCurrentTraveler } from "../../shared/auth.js";
    ============================================================ */
 
 const state = {
-  view: "week",                // "day" | "week" | "month"
-  refDate: new Date(),         // data odniesienia widoku
-  events: [],                  // cache aktualnie załadowanych eventów
+  view: "week",
+  refDate: new Date(),
+  events: [],
   loading: false,
+  didInitialScroll: false,   // auto-scroll do "teraz" tylko raz, przy otwarciu
 };
 
 const TRAVELER_ID = getCurrentTraveler();
@@ -36,84 +39,46 @@ const MIESIACE = [
 
 const DNI_KROTKO = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"];
 
-const GODZINY = Array.from({ length: 18 }, (_, i) => i + 6); // 6..23
+// PEŁNA DOBA: 0..23 (24 godziny)
+const GODZINY = Array.from({ length: 24 }, (_, i) => i);
 
 /* ============================================================
    POMOCNICZE — daty
    ============================================================ */
 
-function startOfDay(d) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-
-function endOfDay(d) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
-}
+function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function endOfDay(d) { const x = new Date(d); x.setHours(23, 59, 59, 999); return x; }
 
 function startOfWeek(d) {
-  // Tydzień Pon-Nd. JS: getDay() Niedziela=0, Poniedziałek=1
   const x = startOfDay(d);
-  const day = x.getDay(); // 0=Nd, 1=Pn... 6=So
-  const diff = (day === 0 ? -6 : 1 - day); // do poniedziałku
+  const day = x.getDay();
+  const diff = (day === 0 ? -6 : 1 - day);
   x.setDate(x.getDate() + diff);
   return x;
 }
-
-function endOfWeek(d) {
-  const x = startOfWeek(d);
-  x.setDate(x.getDate() + 6);
-  return endOfDay(x);
-}
-
-function startOfMonth(d) {
-  return startOfDay(new Date(d.getFullYear(), d.getMonth(), 1));
-}
-
-function endOfMonth(d) {
-  return endOfDay(new Date(d.getFullYear(), d.getMonth() + 1, 0));
-}
-
-function addDays(d, n) {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-}
+function endOfWeek(d) { const x = startOfWeek(d); x.setDate(x.getDate() + 6); return endOfDay(x); }
+function startOfMonth(d) { return startOfDay(new Date(d.getFullYear(), d.getMonth(), 1)); }
+function endOfMonth(d) { return endOfDay(new Date(d.getFullYear(), d.getMonth() + 1, 0)); }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear()
       && a.getMonth() === b.getMonth()
       && a.getDate() === b.getDate();
 }
+function isToday(d) { return isSameDay(d, new Date()); }
+function fmtTime(d) { return d.toTimeString().slice(0, 5); }
+function fmtDateLabel(d) { return `${d.getDate()} ${MIESIACE[d.getMonth()]} ${d.getFullYear()}`; }
 
-function isToday(d) {
-  return isSameDay(d, new Date());
-}
-
-function fmtTime(d) {
-  return d.toTimeString().slice(0, 5); // "HH:MM"
-}
-
-function fmtDateLabel(d) {
-  return `${d.getDate()} ${MIESIACE[d.getMonth()]} ${d.getFullYear()}`;
-}
-
-// datetime-local input format: "YYYY-MM-DDTHH:MM" (lokalny czas, bez offsetu)
 function toDatetimeLocalValue(d) {
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-
-// datetime-local "2026-04-26T10:00" → ISO 8601 z lokalnym offsetem
 function datetimeLocalToISO(localStr) {
   if (!localStr) return null;
-  // new Date("2026-04-26T10:00") interpretuje jako lokalny czas
   const d = new Date(localStr);
   if (isNaN(d.getTime())) return null;
-  return d.toISOString(); // zwróci np. "2026-04-26T08:00:00.000Z" — Postgres timestamptz OK
+  return d.toISOString();
 }
 
 /* ============================================================
@@ -126,7 +91,6 @@ function getViewRange() {
     case "day":   return { from: startOfDay(ref),   to: endOfDay(ref) };
     case "week":  return { from: startOfWeek(ref),  to: endOfWeek(ref) };
     case "month": {
-      // dla siatki miesiąca dociągamy do pełnych tygodni
       const from = startOfWeek(startOfMonth(ref));
       const to = endOfWeek(endOfMonth(ref));
       return { from, to };
@@ -144,7 +108,7 @@ function getPeriodLabel() {
 }
 
 /* ============================================================
-   FETCH EVENTÓW (bezpośrednio supabase-js)
+   FETCH EVENTÓW
    ============================================================ */
 
 async function loadEvents() {
@@ -186,22 +150,18 @@ function setStatus(msg) {
    ============================================================ */
 
 function render() {
-  // schowaj wszystkie panele
   ["day", "week", "month"].forEach((v) => {
     const panel = document.getElementById(`m-view-${v}`);
     if (panel) panel.hidden = (v !== state.view);
   });
 
-  // toggle aria-pressed
   document.querySelectorAll(".m-toggle").forEach((btn) => {
     btn.setAttribute("aria-pressed", btn.dataset.view === state.view ? "true" : "false");
   });
 
-  // label okresu
   const lbl = document.getElementById("m-period-label");
   if (lbl) lbl.textContent = getPeriodLabel();
 
-  // render aktywnego
   switch (state.view) {
     case "day":   renderDay(); break;
     case "week":  renderWeek(); break;
@@ -242,7 +202,8 @@ function renderDay() {
   panel.innerHTML = html;
   attachSlotClicks(panel);
   attachEventClicks(panel);
-  renderNowLine(panel, "day");          // ← czerwona linia "teraz"
+  renderNowLine(panel, "day");
+  maybeInitialScroll(panel, "day");
 }
 
 /* ---- RENDER WEEK ---- */
@@ -251,7 +212,6 @@ function renderWeek() {
   const panel = document.getElementById("m-view-week");
   const weekStart = startOfWeek(state.refDate);
 
-  // header dni
   let header = `<div class="week-header"><div></div>`;
   for (let i = 0; i < 7; i++) {
     const d = addDays(weekStart, i);
@@ -265,7 +225,6 @@ function renderWeek() {
   }
   header += `</div>`;
 
-  // siatka godzin × 7 dni
   let body = "";
   for (const h of GODZINY) {
     body += `<div class="week-hour">${String(h).padStart(2, "0")}:00</div>`;
@@ -291,7 +250,8 @@ function renderWeek() {
   panel.innerHTML = `<div class="week-grid">${header}${body}</div>`;
   attachSlotClicks(panel);
   attachEventClicks(panel);
-  renderNowLine(panel, "week");         // ← czerwona linia "teraz"
+  renderNowLine(panel, "week");
+  maybeInitialScroll(panel, "week");
 }
 
 /* ---- RENDER MONTH ---- */
@@ -302,18 +262,14 @@ function renderMonth() {
   const gridStart = startOfWeek(startOfMonth(ref));
   const gridEnd = endOfWeek(endOfMonth(ref));
 
-  // ile tygodni
   const totalDays = Math.round((gridEnd - gridStart) / (1000 * 60 * 60 * 24)) + 1;
   const totalWeeks = Math.ceil(totalDays / 7);
 
   let html = `<div class="month-grid">`;
-
-  // header dni tygodnia
   for (const dn of DNI_KROTKO) {
     html += `<div class="month-header__day">${dn}</div>`;
   }
 
-  // komórki
   for (let w = 0; w < totalWeeks; w++) {
     for (let i = 0; i < 7; i++) {
       const d = addDays(gridStart, w * 7 + i);
@@ -339,86 +295,106 @@ function renderMonth() {
   panel.innerHTML = html;
   attachSlotClicks(panel);
   attachEventClicks(panel);
-  // Miesiąc: bez linii "teraz" (komórki to dni, nie godziny).
-  // Dzisiejszy dzień jest wyróżniony klasą month-cell__num--today.
+  // Miesiąc: bez linii "teraz" (komórki to dni). Dzisiejszy dzień wyróżniony kolorem.
 }
 
 /* ============================================================
    CZERWONA LINIA "TERAZ"  (Dzień + Tydzień)
-   ------------------------------------------------------------
-   Pozycję liczymy z realnych elementów DOM (getBoundingClientRect),
-   więc działa niezależnie od dokładnych wysokości w CSS.
-   - Dzień:   linia przez całą szerokość slotu aktualnej godziny
-   - Tydzień: linia tylko w kolumnie dzisiejszego dnia
-   - poza zakresem 6:00–23:59 → linia się nie pokazuje
+   Pozycja z realnych elementów DOM (getBoundingClientRect).
+   Czeka aż siatka ma wymiar (po odświeżeniu panel bywa zerowy),
+   z fallbackiem na wysokość z CSS — nigdy nie ląduje na 0:00.
    ============================================================ */
 
 function renderNowLine(panel, view) {
-  // usuń poprzednią linię (przy ponownym rysowaniu / co minutę)
   panel.querySelectorAll(".m-now-line, .m-now-label").forEach((e) => e.remove());
 
   const now = new Date();
   const h = now.getHours();
   const m = now.getMinutes();
-
-  // poza siatką godzin (6–23) — nie rysujemy
   if (h < GODZINY[0] || h > GODZINY[GODZINY.length - 1]) return;
 
-  // znajdź komórkę odpowiadającą aktualnej godzinie
+  let proby = 0;
+  const rysuj = () => {
+    let cell = null;
+    if (view === "day") {
+      const slots = panel.querySelectorAll(".day-slot");
+      cell = slots[h - GODZINY[0]] || null;
+    } else if (view === "week") {
+      const weekStart = startOfWeek(state.refDate);
+      const dayIdx = Math.round((startOfDay(now) - weekStart) / 86400000);
+      if (dayIdx < 0 || dayIdx > 6) return;
+      const cells = panel.querySelectorAll(".week-cell");
+      cell = cells[(h - GODZINY[0]) * 7 + dayIdx] || null;
+    }
+    if (!cell) return;
+
+    const cellRect = cell.getBoundingClientRect();
+    if (cellRect.height === 0 && proby < 10) {
+      proby++;
+      requestAnimationFrame(rysuj);
+      return;
+    }
+
+    panel.style.position = "relative";
+    const panelRect = panel.getBoundingClientRect();
+    const wysWiersza = cellRect.height || (view === "day" ? 56 : 44);
+    const top = (cellRect.top - panelRect.top) + (m / 60) * wysWiersza;
+    const left = cellRect.left - panelRect.left;
+    const width = cellRect.width || panel.clientWidth;
+
+    const line = document.createElement("div");
+    line.className = "m-now-line";
+    line.style.cssText =
+      `position:absolute; top:${top}px; left:${left}px; width:${width}px;` +
+      `height:2px; background:#dc2626; z-index:5; pointer-events:none;`;
+    const dot = document.createElement("div");
+    dot.style.cssText =
+      `position:absolute; left:-4px; top:-3px; width:8px; height:8px;` +
+      `border-radius:50%; background:#dc2626;`;
+    line.appendChild(dot);
+
+    const label = document.createElement("div");
+    label.className = "m-now-label";
+    label.textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    label.style.cssText =
+      `position:absolute; top:${top - 8}px; left:2px;` +
+      `font-family:var(--m-font-mono, monospace); font-size:10px; font-weight:600;` +
+      `color:#dc2626; background:var(--m-bg, #fff); padding:0 3px; z-index:6;` +
+      `pointer-events:none;`;
+
+    panel.appendChild(line);
+    panel.appendChild(label);
+  };
+
+  requestAnimationFrame(rysuj);
+}
+
+/* ============================================================
+   AUTO-SCROLL do aktualnej godziny (raz, przy otwarciu)
+   ============================================================ */
+
+function maybeInitialScroll(panel, view) {
+  if (state.didInitialScroll) return;
+  state.didInitialScroll = true;
+
+  const now = new Date();
+  const h = now.getHours();
   let cell = null;
 
   if (view === "day") {
-    const slots = panel.querySelectorAll(".day-slot");
-    const idx = h - GODZINY[0];
-    cell = slots[idx] || null;
+    cell = panel.querySelectorAll(".day-slot")[h - GODZINY[0]] || null;
   } else if (view === "week") {
-    // czy dzisiejszy dzień jest w aktualnie wyświetlanym tygodniu?
     const weekStart = startOfWeek(state.refDate);
     const dayIdx = Math.round((startOfDay(now) - weekStart) / 86400000);
-    if (dayIdx < 0 || dayIdx > 6) return; // dziś poza widzianym tygodniem
-    const cells = panel.querySelectorAll(".week-cell");
-    const idx = (h - GODZINY[0]) * 7 + dayIdx; // 7 komórek na godzinę
-    cell = cells[idx] || null;
+    if (dayIdx < 0 || dayIdx > 6) return;
+    cell = panel.querySelectorAll(".week-cell")[(h - GODZINY[0]) * 7 + dayIdx] || null;
   }
 
-  if (!cell) return;
-
-  // panel musi być punktem odniesienia dla pozycji absolutnej
-  panel.style.position = "relative";
-
-  const panelRect = panel.getBoundingClientRect();
-  const cellRect = cell.getBoundingClientRect();
-
-  const top = (cellRect.top - panelRect.top) + (m / 60) * cellRect.height;
-  const left = cellRect.left - panelRect.left;
-  const width = cellRect.width;
-
-  // linia
-  const line = document.createElement("div");
-  line.className = "m-now-line";
-  line.style.cssText =
-    `position:absolute; top:${top}px; left:${left}px; width:${width}px;` +
-    `height:2px; background:#dc2626; z-index:5; pointer-events:none;`;
-
-  // kropka na początku linii
-  const dot = document.createElement("div");
-  dot.style.cssText =
-    `position:absolute; left:-4px; top:-3px; width:8px; height:8px;` +
-    `border-radius:50%; background:#dc2626;`;
-  line.appendChild(dot);
-
-  // etykieta godziny (po lewej, w kolumnie godzin)
-  const label = document.createElement("div");
-  label.className = "m-now-label";
-  label.textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  label.style.cssText =
-    `position:absolute; top:${top - 8}px; left:2px;` +
-    `font-family:var(--m-font-mono, monospace); font-size:10px; font-weight:600;` +
-    `color:#dc2626; background:var(--m-bg, #fff); padding:0 3px; z-index:6;` +
-    `pointer-events:none;`;
-
-  panel.appendChild(line);
-  panel.appendChild(label);
+  if (cell) {
+    requestAnimationFrame(() => {
+      cell.scrollIntoView({ behavior: "auto", block: "center" });
+    });
+  }
 }
 
 /* ---- RENDER karta eventu ---- */
@@ -448,7 +424,6 @@ function escapeHtml(s) {
 function attachSlotClicks(scope) {
   scope.querySelectorAll("[data-slot-time]").forEach((el) => {
     el.addEventListener("click", (e) => {
-      // jeśli klik na karcie eventu — niech bubbluje do attachEventClicks
       if (e.target.closest(".m-event")) return;
       const iso = el.getAttribute("data-slot-time");
       openModalCreate(new Date(iso));
@@ -512,20 +487,15 @@ function openModalEdit(ev) {
   modal.hidden = false;
 }
 
-function closeModal() {
-  document.getElementById("m-modal").hidden = true;
-}
+function closeModal() { document.getElementById("m-modal").hidden = true; }
 
 function showFormError(msg) {
   const el = document.getElementById("m-form-error");
-  el.textContent = msg;
-  el.hidden = false;
+  el.textContent = msg; el.hidden = false;
 }
-
 function hideFormError() {
   const el = document.getElementById("m-form-error");
-  el.textContent = "";
-  el.hidden = true;
+  el.textContent = ""; el.hidden = true;
 }
 
 /* ---- SUBMIT formularza ---- */
@@ -610,7 +580,7 @@ async function handleDelete() {
 }
 
 /* ============================================================
-   NAWIGACJA — prev / today / next + toggle widoku
+   NAWIGACJA
    ============================================================ */
 
 function shiftDate(direction) {
@@ -629,35 +599,67 @@ async function reloadAndRender() {
 }
 
 /* ============================================================
+   WSTRZYKNIĘTE STYLE — czerwony dzień + sticky nagłówki
+   (bez dotykania horyzont.css; jeśli sticky zachodzi na pasek
+    aplikacji, korygujemy 'top')
+   ============================================================ */
+
+function injectStyles() {
+  if (document.getElementById("m-horyzont-extra")) return;
+  const s = document.createElement("style");
+  s.id = "m-horyzont-extra";
+  s.textContent = `
+    /* dzisiejszy dzień na CZERWONO */
+    .week-header__day-num--today { color: #dc2626 !important; }
+    .month-cell__num--today { color: #dc2626 !important; }
+
+    /* sticky nagłówki dni (tydzień) */
+    .week-header > * {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+    /* sticky nazwy dni (miesiąc) */
+    .month-header__day {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+/* ============================================================
    INIT
    ============================================================ */
 
 function init() {
-  // Toggle widoku
+  injectStyles();
+
   document.querySelectorAll(".m-toggle").forEach((btn) => {
     btn.addEventListener("click", async () => {
       state.view = btn.dataset.view;
+      state.didInitialScroll = false;     // przy zmianie widoku scrolluj ponownie do "teraz"
       await reloadAndRender();
     });
   });
 
-  // Sub-nav
   document.getElementById("m-prev").addEventListener("click", async () => { shiftDate(-1); await reloadAndRender(); });
   document.getElementById("m-next").addEventListener("click", async () => { shiftDate(+1); await reloadAndRender(); });
-  document.getElementById("m-today").addEventListener("click", async () => { state.refDate = new Date(); await reloadAndRender(); });
+  document.getElementById("m-today").addEventListener("click", async () => {
+    state.refDate = new Date();
+    state.didInitialScroll = false;       // "Dziś" → przewiń do aktualnej godziny
+    await reloadAndRender();
+  });
   document.getElementById("m-add").addEventListener("click", () => openModalCreate(new Date()));
 
-  // Modal
   document.querySelectorAll("[data-close]").forEach((el) => el.addEventListener("click", closeModal));
   document.getElementById("m-form").addEventListener("submit", handleSubmit);
   document.getElementById("m-delete").addEventListener("click", handleDelete);
 
-  // ESC zamyka modal
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeModal();
-  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
-  // Czerwona linia "teraz" — odświeżaj co minutę (płynie sama, bez przeładowania)
+  // Czerwona linia "teraz" — odświeżaj co minutę
   setInterval(() => {
     if (state.view === "day" || state.view === "week") {
       const panel = document.getElementById(`m-view-${state.view}`);
@@ -665,7 +667,6 @@ function init() {
     }
   }, 60000);
 
-  // Pierwszy render
   reloadAndRender();
 }
 
