@@ -2,30 +2,28 @@
 //
 // MANA — wspólny komponent-widok KALENDARZ
 //
-// Zasada "DANE != WIDOK" (kafel EVENT, 21.05): kafel EVENT to DANE
-// (data, czas, typ, tytuł…). Kalendarz to WIDOK tych danych — ten plik.
-// Te same eventy, różne pokoje: Horyzont = kalendarz prywatny,
-// Puls = kalendarz wizyt. Komponent budujemy raz, pokoje go używają.
+// Zasada "DANE != WIDOK": kafel EVENT to DANE, kalendarz to WIDOK.
+// Reużywalny: Horyzont, Puls (kalendarz wizyt)...
 //
-// 23.05.2026 — ETAP 2b: logika kalendarza wyjęta z rooms/horyzont/horyzont.js.
+// 23.05.2026 — ETAP 2b: logika kalendarza wyjęta z horyzont.js.
+// 23.05.2026 — wydarzenia całodzienne: osobny pasek na górze, poza siatką
+//   godzin, przyklejony (sticky) razem z nagłówkiem daty.
 //
-// Komponent zakłada, że strona dostarcza szkielet DOM (w mana-app: index.html):
-//   nawigacja: .m-toggle[data-view="day|week|month"],
-//              #m-prev #m-today #m-next #m-period-label
+// Komponent zakłada szkielet DOM (w mana-app: index.html):
+//   nawigacja: .m-toggle[data-view], #m-prev #m-today #m-next #m-period-label
 //   widoki:    #m-view-day #m-view-week #m-view-month
 //   status:    #m-status
 //
-// Wygląd: shared/kalendarz.css. Kolory wyłącznie przez tokeny --m-*
-// — zmiana motywu = zmiana tokenów, bez dotykania tego pliku.
+// Wygląd: shared/kalendarz.css. Kolory przez tokeny --m-*.
 //
 // Użycie:
 //   const kal = montujKalendarz({
 //     zaladujEventy: async (from, to) => ({ ok, events, error }),
-//     onSlotClick:   (date)  => { ... },   // klik w puste miejsce
-//     onEventClick:  (event) => { ... },   // klik w istniejący event
-//     startowyWidok: "week",               // opcjonalnie: day|week|month
+//     onSlotClick:   (date, opcje) => { ... },   // opcje.calyDzien = true gdy pasek całodzienny
+//     onEventClick:  (event) => { ... },
+//     startowyWidok: "week",
 //   });
-//   kal.odswiez();   // ponowne pobranie eventów + render (po zapisie/usunięciu)
+//   kal.odswiez();
 
 /* ============================================================
    STAŁE
@@ -38,11 +36,10 @@ const MIESIACE = [
 
 const DNI_KROTKO = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"];
 
-// PEŁNA DOBA: 0..23 (24 godziny)
 const GODZINY = Array.from({ length: 24 }, (_, i) => i);
 
 /* ============================================================
-   POMOCNICZE — daty (czyste funkcje, bez stanu)
+   POMOCNICZE — daty (czyste funkcje)
    ============================================================ */
 
 function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -78,20 +75,20 @@ function escapeHtml(s) {
     .replace(/'/g, "&#039;");
 }
 
-/* ---- karta eventu (czysta funkcja) ---- */
+/* ---- karta eventu (czysta funkcja) ----
+   Wydarzenie całodzienne: bez godziny. */
 
 function renderEventCard(ev) {
-  const t = new Date(ev.data_czas);
-  const time = fmtTime(t);
   const tytul = escapeHtml(ev.tytul || "");
-  return `<a class="m-event" data-event-id="${ev.id}" title="${tytul}">
-    <span class="m-event__time">${time}</span>${tytul}
-  </a>`;
+  const klasa = ev.caly_dzien ? "m-event m-event--allday" : "m-event";
+  const czas = ev.caly_dzien
+    ? ""
+    : `<span class="m-event__time">${fmtTime(new Date(ev.data_czas))}</span>`;
+  return `<a class="${klasa}" data-event-id="${ev.id}" title="${tytul}">${czas}${tytul}</a>`;
 }
 
 /* ============================================================
    KOMPONENT — montujKalendarz
-   Każde wywołanie = osobna instancja z własnym stanem.
    ============================================================ */
 
 export function montujKalendarz(opcje) {
@@ -112,6 +109,19 @@ export function montujKalendarz(opcje) {
     events: [],
     didInitialScroll: false,
   };
+
+  /* ---- podział eventów: całodzienne / godzinowe ---- */
+
+  function calodzienneDnia(d) {
+    return state.events.filter((e) => e.caly_dzien && isSameDay(new Date(e.data_czas), d));
+  }
+  function godzinoweWZakresie(from, to) {
+    return state.events.filter((e) => {
+      if (e.caly_dzien) return false;
+      const t = new Date(e.data_czas);
+      return t >= from && t < to;
+    });
+  }
 
   /* ---- status ---- */
 
@@ -144,7 +154,7 @@ export function montujKalendarz(opcje) {
     }
   }
 
-  /* ---- pobranie eventów (przez wstrzykniętą funkcję) ---- */
+  /* ---- pobranie eventów ---- */
 
   async function loadEvents() {
     setStatus("Ładuję eventy…");
@@ -154,7 +164,7 @@ export function montujKalendarz(opcje) {
     try {
       wynik = await zaladujEventy(from, to);
     } catch (err) {
-      console.error("kalendarz: zaladujEventy rzuciło wyjątek:", err);
+      console.error("kalendarz: zaladujEventy wyjątek:", err);
       setStatus(`Błąd: ${err.message}`);
       state.events = [];
       return;
@@ -200,32 +210,40 @@ export function montujKalendarz(opcje) {
 
   function renderDay() {
     const panel = document.getElementById("m-view-day");
-    const dayStart = startOfDay(state.refDate);
+    const day = state.refDate;
+    const dayStart = startOfDay(day);
 
-    let html = `<div class="day-grid">`;
+    // pasek całodzienny (sticky)
+    const calodzienne = calodzienneDnia(day);
+    const head = `
+      <div class="day-head">
+        <div class="day-allday">
+          <div class="day-allday__label">cały dzień</div>
+          <div class="day-allday__cell" data-slot-time="${dayStart.toISOString()}" data-allday="1">
+            ${calodzienne.map(renderEventCard).join("")}
+          </div>
+        </div>
+      </div>`;
+
+    // ciało — godziny
+    let body = `<div class="day-body">`;
     for (const h of GODZINY) {
       const slotStart = new Date(dayStart);
       slotStart.setHours(h, 0, 0, 0);
       const slotEnd = new Date(slotStart);
       slotEnd.setHours(h + 1);
-
-      const eventsInSlot = state.events.filter((ev) => {
-        const t = new Date(ev.data_czas);
-        return t >= slotStart && t < slotEnd;
-      });
-
-      html += `
+      const evs = godzinoweWZakresie(slotStart, slotEnd);
+      body += `
         <div class="day-row">
           <div class="day-hour">${String(h).padStart(2, "0")}:00</div>
           <div class="day-slot" data-slot-time="${slotStart.toISOString()}">
-            ${eventsInSlot.map(renderEventCard).join("")}
+            ${evs.map(renderEventCard).join("")}
           </div>
-        </div>
-      `;
+        </div>`;
     }
-    html += `</div>`;
+    body += `</div>`;
 
-    panel.innerHTML = html;
+    panel.innerHTML = `<div class="day-view">${head}${body}</div>`;
     attachSlotClicks(panel);
     attachEventClicks(panel);
     renderNowLine(panel, "day");
@@ -237,43 +255,56 @@ export function montujKalendarz(opcje) {
   function renderWeek() {
     const panel = document.getElementById("m-view-week");
     const weekStart = startOfWeek(state.refDate);
+    const dni = [];
+    for (let i = 0; i < 7; i++) dni.push(addDays(weekStart, i));
 
+    // nagłówek dat
     let header = `<div class="week-header"><div></div>`;
     for (let i = 0; i < 7; i++) {
-      const d = addDays(weekStart, i);
+      const d = dni[i];
       const todayClass = isToday(d) ? "week-header__day-num--today" : "";
       header += `
         <div>
           ${DNI_KROTKO[i]}
           <span class="week-header__day-num ${todayClass}">${d.getDate()}</span>
-        </div>
-      `;
+        </div>`;
     }
     header += `</div>`;
 
+    // pasek całodzienny
+    let allday = `<div class="week-allday"><div class="week-allday__label">cały dzień</div>`;
+    for (let i = 0; i < 7; i++) {
+      const d = dni[i];
+      const evs = calodzienneDnia(d);
+      allday += `
+        <div class="week-allday__cell" data-slot-time="${startOfDay(d).toISOString()}" data-allday="1">
+          ${evs.map(renderEventCard).join("")}
+        </div>`;
+    }
+    allday += `</div>`;
+
+    // ciało — godziny
     let body = "";
     for (const h of GODZINY) {
       body += `<div class="week-hour">${String(h).padStart(2, "0")}:00</div>`;
       for (let i = 0; i < 7; i++) {
-        const cellStart = new Date(addDays(weekStart, i));
+        const cellStart = new Date(dni[i]);
         cellStart.setHours(h, 0, 0, 0);
         const cellEnd = new Date(cellStart);
         cellEnd.setHours(h + 1);
-
-        const eventsInCell = state.events.filter((ev) => {
-          const t = new Date(ev.data_czas);
-          return t >= cellStart && t < cellEnd;
-        });
-
+        const evs = godzinoweWZakresie(cellStart, cellEnd);
         body += `
           <div class="week-cell" data-slot-time="${cellStart.toISOString()}">
-            ${eventsInCell.map(renderEventCard).join("")}
-          </div>
-        `;
+            ${evs.map(renderEventCard).join("")}
+          </div>`;
       }
     }
 
-    panel.innerHTML = `<div class="week-grid">${header}${body}</div>`;
+    panel.innerHTML = `
+      <div class="week-grid">
+        <div class="week-head">${header}${allday}</div>
+        <div class="week-body">${body}</div>
+      </div>`;
     attachSlotClicks(panel);
     attachEventClicks(panel);
     renderNowLine(panel, "week");
@@ -312,8 +343,7 @@ export function montujKalendarz(opcje) {
             <span class="month-cell__num ${todayClass}">${d.getDate()}</span>
             ${visible.map(renderEventCard).join("")}
             ${more > 0 ? `<span class="month-cell__more">+ ${more} więcej</span>` : ""}
-          </div>
-        `;
+          </div>`;
       }
     }
     html += `</div>`;
@@ -321,13 +351,9 @@ export function montujKalendarz(opcje) {
     panel.innerHTML = html;
     attachSlotClicks(panel);
     attachEventClicks(panel);
-    // Miesiąc: bez linii "teraz" (komórki to dni). Dzisiejszy dzień wyróżniony kolorem.
   }
 
-  /* ---- czerwona linia "teraz" (Dzień + Tydzień) ----
-     Pozycja z realnych elementów DOM (getBoundingClientRect).
-     Czeka aż siatka ma wymiar, z fallbackiem na wysokość — nigdy 0:00.
-     Kolor: token --m-dzis (fallback #dc2626). */
+  /* ---- czerwona linia "teraz" (Dzień + Tydzień) ---- */
 
   function renderNowLine(panel, view) {
     panel.querySelectorAll(".m-now-line, .m-now-label").forEach((e) => e.remove());
@@ -426,7 +452,8 @@ export function montujKalendarz(opcje) {
       el.addEventListener("click", (e) => {
         if (e.target.closest(".m-event")) return;
         const iso = el.getAttribute("data-slot-time");
-        onSlotClick(new Date(iso));
+        const calyDzien = el.hasAttribute("data-allday");
+        onSlotClick(new Date(iso), { calyDzien });
       });
     });
   }
@@ -465,7 +492,7 @@ export function montujKalendarz(opcje) {
     document.querySelectorAll(".m-toggle").forEach((btn) => {
       btn.addEventListener("click", async () => {
         state.view = btn.dataset.view;
-        state.didInitialScroll = false;   // przy zmianie widoku scrolluj ponownie do "teraz"
+        state.didInitialScroll = false;
         await reloadAndRender();
       });
     });
@@ -477,11 +504,10 @@ export function montujKalendarz(opcje) {
     if (next)  next.addEventListener("click", async () => { shiftDate(+1); await reloadAndRender(); });
     if (today) today.addEventListener("click", async () => {
       state.refDate = new Date();
-      state.didInitialScroll = false;     // "Dziś" → przewiń do aktualnej godziny
+      state.didInitialScroll = false;
       await reloadAndRender();
     });
 
-    // Czerwona linia "teraz" — odświeżaj co minutę
     setInterval(() => {
       if (state.view === "day" || state.view === "week") {
         const panel = document.getElementById(`m-view-${state.view}`);
