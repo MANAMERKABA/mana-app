@@ -4,8 +4,7 @@
 // Logika frontend: state, fetch, render 3 widoków, modal CRUD.
 //
 // Decyzje wg [602]:
-// - SELECT przez supabase-js bezpośrednio (RLS anon_all dla MVP)
-// - INSERT/UPDATE/DELETE przez Edge Functions (event-create/update/delete)
+// - odczyt/zapis eventów przez wspólny klient kafla EVENT (shared/event.js)
 //
 // 21.05.2026 — zmiany:
 //   * pełna doba 0:00–23:00 (było 6:00–23:00)
@@ -17,14 +16,16 @@
 // 22.05.2026 — ETAP 1 migracji na bazę MerKaBa_2026:
 //   * połączenie z NOWEJ bazy: supabase2026 / callEdge2026 (shared/supabase.js)
 //   * traveler_id = 1 (w MerKaBa_2026 Adam ma id 1; stara baza mana-serce miała 17)
-//   * dopasowanie do tabeli `events` kafla EVENT:
-//       - pole `typ` jest wymagane → na ETAP 1 na sztywno "wydarzenie"
-//         (wybór typu dochodzi w ETAP 2, przy wspólnym komponencie kalendarza)
-//       - kolumna `czas_trwania_min` NIE istnieje w nowej tabeli → liczymy `koniec`
-//         (data_czas + czas trwania); pole "czas trwania (min)" zostaje w UI
-//       - event-update / event-delete wymagają traveler_id → dosyłamy je
+//   * dopasowanie do tabeli `events` kafla EVENT: typ, koniec, traveler_id
+//
+// 23.05.2026 — ETAP 2 krok 2a — wspólny klient danych:
+//   * Horyzont NIE rozmawia już z bazą sam. Odczyt i zapis eventów idą przez
+//     shared/event.js (pobierzEventy / utworzEvent / zaktualizujEvent / usunEvent).
+//   * Logika widoku kalendarza nadal tu siedzi — wyjdzie w kroku 2b.
 
-import { supabase2026 as supabase, callEdge2026 as callEdge } from "../../shared/supabase.js";
+import {
+  pobierzEventy, utworzEvent, zaktualizujEvent, usunEvent,
+} from "../../shared/event.js";
 
 /* ============================================================
    STATE
@@ -127,7 +128,7 @@ function getPeriodLabel() {
 }
 
 /* ============================================================
-   FETCH EVENTÓW
+   FETCH EVENTÓW — przez wspólny klient kafla EVENT
    ============================================================ */
 
 async function loadEvents() {
@@ -135,25 +136,18 @@ async function loadEvents() {
   setStatus("Ładuję eventy…");
 
   const { from, to } = getViewRange();
-
-  const { data, error } = await supabase
-    .from("events")
-    .select("*")
-    .eq("traveler_id", TRAVELER_ID)
-    .gte("data_czas", from.toISOString())
-    .lte("data_czas", to.toISOString())
-    .order("data_czas", { ascending: true });
+  const wynik = await pobierzEventy({ travelerId: TRAVELER_ID, from, to });
 
   state.loading = false;
 
-  if (error) {
-    console.error("loadEvents error:", error);
-    setStatus(`Błąd: ${error.message}`);
+  if (!wynik.ok) {
+    console.error("loadEvents error:", wynik.error);
+    setStatus(`Błąd: ${wynik.error}`);
     state.events = [];
     return;
   }
 
-  state.events = data || [];
+  state.events = wynik.events;
   setStatus(state.events.length === 0
     ? "Brak eventów w tym zakresie. Kliknij + Nowy event lub puste miejsce w kalendarzu."
     : `${state.events.length} event(y) załadowane.`);
@@ -559,18 +553,18 @@ async function handleSubmit(e) {
   let result;
   if (id) {
     // event-update wymaga traveler_id (sprawdza własność wpisu).
-    result = await callEdge("event-update", { id, traveler_id: TRAVELER_ID, ...payload });
+    result = await zaktualizujEvent({ id, traveler_id: TRAVELER_ID, ...payload });
   } else {
     // event-create wymaga `typ` — ETAP 1: na sztywno "wydarzenie".
-    // Wybór typu (zadanie/wizyta/wydatek) dochodzi w ETAP 2.
-    result = await callEdge("event-create", { traveler_id: TRAVELER_ID, typ: "wydarzenie", ...payload });
+    // Wybór typu (zadanie/wizyta/wydatek) dochodzi w ETAP 2 krok 2c.
+    result = await utworzEvent({ traveler_id: TRAVELER_ID, typ: "wydarzenie", ...payload });
   }
 
   saveBtn.disabled = false;
   saveBtn.textContent = "Zapisz";
 
   if (!result.ok) {
-    showFormError(result.data?.error || `Błąd zapisu (${result.status})`);
+    showFormError(result.error || "Błąd zapisu");
     return;
   }
 
@@ -590,14 +584,13 @@ async function handleDelete() {
   deleteBtn.disabled = true;
   deleteBtn.textContent = "Usuwam…";
 
-  // event-delete wymaga traveler_id (sprawdza własność wpisu).
-  const result = await callEdge("event-delete", { id, traveler_id: TRAVELER_ID });
+  const result = await usunEvent(id, TRAVELER_ID);
 
   deleteBtn.disabled = false;
   deleteBtn.textContent = "Usuń";
 
   if (!result.ok) {
-    showFormError(result.data?.error || `Błąd usunięcia (${result.status})`);
+    showFormError(result.error || "Błąd usunięcia");
     return;
   }
 
