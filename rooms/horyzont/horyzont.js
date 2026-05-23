@@ -2,20 +2,22 @@
 //
 // MANA — Faza A (z5.A) — pokój Horyzont, kalendarz prywatny.
 //
-// Po ETAPIE 2 pokój jest CIENKI — to kompozycja, nie biblioteka:
+// Po ETAPIE 2 pokój jest CIENKI — kompozycja, nie biblioteka:
 //   * widok kalendarza  → wspólny komponent  shared/kalendarz.js
 //   * dane eventów      → wspólny klient kafla EVENT  shared/event.js
 //   * Horyzont          → spina jedno z drugim + obsługuje własne okienko (modal)
 //
-// Zasada "siła w kaflach": logika żyje w kaflu/komponencie, pokój tylko jej
-// używa. Kalendarza nie piszemy drugi raz dla Pulsa — Puls weźmie ten sam komponent.
-//
 // Historia:
 //   21.05.2026 — pełna doba, linia "teraz", auto-scroll, sticky nagłówki
-//   22.05.2026 — ETAP 1: migracja na bazę MerKaBa_2026 (traveler 1, typ, koniec)
+//   22.05.2026 — ETAP 1: migracja na bazę MerKaBa_2026 (traveler 1, koniec)
 //   23.05.2026 — ETAP 2a: dane przez shared/event.js
 //   23.05.2026 — ETAP 2b: widok kalendarza wyjęty do shared/kalendarz.js
-//   23.05.2026 — ETAP 2c: wybór typu eventu (koniec sztywnego "wydarzenie")
+//   23.05.2026 — domknięcie kafla EVENT:
+//       * Horyzont tworzy WYŁĄCZNIE wydarzenia (typ na sztywno "wydarzenie").
+//         Wizyta → Puls, wydatek → Trzos, zadania → osobno (lista). Cofnięto
+//         pole wyboru typu z 2c.
+//       * wydarzenie CAŁODZIENNE — przełącznik w okienku; bez godziny
+//         i czasu trwania, ląduje w pasku na górze kalendarza.
 
 import {
   pobierzEventy, utworzEvent, zaktualizujEvent, usunEvent,
@@ -29,10 +31,6 @@ import { montujKalendarz } from "../../shared/kalendarz.js";
 // MerKaBa_2026: Adam = travels.id 1 (stara baza mana-serce miała 17).
 const TRAVELER_ID = 1;
 
-// Dozwolone typy eventu (kafel EVENT). Domyślny dla Horyzonta: wydarzenie.
-const TYPY = ["wydarzenie", "zadanie", "wizyta", "wydatek"];
-const TYP_DOMYSLNY = "wydarzenie";
-
 // Instancja komponentu kalendarza — ustawiana w init().
 let kal = null;
 
@@ -45,6 +43,11 @@ function toDatetimeLocalValue(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function toDateValue(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function datetimeLocalToISO(localStr) {
   if (!localStr) return null;
   const d = new Date(localStr);
@@ -52,8 +55,7 @@ function datetimeLocalToISO(localStr) {
   return d.toISOString();
 }
 
-// Nowa tabela `events` ma kolumnę `koniec` (data+godzina), nie `czas_trwania_min`.
-// Przy edycji odtwarzamy "czas trwania w minutach" z różnicy koniec − data_czas.
+// Wydarzenie godzinowe ma `koniec`; przy edycji odtwarzamy czas trwania w min.
 function czasTrwaniaZEventu(ev) {
   if (ev.koniec && ev.data_czas) {
     const min = Math.round((new Date(ev.koniec) - new Date(ev.data_czas)) / 60000);
@@ -63,23 +65,49 @@ function czasTrwaniaZEventu(ev) {
 }
 
 /* ============================================================
-   OKIENKO (MODAL) — tworzenie / edycja / usuwanie eventu
-   To jest UI pokoju Horyzont. Kalendarz tylko zgłasza klik —
-   Horyzont decyduje, że pokazuje to okienko.
+   OKIENKO (MODAL) — tworzenie / edycja / usuwanie wydarzenia
    ============================================================ */
 
-function openModalCreate(slotDate) {
-  const title = document.getElementById("m-modal-title");
-  const deleteBtn = document.getElementById("m-delete");
+// Przełącza okienko między trybem godzinowym a całodziennym:
+// całodzienne → pole daty bez godziny, ukryty czas trwania.
+function ustawTrybCalodzienny(wlaczony) {
+  const dc = document.getElementById("f-data-czas");
+  const trwanie = document.getElementById("m-field-trwanie");
+  const stara = dc.value;
 
-  title.textContent = "Nowy event";
-  deleteBtn.hidden = true;
+  if (wlaczony) {
+    if (dc.type !== "date") {
+      dc.type = "date";
+      if (stara && stara.length >= 10) dc.value = stara.slice(0, 10);
+    }
+    trwanie.hidden = true;
+  } else {
+    if (dc.type !== "datetime-local") {
+      dc.type = "datetime-local";
+      if (stara && stara.length === 10) dc.value = stara + "T09:00";
+    }
+    trwanie.hidden = false;
+  }
+}
+
+function openModalCreate(slotDate, opcje) {
+  opcje = opcje || {};
+  const calyDzien = !!opcje.calyDzien;
+  const base = slotDate || new Date();
+
+  document.getElementById("m-modal-title").textContent = "Nowy event";
+  document.getElementById("m-delete").hidden = true;
 
   document.getElementById("f-id").value = "";
   document.getElementById("f-tytul").value = "";
-  document.getElementById("f-typ").value = TYP_DOMYSLNY;
-  document.getElementById("f-data-czas").value = toDatetimeLocalValue(slotDate || new Date());
+  document.getElementById("f-caly-dzien").checked = calyDzien;
   document.getElementById("f-czas-trwania").value = 60;
+
+  const dc = document.getElementById("f-data-czas");
+  dc.type = calyDzien ? "date" : "datetime-local";
+  dc.value = calyDzien ? toDateValue(base) : toDatetimeLocalValue(base);
+  document.getElementById("m-field-trwanie").hidden = calyDzien;
+
   document.getElementById("f-opis").value = "";
   document.getElementById("f-lokalizacja").value = "";
   document.getElementById("f-przypomnienie").value = "";
@@ -90,17 +118,23 @@ function openModalCreate(slotDate) {
 }
 
 function openModalEdit(ev) {
-  const title = document.getElementById("m-modal-title");
-  const deleteBtn = document.getElementById("m-delete");
-
-  title.textContent = "Edytuj event";
-  deleteBtn.hidden = false;
+  document.getElementById("m-modal-title").textContent = "Edytuj event";
+  document.getElementById("m-delete").hidden = false;
 
   document.getElementById("f-id").value = ev.id;
   document.getElementById("f-tytul").value = ev.tytul || "";
-  document.getElementById("f-typ").value = TYPY.includes(ev.typ) ? ev.typ : TYP_DOMYSLNY;
-  document.getElementById("f-data-czas").value = toDatetimeLocalValue(new Date(ev.data_czas));
+
+  const calyDzien = !!ev.caly_dzien;
+  document.getElementById("f-caly-dzien").checked = calyDzien;
+
+  const dc = document.getElementById("f-data-czas");
+  dc.type = calyDzien ? "date" : "datetime-local";
+  dc.value = calyDzien
+    ? toDateValue(new Date(ev.data_czas))
+    : toDatetimeLocalValue(new Date(ev.data_czas));
   document.getElementById("f-czas-trwania").value = czasTrwaniaZEventu(ev);
+  document.getElementById("m-field-trwanie").hidden = calyDzien;
+
   document.getElementById("f-opis").value = ev.opis || "";
   document.getElementById("f-lokalizacja").value = ev.lokalizacja || "";
   document.getElementById("f-przypomnienie").value = ev.przypomnienie_min_przed ?? "";
@@ -128,30 +162,40 @@ async function handleSubmit(e) {
 
   const id = document.getElementById("f-id").value.trim();
   const tytul = document.getElementById("f-tytul").value.trim();
-  const typ = document.getElementById("f-typ").value;
-  const dataCzasLocal = document.getElementById("f-data-czas").value;
-  const czasTrwania = parseInt(document.getElementById("f-czas-trwania").value, 10);
+  const calyDzien = document.getElementById("f-caly-dzien").checked;
+  const dataRaw = document.getElementById("f-data-czas").value;
   const opis = document.getElementById("f-opis").value.trim();
   const lokalizacja = document.getElementById("f-lokalizacja").value.trim();
   const przypRaw = document.getElementById("f-przypomnienie").value.trim();
   const przypomnienie = przypRaw === "" ? null : parseInt(przypRaw, 10);
 
   if (!tytul) { showFormError("Tytuł jest wymagany."); return; }
-  if (!TYPY.includes(typ)) { showFormError("Wybierz poprawny typ."); return; }
-  if (!dataCzasLocal) { showFormError("Data i godzina są wymagane."); return; }
-  if (!Number.isFinite(czasTrwania) || czasTrwania <= 0) { showFormError("Czas trwania musi być dodatnią liczbą minut."); return; }
+  if (!dataRaw) { showFormError("Data jest wymagana."); return; }
 
-  const dataCzasISO = datetimeLocalToISO(dataCzasLocal);
-  if (!dataCzasISO) { showFormError("Niepoprawna data."); return; }
+  let dataCzasISO, koniecISO;
 
-  // Nowa tabela `events` nie ma kolumny czas_trwania_min — przeliczamy na `koniec`.
-  const koniecISO = new Date(new Date(dataCzasISO).getTime() + czasTrwania * 60000).toISOString();
+  if (calyDzien) {
+    // dataRaw = "RRRR-MM-DD" — wydarzenie całodzienne, bez godziny ani końca.
+    const d = new Date(dataRaw + "T00:00");
+    if (isNaN(d.getTime())) { showFormError("Niepoprawna data."); return; }
+    dataCzasISO = d.toISOString();
+    koniecISO = null;
+  } else {
+    // dataRaw = "RRRR-MM-DDTHH:MM" — wydarzenie godzinowe.
+    dataCzasISO = datetimeLocalToISO(dataRaw);
+    if (!dataCzasISO) { showFormError("Niepoprawna data."); return; }
+    const czasTrwania = parseInt(document.getElementById("f-czas-trwania").value, 10);
+    if (!Number.isFinite(czasTrwania) || czasTrwania <= 0) {
+      showFormError("Czas trwania musi być dodatnią liczbą minut."); return;
+    }
+    koniecISO = new Date(new Date(dataCzasISO).getTime() + czasTrwania * 60000).toISOString();
+  }
 
   const payload = {
-    typ,
     tytul,
     data_czas: dataCzasISO,
     koniec: koniecISO,
+    caly_dzien: calyDzien,
     opis: opis || null,
     lokalizacja: lokalizacja || null,
     przypomnienie_min_przed: przypomnienie,
@@ -163,10 +207,10 @@ async function handleSubmit(e) {
 
   let result;
   if (id) {
-    // event-update wymaga traveler_id (sprawdza własność wpisu).
     result = await zaktualizujEvent({ id, traveler_id: TRAVELER_ID, ...payload });
   } else {
-    result = await utworzEvent({ traveler_id: TRAVELER_ID, ...payload });
+    // Horyzont tworzy tylko wydarzenia — typ na sztywno.
+    result = await utworzEvent({ traveler_id: TRAVELER_ID, typ: "wydarzenie", ...payload });
   }
 
   saveBtn.disabled = false;
@@ -211,20 +255,20 @@ async function handleDelete() {
    ============================================================ */
 
 function init() {
-  // Komponent kalendarza: dane bierze z kafla EVENT (podróżnik 1),
-  // a klik w slot/event przekazuje do okienka Horyzonta.
   kal = montujKalendarz({
     zaladujEventy: (from, to) => pobierzEventy({ travelerId: TRAVELER_ID, from, to }),
-    onSlotClick:   (date) => openModalCreate(date),
-    onEventClick:  (ev)   => openModalEdit(ev),
+    onSlotClick:   (date, opcje) => openModalCreate(date, opcje),
+    onEventClick:  (ev) => openModalEdit(ev),
     startowyWidok: "week",
   });
 
-  // Przyciski okienka — to UI pokoju, nie kalendarza.
   document.getElementById("m-add").addEventListener("click", () => openModalCreate(new Date()));
   document.querySelectorAll("[data-close]").forEach((el) => el.addEventListener("click", closeModal));
   document.getElementById("m-form").addEventListener("submit", handleSubmit);
   document.getElementById("m-delete").addEventListener("click", handleDelete);
+  document.getElementById("f-caly-dzien").addEventListener("change", (e) => {
+    ustawTrybCalodzienny(e.target.checked);
+  });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 }
 
