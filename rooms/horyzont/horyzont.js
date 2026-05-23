@@ -6,7 +6,6 @@
 // Decyzje wg [602]:
 // - SELECT przez supabase-js bezpośrednio (RLS anon_all dla MVP)
 // - INSERT/UPDATE/DELETE przez Edge Functions (event-create/update/delete)
-// - traveler_id z shared/auth.js (MVP_TRAVELER_ID = 17 hardcoded)
 //
 // 21.05.2026 — zmiany:
 //   * pełna doba 0:00–23:00 (było 6:00–23:00)
@@ -14,9 +13,18 @@
 //   * dzisiejszy dzień na CZERWONO (było turkus)
 //   * auto-scroll do aktualnej godziny przy otwarciu
 //   * sticky nagłówki dni/dat przy scrollu
+//
+// 22.05.2026 — ETAP 1 migracji na bazę MerKaBa_2026:
+//   * połączenie z NOWEJ bazy: supabase2026 / callEdge2026 (shared/supabase.js)
+//   * traveler_id = 1 (w MerKaBa_2026 Adam ma id 1; stara baza mana-serce miała 17)
+//   * dopasowanie do tabeli `events` kafla EVENT:
+//       - pole `typ` jest wymagane → na ETAP 1 na sztywno "wydarzenie"
+//         (wybór typu dochodzi w ETAP 2, przy wspólnym komponencie kalendarza)
+//       - kolumna `czas_trwania_min` NIE istnieje w nowej tabeli → liczymy `koniec`
+//         (data_czas + czas trwania); pole "czas trwania (min)" zostaje w UI
+//       - event-update / event-delete wymagają traveler_id → dosyłamy je
 
-import { supabase, callEdge } from "../../shared/supabase.js";
-import { getCurrentTraveler } from "../../shared/auth.js";
+import { supabase2026 as supabase, callEdge2026 as callEdge } from "../../shared/supabase.js";
 
 /* ============================================================
    STATE
@@ -30,7 +38,8 @@ const state = {
   didInitialScroll: false,   // auto-scroll do "teraz" tylko raz, przy otwarciu
 };
 
-const TRAVELER_ID = getCurrentTraveler();
+// MerKaBa_2026: Adam = travels.id 1 (stara baza mana-serce miała 17).
+const TRAVELER_ID = 1;
 
 const MIESIACE = [
   "Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec",
@@ -79,6 +88,16 @@ function datetimeLocalToISO(localStr) {
   const d = new Date(localStr);
   if (isNaN(d.getTime())) return null;
   return d.toISOString();
+}
+
+// Nowa tabela `events` ma kolumnę `koniec` (data+godzina), nie `czas_trwania_min`.
+// Przy edycji odtwarzamy "czas trwania w minutach" z różnicy koniec − data_czas.
+function czasTrwaniaZEventu(ev) {
+  if (ev.koniec && ev.data_czas) {
+    const min = Math.round((new Date(ev.koniec) - new Date(ev.data_czas)) / 60000);
+    if (Number.isFinite(min) && min > 0) return min;
+  }
+  return 60;
 }
 
 /* ============================================================
@@ -478,7 +497,8 @@ function openModalEdit(ev) {
   document.getElementById("f-id").value = ev.id;
   document.getElementById("f-tytul").value = ev.tytul || "";
   document.getElementById("f-data-czas").value = toDatetimeLocalValue(new Date(ev.data_czas));
-  document.getElementById("f-czas-trwania").value = ev.czas_trwania_min || 60;
+  // Nowa tabela ma `koniec` zamiast czas_trwania_min — liczymy trwanie wstecz.
+  document.getElementById("f-czas-trwania").value = czasTrwaniaZEventu(ev);
   document.getElementById("f-opis").value = ev.opis || "";
   document.getElementById("f-lokalizacja").value = ev.lokalizacja || "";
   document.getElementById("f-przypomnienie").value = ev.przypomnienie_min_przed ?? "";
@@ -520,10 +540,13 @@ async function handleSubmit(e) {
   const dataCzasISO = datetimeLocalToISO(dataCzasLocal);
   if (!dataCzasISO) { showFormError("Niepoprawna data."); return; }
 
+  // Nowa tabela `events` nie ma kolumny czas_trwania_min — przeliczamy na `koniec`.
+  const koniecISO = new Date(new Date(dataCzasISO).getTime() + czasTrwania * 60000).toISOString();
+
   const payload = {
     tytul,
     data_czas: dataCzasISO,
-    czas_trwania_min: czasTrwania,
+    koniec: koniecISO,
     opis: opis || null,
     lokalizacja: lokalizacja || null,
     przypomnienie_min_przed: przypomnienie,
@@ -535,9 +558,12 @@ async function handleSubmit(e) {
 
   let result;
   if (id) {
-    result = await callEdge("event-update", { id, ...payload });
+    // event-update wymaga traveler_id (sprawdza własność wpisu).
+    result = await callEdge("event-update", { id, traveler_id: TRAVELER_ID, ...payload });
   } else {
-    result = await callEdge("event-create", { traveler_id: TRAVELER_ID, ...payload });
+    // event-create wymaga `typ` — ETAP 1: na sztywno "wydarzenie".
+    // Wybór typu (zadanie/wizyta/wydatek) dochodzi w ETAP 2.
+    result = await callEdge("event-create", { traveler_id: TRAVELER_ID, typ: "wydarzenie", ...payload });
   }
 
   saveBtn.disabled = false;
@@ -564,7 +590,8 @@ async function handleDelete() {
   deleteBtn.disabled = true;
   deleteBtn.textContent = "Usuwam…";
 
-  const result = await callEdge("event-delete", { id });
+  // event-delete wymaga traveler_id (sprawdza własność wpisu).
+  const result = await callEdge("event-delete", { id, traveler_id: TRAVELER_ID });
 
   deleteBtn.disabled = false;
   deleteBtn.textContent = "Usuń";
