@@ -1,0 +1,120 @@
+/* ============================================================
+   MANA — wspólny komponent LISTA ZADAŃ
+   Kafel EVENT, typ="zadanie". Reużywalny: Horyzont, ekran startowy…
+   23.05.2026 — Z1 widok.
+   Kolory przez tokeny --m-*.
+   ============================================================ */
+
+.m-zadania { width: 100%; }
+.m-zadania[hidden] { display: none; }
+
+.z-naglowek {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 4px 10px;
+}
+
+.z-tytul-sekcji {
+  font-family: var(--m-font-display);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--m-ink);
+}
+
+.z-nowe {
+  font-family: var(--m-font-mono);
+  font-size: 12px;
+  color: var(--m-turkus);
+  background: var(--m-turkus-l);
+  border: 0.5px solid var(--m-turkus);
+  border-radius: 4px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.z-nowe:hover { background: var(--m-turkus); color: var(--m-bg); }
+
+.z-lista {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--m-line-soft);
+}
+
+.z-rzad {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 8px;
+  border-bottom: 1px solid var(--m-line-soft);
+  cursor: pointer;
+}
+
+.z-rzad:hover { background: var(--m-bg-soft); }
+
+.z-check {
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--m-line);
+  border-radius: 4px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.z-rzad--zrobione .z-check {
+  background: var(--m-turkus);
+  border-color: var(--m-turkus);
+}
+.z-rzad--zrobione .z-check::after {
+  content: "\2713";
+  color: var(--m-bg);
+}
+
+.z-rzad--zrobione .z-tytul {
+  text-decoration: line-through;
+  color: var(--m-ink-soft);
+}
+
+.z-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.z-tytul {
+  flex: 1;
+  font-family: var(--m-font-body);
+  font-size: 14px;
+  color: var(--m-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.z-termin {
+  font-family: var(--m-font-mono);
+  font-size: 11px;
+  color: var(--m-ink-soft);
+  flex-shrink: 0;
+}
+
+.z-pusto {
+  padding: 28px 8px;
+  text-align: center;
+  color: var(--m-ink-soft);
+  font-family: var(--m-font-display);
+  font-style: italic;
+}
+
+.z-status {
+  padding: 6px 8px;
+  font-family: var(--m-font-mono);
+  font-size: 11px;
+  color: var(--m-ink-soft);
+}
