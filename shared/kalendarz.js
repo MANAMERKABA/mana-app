@@ -5,22 +5,21 @@
 // Zasada "DANE != WIDOK": kafel EVENT to DANE, kalendarz to WIDOK.
 // Reużywalny: Horyzont, Puls (kalendarz wizyt)...
 //
-// 23.05.2026 — ETAP 2b: logika kalendarza wyjęta z horyzont.js.
-// 23.05.2026 — wydarzenia całodzienne: osobny pasek na górze, poza siatką
-//   godzin, przyklejony (sticky) razem z nagłówkiem daty.
+// 23.05.2026 — ETAP 2b: komponent wydzielony z horyzont.js.
+// 23.05.2026 — wydarzenia całodzienne: pasek na górze (sticky).
+// 23.05.2026 — Paczka 1: klik w dzień → przejście do widoku Dnia.
+// 23.05.2026 — Paczka 2: wydarzenia godzinowe jako BLOKI o wysokości
+//   równej czasowi trwania; nakładające się wydarzenia obok siebie.
 //
-// Komponent zakłada szkielet DOM (w mana-app: index.html):
-//   nawigacja: .m-toggle[data-view], #m-prev #m-today #m-next #m-period-label
-//   widoki:    #m-view-day #m-view-week #m-view-month
-//   status:    #m-status
-//
-// Wygląd: shared/kalendarz.css. Kolory przez tokeny --m-*.
+// Szkielet DOM (w mana-app: index.html):
+//   .m-toggle[data-view], #m-prev #m-today #m-next #m-period-label
+//   #m-view-day #m-view-week #m-view-month  #m-status
 //
 // Użycie:
 //   const kal = montujKalendarz({
 //     zaladujEventy: async (from, to) => ({ ok, events, error }),
-//     onSlotClick:   (date, opcje) => { ... },   // opcje.calyDzien = true gdy pasek całodzienny
-//     onEventClick:  (event) => { ... },
+//     onSlotClick:   (date, opcje) => {...},   // opcje.calyDzien gdy pasek całodzienny
+//     onEventClick:  (event) => {...},
 //     startowyWidok: "week",
 //   });
 //   kal.odswiez();
@@ -38,8 +37,13 @@ const DNI_KROTKO = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"];
 
 const GODZINY = Array.from({ length: 24 }, (_, i) => i);
 
+// Wysokość jednej godziny w px. MUSI być zgodna z kalendarz.css.
+const H = 52;
+// Minimalna wysokość bloku wydarzenia (żeby krótkie były klikalne).
+const MIN_BLOK = 20;
+
 /* ============================================================
-   POMOCNICZE — daty (czyste funkcje)
+   POMOCNICZE — daty
    ============================================================ */
 
 function startOfDay(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
@@ -63,7 +67,8 @@ function isSameDay(a, b) {
       && a.getDate() === b.getDate();
 }
 function isToday(d) { return isSameDay(d, new Date()); }
-function fmtTime(d) { return d.toTimeString().slice(0, 5); }
+function pad2(n) { return String(n).padStart(2, "0"); }
+function fmtTime(d) { return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; }
 function fmtDateLabel(d) { return `${d.getDate()} ${MIESIACE[d.getMonth()]} ${d.getFullYear()}`; }
 
 function escapeHtml(s) {
@@ -75,8 +80,7 @@ function escapeHtml(s) {
     .replace(/'/g, "&#039;");
 }
 
-/* ---- karta eventu (czysta funkcja) ----
-   Wydarzenie całodzienne: bez godziny. */
+/* ---- karta wydarzenia: statyczna (pasek całodzienny, miesiąc) ---- */
 
 function renderEventCard(ev) {
   const tytul = escapeHtml(ev.tytul || "");
@@ -85,6 +89,75 @@ function renderEventCard(ev) {
     ? ""
     : `<span class="m-event__time">${fmtTime(new Date(ev.data_czas))}</span>`;
   return `<a class="${klasa}" data-event-id="${ev.id}" title="${tytul}">${czas}${tytul}</a>`;
+}
+
+/* ---- blok wydarzenia godzinowego: pozycjonowany (Dzień / Tydzień) ---- */
+
+function renderEventBlock(b) {
+  const ev = b.ev;
+  const tytul = escapeHtml(ev.tytul || "");
+  const czas = fmtTime(new Date(ev.data_czas));
+  const styl =
+    `top:${b.topPx}px; height:${b.heightPx}px;` +
+    `left:${b.leftPct}%; width:calc(${b.widthPct}% - 3px);`;
+  return `<a class="m-event m-event--blok" data-event-id="${ev.id}" style="${styl}" `
+       + `title="${czas} ${tytul}"><span class="m-event__time">${czas}</span>${tytul}</a>`;
+}
+
+/* ---- układ nakładających się wydarzeń ----
+   Dzieli wydarzenia jednego dnia na "klastry" zachodzące na siebie;
+   w każdym klastrze przydziela pasy (kolumny). Zwraca bloki z pozycją. */
+
+function ulozBloki(evs, dzien) {
+  const dayStart = startOfDay(dzien).getTime();
+
+  const items = evs.map((ev) => {
+    const s = new Date(ev.data_czas).getTime();
+    let e = ev.koniec ? new Date(ev.koniec).getTime() : s + 60 * 60000;
+    if (e <= s) e = s + 30 * 60000;
+    let startMin = (s - dayStart) / 60000;
+    let endMin = (e - dayStart) / 60000;
+    if (startMin < 0) startMin = 0;
+    if (endMin > 1440) endMin = 1440;
+    return { ev, startMin, endMin };
+  });
+
+  items.sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+
+  const out = [];
+  let cluster = [];
+  let clusterEnd = -Infinity;
+
+  const flush = () => {
+    const lanes = []; // lanes[i] = koniec (min) ostatniego wydarzenia w pasie i
+    for (const it of cluster) {
+      let li = lanes.findIndex((end) => end <= it.startMin);
+      if (li === -1) { li = lanes.length; lanes.push(it.endMin); }
+      else lanes[li] = it.endMin;
+      it._lane = li;
+    }
+    const kol = lanes.length || 1;
+    for (const it of cluster) {
+      out.push({
+        ev: it.ev,
+        topPx: (it.startMin / 60) * H,
+        heightPx: Math.max(((it.endMin - it.startMin) / 60) * H, MIN_BLOK),
+        leftPct: (it._lane * 100) / kol,
+        widthPct: 100 / kol,
+      });
+    }
+    cluster = [];
+    clusterEnd = -Infinity;
+  };
+
+  for (const it of items) {
+    if (cluster.length && it.startMin >= clusterEnd) flush();
+    cluster.push(it);
+    clusterEnd = Math.max(clusterEnd, it.endMin);
+  }
+  if (cluster.length) flush();
+
+  return out;
 }
 
 /* ============================================================
@@ -105,22 +178,18 @@ export function montujKalendarz(opcje) {
 
   const state = {
     view: ["day", "week", "month"].includes(startowyWidok) ? startowyWidok : "week",
-    refDate: new Date(),
+    refDate: new Date(),   // dzień w centrum uwagi (i "wybrany" dzień)
     events: [],
     didInitialScroll: false,
   };
 
-  /* ---- podział eventów: całodzienne / godzinowe ---- */
+  /* ---- podział eventów ---- */
 
   function calodzienneDnia(d) {
     return state.events.filter((e) => e.caly_dzien && isSameDay(new Date(e.data_czas), d));
   }
-  function godzinoweWZakresie(from, to) {
-    return state.events.filter((e) => {
-      if (e.caly_dzien) return false;
-      const t = new Date(e.data_czas);
-      return t >= from && t < to;
-    });
+  function godzinoweDnia(d) {
+    return state.events.filter((e) => !e.caly_dzien && isSameDay(new Date(e.data_czas), d));
   }
 
   /* ---- status ---- */
@@ -214,38 +283,37 @@ export function montujKalendarz(opcje) {
     const dayStart = startOfDay(day);
 
     // pasek całodzienny (sticky)
-    const calodzienne = calodzienneDnia(day);
     const head = `
       <div class="day-head">
         <div class="day-allday">
           <div class="day-allday__label">cały dzień</div>
           <div class="day-allday__cell" data-slot-time="${dayStart.toISOString()}" data-allday="1">
-            ${calodzienne.map(renderEventCard).join("")}
+            ${calodzienneDnia(day).map(renderEventCard).join("")}
           </div>
         </div>
       </div>`;
 
-    // ciało — godziny
-    let body = `<div class="day-body">`;
+    // siatka godzin (tło)
+    let grid = `<div class="day-grid">`;
     for (const h of GODZINY) {
-      const slotStart = new Date(dayStart);
-      slotStart.setHours(h, 0, 0, 0);
-      const slotEnd = new Date(slotStart);
-      slotEnd.setHours(h + 1);
-      const evs = godzinoweWZakresie(slotStart, slotEnd);
-      body += `
+      const slot = new Date(dayStart);
+      slot.setHours(h, 0, 0, 0);
+      grid += `
         <div class="day-row">
-          <div class="day-hour">${String(h).padStart(2, "0")}:00</div>
-          <div class="day-slot" data-slot-time="${slotStart.toISOString()}">
-            ${evs.map(renderEventCard).join("")}
-          </div>
+          <div class="day-hour">${pad2(h)}:00</div>
+          <div class="day-slot" data-slot-time="${slot.toISOString()}"></div>
         </div>`;
     }
-    body += `</div>`;
+    grid += `</div>`;
 
-    panel.innerHTML = `<div class="day-view">${head}${body}</div>`;
+    // bloki wydarzeń godzinowych
+    const bloki = ulozBloki(godzinoweDnia(day), day);
+    const overlay = `<div class="day-events">${bloki.map(renderEventBlock).join("")}</div>`;
+
+    panel.innerHTML = `<div class="day-view">${head}<div class="day-body">${grid}${overlay}</div></div>`;
     attachSlotClicks(panel);
     attachEventClicks(panel);
+    attachGotoDay(panel);
     renderNowLine(panel, "day");
     maybeInitialScroll(panel, "day");
   }
@@ -258,15 +326,16 @@ export function montujKalendarz(opcje) {
     const dni = [];
     for (let i = 0; i < 7; i++) dni.push(addDays(weekStart, i));
 
-    // nagłówek dat
+    // nagłówek dat — kolumny klikalne (przejście do widoku Dnia)
     let header = `<div class="week-header"><div></div>`;
     for (let i = 0; i < 7; i++) {
       const d = dni[i];
-      const todayClass = isToday(d) ? "week-header__day-num--today" : "";
+      const todayCls = isToday(d) ? "week-header__day-num--today" : "";
+      const selCls = isSameDay(d, state.refDate) ? " week-header__col--selected" : "";
       header += `
-        <div>
+        <div class="week-header__col${selCls}" data-goto-day="${d.toISOString()}">
           ${DNI_KROTKO[i]}
-          <span class="week-header__day-num ${todayClass}">${d.getDate()}</span>
+          <span class="week-header__day-num ${todayCls}">${d.getDate()}</span>
         </div>`;
     }
     header += `</div>`;
@@ -275,38 +344,41 @@ export function montujKalendarz(opcje) {
     let allday = `<div class="week-allday"><div class="week-allday__label">cały dzień</div>`;
     for (let i = 0; i < 7; i++) {
       const d = dni[i];
-      const evs = calodzienneDnia(d);
       allday += `
         <div class="week-allday__cell" data-slot-time="${startOfDay(d).toISOString()}" data-allday="1">
-          ${evs.map(renderEventCard).join("")}
+          ${calodzienneDnia(d).map(renderEventCard).join("")}
         </div>`;
     }
     allday += `</div>`;
 
-    // ciało — godziny
-    let body = "";
-    for (const h of GODZINY) {
-      body += `<div class="week-hour">${String(h).padStart(2, "0")}:00</div>`;
-      for (let i = 0; i < 7; i++) {
-        const cellStart = new Date(dni[i]);
-        cellStart.setHours(h, 0, 0, 0);
-        const cellEnd = new Date(cellStart);
-        cellEnd.setHours(h + 1);
-        const evs = godzinoweWZakresie(cellStart, cellEnd);
-        body += `
-          <div class="week-cell" data-slot-time="${cellStart.toISOString()}">
-            ${evs.map(renderEventCard).join("")}
-          </div>`;
+    // ciało: kolumna godzin + 7 kolumn-dni
+    let hoursCol = `<div class="week-hours">`;
+    for (const h of GODZINY) hoursCol += `<div class="week-hour">${pad2(h)}:00</div>`;
+    hoursCol += `</div>`;
+
+    let dayCols = "";
+    for (let i = 0; i < 7; i++) {
+      const d = dni[i];
+      let bg = `<div class="week-day-bg">`;
+      for (const h of GODZINY) {
+        const slot = new Date(d);
+        slot.setHours(h, 0, 0, 0);
+        bg += `<div class="week-cell" data-slot-time="${slot.toISOString()}"></div>`;
       }
+      bg += `</div>`;
+      const bloki = ulozBloki(godzinoweDnia(d), d);
+      const overlay = `<div class="week-day-events">${bloki.map(renderEventBlock).join("")}</div>`;
+      dayCols += `<div class="week-day-col">${bg}${overlay}</div>`;
     }
 
     panel.innerHTML = `
       <div class="week-grid">
         <div class="week-head">${header}${allday}</div>
-        <div class="week-body">${body}</div>
+        <div class="week-body">${hoursCol}${dayCols}</div>
       </div>`;
     attachSlotClicks(panel);
     attachEventClicks(panel);
+    attachGotoDay(panel);
     renderNowLine(panel, "week");
     maybeInitialScroll(panel, "week");
   }
@@ -332,15 +404,16 @@ export function montujKalendarz(opcje) {
         const d = addDays(gridStart, w * 7 + i);
         const isOther = d.getMonth() !== ref.getMonth();
         const todayClass = isToday(d) ? "month-cell__num--today" : "";
-        const otherClass = isOther ? "month-cell--other" : "";
+        const otherClass = isOther ? " month-cell--other" : "";
+        const selClass = isSameDay(d, state.refDate) ? " month-cell--selected" : "";
 
         const eventsToday = state.events.filter((ev) => isSameDay(new Date(ev.data_czas), d));
         const visible = eventsToday.slice(0, 2);
         const more = eventsToday.length - visible.length;
 
         html += `
-          <div class="month-cell ${otherClass}" data-slot-time="${startOfDay(d).toISOString()}">
-            <span class="month-cell__num ${todayClass}">${d.getDate()}</span>
+          <div class="month-cell${otherClass}${selClass}" data-slot-time="${startOfDay(d).toISOString()}">
+            <span class="month-cell__num ${todayClass}" data-goto-day="${startOfDay(d).toISOString()}">${d.getDate()}</span>
             ${visible.map(renderEventCard).join("")}
             ${more > 0 ? `<span class="month-cell__more">+ ${more} więcej</span>` : ""}
           </div>`;
@@ -351,72 +424,53 @@ export function montujKalendarz(opcje) {
     panel.innerHTML = html;
     attachSlotClicks(panel);
     attachEventClicks(panel);
+    attachGotoDay(panel);
   }
 
-  /* ---- czerwona linia "teraz" (Dzień + Tydzień) ---- */
+  /* ---- czerwona linia "teraz" ---- */
 
   function renderNowLine(panel, view) {
     panel.querySelectorAll(".m-now-line, .m-now-label").forEach((e) => e.remove());
 
     const now = new Date();
-    const h = now.getHours();
-    const m = now.getMinutes();
-    if (h < GODZINY[0] || h > GODZINY[GODZINY.length - 1]) return;
 
-    let proby = 0;
-    const rysuj = () => {
-      let cell = null;
-      if (view === "day") {
-        const slots = panel.querySelectorAll(".day-slot");
-        cell = slots[h - GODZINY[0]] || null;
-      } else if (view === "week") {
-        const weekStart = startOfWeek(state.refDate);
-        const dayIdx = Math.round((startOfDay(now) - weekStart) / 86400000);
-        if (dayIdx < 0 || dayIdx > 6) return;
-        const cells = panel.querySelectorAll(".week-cell");
-        cell = cells[(h - GODZINY[0]) * 7 + dayIdx] || null;
-      }
-      if (!cell) return;
+    // tylko gdy "dziś" jest w widoku
+    if (view === "day" && !isToday(state.refDate)) return;
+    if (view === "week") {
+      const ws = startOfWeek(state.refDate);
+      const we = endOfWeek(state.refDate);
+      if (now < ws || now > we) return;
+    }
 
-      const cellRect = cell.getBoundingClientRect();
-      if (cellRect.height === 0 && proby < 10) {
-        proby++;
-        requestAnimationFrame(rysuj);
-        return;
-      }
+    const container = panel.querySelector(view === "day" ? ".day-body" : ".week-body");
+    if (!container) return;
 
-      panel.style.position = "relative";
-      const panelRect = panel.getBoundingClientRect();
-      const wysWiersza = cellRect.height || (view === "day" ? 56 : 44);
-      const top = (cellRect.top - panelRect.top) + (m / 60) * wysWiersza;
-      const left = cellRect.left - panelRect.left;
-      const width = cellRect.width || panel.clientWidth;
+    const minutes = now.getHours() * 60 + now.getMinutes();
+    const top = (minutes / 60) * H;
+    const left = (view === "day") ? 64 : 56;
 
-      const line = document.createElement("div");
-      line.className = "m-now-line";
-      line.style.cssText =
-        `position:absolute; top:${top}px; left:${left}px; width:${width}px;` +
-        `height:2px; background:var(--m-dzis, #dc2626); z-index:5; pointer-events:none;`;
-      const dot = document.createElement("div");
-      dot.style.cssText =
-        `position:absolute; left:-4px; top:-3px; width:8px; height:8px;` +
-        `border-radius:50%; background:var(--m-dzis, #dc2626);`;
-      line.appendChild(dot);
+    const line = document.createElement("div");
+    line.className = "m-now-line";
+    line.style.cssText =
+      `position:absolute; top:${top}px; left:${left}px; right:0;` +
+      `height:2px; background:var(--m-dzis, #dc2626); z-index:5; pointer-events:none;`;
+    const dot = document.createElement("div");
+    dot.style.cssText =
+      `position:absolute; left:-4px; top:-3px; width:8px; height:8px;` +
+      `border-radius:50%; background:var(--m-dzis, #dc2626);`;
+    line.appendChild(dot);
 
-      const label = document.createElement("div");
-      label.className = "m-now-label";
-      label.textContent = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-      label.style.cssText =
-        `position:absolute; top:${top - 8}px; left:2px;` +
-        `font-family:var(--m-font-mono, monospace); font-size:10px; font-weight:600;` +
-        `color:var(--m-dzis, #dc2626); background:var(--m-bg, #fff); padding:0 3px;` +
-        `z-index:6; pointer-events:none;`;
+    const label = document.createElement("div");
+    label.className = "m-now-label";
+    label.textContent = fmtTime(now);
+    label.style.cssText =
+      `position:absolute; top:${top - 8}px; left:2px;` +
+      `font-family:var(--m-font-mono, monospace); font-size:10px; font-weight:600;` +
+      `color:var(--m-dzis, #dc2626); background:var(--m-bg, #fff); padding:0 3px;` +
+      `z-index:6; pointer-events:none;`;
 
-      panel.appendChild(line);
-      panel.appendChild(label);
-    };
-
-    requestAnimationFrame(rysuj);
+    container.appendChild(line);
+    container.appendChild(label);
   }
 
   /* ---- auto-scroll do aktualnej godziny (raz, przy otwarciu) ---- */
@@ -426,34 +480,33 @@ export function montujKalendarz(opcje) {
     state.didInitialScroll = true;
 
     const now = new Date();
-    const h = now.getHours();
+    const h = isToday(state.refDate) ? now.getHours() : 8;
     let cell = null;
 
     if (view === "day") {
-      cell = panel.querySelectorAll(".day-slot")[h - GODZINY[0]] || null;
+      cell = panel.querySelectorAll(".day-slot")[h] || null;
     } else if (view === "week") {
-      const weekStart = startOfWeek(state.refDate);
-      const dayIdx = Math.round((startOfDay(now) - weekStart) / 86400000);
-      if (dayIdx < 0 || dayIdx > 6) return;
-      cell = panel.querySelectorAll(".week-cell")[(h - GODZINY[0]) * 7 + dayIdx] || null;
+      const ws = startOfWeek(state.refDate);
+      let idx = Math.round((startOfDay(now) - ws) / 86400000);
+      if (idx < 0 || idx > 6) idx = 0;
+      const col = panel.querySelectorAll(".week-day-col")[idx];
+      if (col) cell = col.querySelectorAll(".week-cell")[h] || null;
     }
 
     if (cell) {
-      requestAnimationFrame(() => {
-        cell.scrollIntoView({ behavior: "auto", block: "center" });
-      });
+      requestAnimationFrame(() => cell.scrollIntoView({ behavior: "auto", block: "center" }));
     }
   }
 
-  /* ---- interakcje — klik na slot / event ---- */
+  /* ---- interakcje ---- */
 
   function attachSlotClicks(scope) {
     scope.querySelectorAll("[data-slot-time]").forEach((el) => {
       el.addEventListener("click", (e) => {
         if (e.target.closest(".m-event")) return;
+        if (e.target.closest("[data-goto-day]")) return;
         const iso = el.getAttribute("data-slot-time");
-        const calyDzien = el.hasAttribute("data-allday");
-        onSlotClick(new Date(iso), { calyDzien });
+        onSlotClick(new Date(iso), { calyDzien: el.hasAttribute("data-allday") });
       });
     });
   }
@@ -465,6 +518,19 @@ export function montujKalendarz(opcje) {
         const id = el.getAttribute("data-event-id");
         const ev = state.events.find((x) => x.id === id);
         if (ev) onEventClick(ev);
+      });
+    });
+  }
+
+  // Paczka 1: klik w dzień → przejście do widoku Dnia tego dnia.
+  function attachGotoDay(scope) {
+    scope.querySelectorAll("[data-goto-day]").forEach((el) => {
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        state.refDate = new Date(el.getAttribute("data-goto-day"));
+        state.view = "day";
+        state.didInitialScroll = false;
+        reloadAndRender();
       });
     });
   }
@@ -486,7 +552,7 @@ export function montujKalendarz(opcje) {
     render();
   }
 
-  /* ---- init — podpięcie przycisków szkieletu ---- */
+  /* ---- init ---- */
 
   function init() {
     document.querySelectorAll(".m-toggle").forEach((btn) => {
@@ -519,8 +585,6 @@ export function montujKalendarz(opcje) {
   }
 
   init();
-
-  /* ---- publiczne API instancji ---- */
 
   return {
     odswiez: reloadAndRender,
