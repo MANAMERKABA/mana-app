@@ -8,15 +8,14 @@
 //   * Horyzont          → spina jedno z drugim + obsługuje własne okienko (modal)
 //
 // Zasada "siła w kaflach": logika żyje w kaflu/komponencie, pokój tylko jej
-// używa. Mocny kafel = mocne wszystkie pokoje. Kalendarza nie piszemy drugi
-// raz dla Pulsa — Puls weźmie ten sam komponent.
+// używa. Kalendarza nie piszemy drugi raz dla Pulsa — Puls weźmie ten sam komponent.
 //
 // Historia:
 //   21.05.2026 — pełna doba, linia "teraz", auto-scroll, sticky nagłówki
 //   22.05.2026 — ETAP 1: migracja na bazę MerKaBa_2026 (traveler 1, typ, koniec)
 //   23.05.2026 — ETAP 2a: dane przez shared/event.js
-//   23.05.2026 — ETAP 2b: widok kalendarza wyjęty do shared/kalendarz.js;
-//                Horyzont odchudzony do kompozycji + modalu
+//   23.05.2026 — ETAP 2b: widok kalendarza wyjęty do shared/kalendarz.js
+//   23.05.2026 — ETAP 2c: wybór typu eventu (koniec sztywnego "wydarzenie")
 
 import {
   pobierzEventy, utworzEvent, zaktualizujEvent, usunEvent,
@@ -29,6 +28,10 @@ import { montujKalendarz } from "../../shared/kalendarz.js";
 
 // MerKaBa_2026: Adam = travels.id 1 (stara baza mana-serce miała 17).
 const TRAVELER_ID = 1;
+
+// Dozwolone typy eventu (kafel EVENT). Domyślny dla Horyzonta: wydarzenie.
+const TYPY = ["wydarzenie", "zadanie", "wizyta", "wydatek"];
+const TYP_DOMYSLNY = "wydarzenie";
 
 // Instancja komponentu kalendarza — ustawiana w init().
 let kal = null;
@@ -74,6 +77,7 @@ function openModalCreate(slotDate) {
 
   document.getElementById("f-id").value = "";
   document.getElementById("f-tytul").value = "";
+  document.getElementById("f-typ").value = TYP_DOMYSLNY;
   document.getElementById("f-data-czas").value = toDatetimeLocalValue(slotDate || new Date());
   document.getElementById("f-czas-trwania").value = 60;
   document.getElementById("f-opis").value = "";
@@ -94,6 +98,7 @@ function openModalEdit(ev) {
 
   document.getElementById("f-id").value = ev.id;
   document.getElementById("f-tytul").value = ev.tytul || "";
+  document.getElementById("f-typ").value = TYPY.includes(ev.typ) ? ev.typ : TYP_DOMYSLNY;
   document.getElementById("f-data-czas").value = toDatetimeLocalValue(new Date(ev.data_czas));
   document.getElementById("f-czas-trwania").value = czasTrwaniaZEventu(ev);
   document.getElementById("f-opis").value = ev.opis || "";
@@ -123,6 +128,7 @@ async function handleSubmit(e) {
 
   const id = document.getElementById("f-id").value.trim();
   const tytul = document.getElementById("f-tytul").value.trim();
+  const typ = document.getElementById("f-typ").value;
   const dataCzasLocal = document.getElementById("f-data-czas").value;
   const czasTrwania = parseInt(document.getElementById("f-czas-trwania").value, 10);
   const opis = document.getElementById("f-opis").value.trim();
@@ -131,6 +137,7 @@ async function handleSubmit(e) {
   const przypomnienie = przypRaw === "" ? null : parseInt(przypRaw, 10);
 
   if (!tytul) { showFormError("Tytuł jest wymagany."); return; }
+  if (!TYPY.includes(typ)) { showFormError("Wybierz poprawny typ."); return; }
   if (!dataCzasLocal) { showFormError("Data i godzina są wymagane."); return; }
   if (!Number.isFinite(czasTrwania) || czasTrwania <= 0) { showFormError("Czas trwania musi być dodatnią liczbą minut."); return; }
 
@@ -141,6 +148,7 @@ async function handleSubmit(e) {
   const koniecISO = new Date(new Date(dataCzasISO).getTime() + czasTrwania * 60000).toISOString();
 
   const payload = {
+    typ,
     tytul,
     data_czas: dataCzasISO,
     koniec: koniecISO,
@@ -158,9 +166,7 @@ async function handleSubmit(e) {
     // event-update wymaga traveler_id (sprawdza własność wpisu).
     result = await zaktualizujEvent({ id, traveler_id: TRAVELER_ID, ...payload });
   } else {
-    // event-create wymaga `typ` — ETAP 1/2: na sztywno "wydarzenie".
-    // Wybór typu (zadanie/wizyta/wydatek) dochodzi w ETAP 2 krok 2c.
-    result = await utworzEvent({ traveler_id: TRAVELER_ID, typ: "wydarzenie", ...payload });
+    result = await utworzEvent({ traveler_id: TRAVELER_ID, ...payload });
   }
 
   saveBtn.disabled = false;
