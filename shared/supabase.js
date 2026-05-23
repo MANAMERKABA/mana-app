@@ -7,80 +7,117 @@
 // (MVP: anon_all; z-security: per podróżnik wg [600]).
 //
 // supabase-js z esm.sh (vanilla, bez build steps).
+//
+// 22.05.2026 — CEZURA / migracja pokój-po-pokoju:
+//   Aplikacja przechodzi ze starej bazy (mana-serce) na nową (MerKaBa_2026).
+//   Migracja idzie pokojami — każdy sprawdzony osobno, NIE jednym przepięciem.
+//     * Stara baza (mana-serce)   — klient `supabase`,     helper `callEdge`
+//         Używa: pokój Asystent osobisty (jeszcze nie zmigrowany).
+//     * Nowa baza  (MerKaBa_2026) — klient `supabase2026`, helper `callEdge2026`
+//         Używa: pokój Horyzont (kafel EVENT).
+//   Gdy wszystkie pokoje przejdą na nową bazę — stary klient i helper znikają.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
+/* ====================================================================
+   STARA BAZA — mana-serce (ref: kkxhqtfxvgxdqpnzaufu)
+   Backend pokoju Asystent osobisty. Do wygaszenia po pełnej migracji.
+   ==================================================================== */
 
 export const SUPABASE_URL = "https://kkxhqtfxvgxdqpnzaufu.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_93n6Xfe3o60dnFFDW-XJAg_94iSY3Bz";
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+/* ====================================================================
+   NOWA BAZA — MerKaBa_2026 (ref: olyqkajsgcgrjfmhfycb)
+   Backend kafla EVENT i pokoju Horyzont. Docelowa baza całej aplikacji.
+   ==================================================================== */
+
+export const SUPABASE_URL_2026 = "https://olyqkajsgcgrjfmhfycb.supabase.co";
+export const SUPABASE_KEY_2026 = "sb_publishable_lEM7JYJreuymivywT9xELw_gHaUnrC9";
+
+export const supabase2026 = createClient(SUPABASE_URL_2026, SUPABASE_KEY_2026);
+
+/* ====================================================================
+   callEdge — helper do wywoływania Edge Functions
+   ==================================================================== */
+
 /**
- * Wywołuje Edge Function projektu MANA przez fetch.
+ * Fabryka helpera callEdge — wiąże wywołania Edge Functions z jedną bazą.
+ * (Wcześniej callEdge było pojedynczą funkcją zaszytą na stałe pod starą
+ *  bazę. Po cezurze potrzebujemy dwóch — po jednej na bazę.)
+ *
  * Wszystkie Edge Functions Fazy A (event-create/update/delete) używają POST + JSON.
  *
  * Semantyka pola `ok` (fix [622] dług #3, 29.04.2026):
- *   ok = true  ↔  HTTP 2xx + parseable JSON + brak pola data.error
+ *   ok = true   ↔  HTTP 2xx + parseable JSON + brak pola data.error
  *   ok = false  ↔  HTTP non-2xx, niepoprawny JSON, lub data.error obecne
  *
  * Wcześniej `ok` wymagał jawnego `data.ok === true` od Edge Function.
- * Większość naszych EF (call-serce → {response}, summarize-conversation → {propozycje}, etc.)
+ * Większość EF (call-serce → {response}, summarize-conversation → {propozycje})
  * tego pola nie zwracała → callEdge.ok zawsze false → pokoje robiły workaround.
  * Po fixie kontrakt jest semantyczny (sukces = brak błędu), nie syntaktyczny.
- *
  * Workaround w asystent.js (sprawdzanie data.response) zostaje jako defense-in-depth.
  *
- * @param {string} fnName  np. "event-create"
- * @param {object} body    payload do wysłania jako JSON
- * @returns {Promise<{ok:boolean, status:number, data:any, error:string|null}>}
+ * @param {string} baseUrl  URL projektu Supabase
+ * @param {string} apiKey   klucz publiczny tego projektu
+ * @returns {(fnName:string, body:object) => Promise<{ok:boolean,status:number,data:any,error:string|null}>}
  */
-export async function callEdge(fnName, body) {
-  const url = `${SUPABASE_URL}/functions/v1/${fnName}`;
+function makeCallEdge(baseUrl, apiKey) {
+  return async function callEdge(fnName, body) {
+    const url = `${baseUrl}/functions/v1/${fnName}`;
 
-  let res;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (networkErr) {
-    return {
-      ok: false,
-      status: 0,
-      data: null,
-      error: `Network error: ${networkErr.message}`,
-    };
-  }
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (networkErr) {
+      return {
+        ok: false,
+        status: 0,
+        data: null,
+        error: `Network error: ${networkErr.message}`,
+      };
+    }
 
-  let data = null;
-  let parseError = null;
-  try {
-    data = await res.json();
-  } catch (e) {
-    parseError = `Niepoprawna odpowiedź serwera (status ${res.status})`;
-  }
+    let data = null;
+    let parseError = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      parseError = `Niepoprawna odpowiedź serwera (status ${res.status})`;
+    }
 
-  // Sukces semantyczny:
-  //   1) HTTP 2xx
-  //   2) JSON sparsowany
-  //   3) Brak data.error
-  // (Nie wymagamy data.ok === true — większość EF tego nie zwraca.)
-  const httpOk = res.ok;
-  const hasError = !!(data && typeof data === "object" && data.error);
-  const ok = httpOk && !parseError && !hasError;
+    // Sukces semantyczny: 1) HTTP 2xx  2) JSON sparsowany  3) brak data.error
+    const httpOk = res.ok;
+    const hasError = !!(data && typeof data === "object" && data.error);
+    const ok = httpOk && !parseError && !hasError;
 
-  const error = parseError
-    ? parseError
-    : (hasError ? String(data.error) : (httpOk ? null : `HTTP ${res.status}`));
+    const error = parseError
+      ? parseError
+      : (hasError ? String(data.error) : (httpOk ? null : `HTTP ${res.status}`));
 
-  return {
-    ok,
-    status: res.status,
-    data: data,
-    error,
+    return { ok, status: res.status, data, error };
   };
 }
+
+/**
+ * callEdge — Edge Functions STAREJ bazy (mana-serce).
+ * Backend pokoju Asystent osobisty.
+ * @type {(fnName:string, body:object) => Promise<{ok:boolean,status:number,data:any,error:string|null}>}
+ */
+export const callEdge = makeCallEdge(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/**
+ * callEdge2026 — Edge Functions NOWEJ bazy (MerKaBa_2026).
+ * Backend kafla EVENT / pokoju Horyzont (event-create/update/delete).
+ * @type {(fnName:string, body:object) => Promise<{ok:boolean,status:number,data:any,error:string|null}>}
+ */
+export const callEdge2026 = makeCallEdge(SUPABASE_URL_2026, SUPABASE_KEY_2026);
