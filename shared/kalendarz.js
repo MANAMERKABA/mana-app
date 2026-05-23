@@ -411,9 +411,11 @@ export function montujKalendarz(opcje) {
         const visible = eventsToday.slice(0, 2);
         const more = eventsToday.length - visible.length;
 
+        // Widok Miesiąc = przeglądowy: klik w cały dzień otwiera ten dzień.
+        // Tworzenie eventu: przycisk "+ Nowy event" lub klik w godzinę w Dzień/Tydzień.
         html += `
-          <div class="month-cell${otherClass}${selClass}" data-slot-time="${startOfDay(d).toISOString()}">
-            <span class="month-cell__num ${todayClass}" data-goto-day="${startOfDay(d).toISOString()}">${d.getDate()}</span>
+          <div class="month-cell${otherClass}${selClass}" data-goto-day="${startOfDay(d).toISOString()}">
+            <span class="month-cell__num ${todayClass}">${d.getDate()}</span>
             ${visible.map(renderEventCard).join("")}
             ${more > 0 ? `<span class="month-cell__more">+ ${more} więcej</span>` : ""}
           </div>`;
