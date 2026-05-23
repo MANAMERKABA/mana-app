@@ -2,19 +2,22 @@
    MANA — wspólny komponent-widok KALENDARZ
    Widoki Dzień / Tydzień / Miesiąc dla danych kafla EVENT.
 
-   Przeniesione 23.05.2026 z rooms/horyzont/horyzont.css (ETAP 2b).
-   23.05.2026 — wydarzenia całodzienne: pasek na górze, przyklejony
-   razem z nagłówkiem daty (sticky head + scrollujące się ciało).
+   23.05.2026 — ETAP 2b: komponent wydzielony z horyzont.js.
+   23.05.2026 — wydarzenia całodzienne: pasek na górze (sticky).
+   23.05.2026 — Paczka 1+2:
+     * klik w dzień → przejście do widoku Dnia
+     * wydarzenia godzinowe rysowane jako BLOKI o wysokości = czas trwania
+     * nakładające się wydarzenia układane obok siebie
 
-   Kolory WYŁĄCZNIE przez tokeny --m-* (shared/styles.css).
-   Akcent "dziś / teraz": token --m-dzis (fallback #dc2626).
+   Wysokość godziny: 52px. MUSI być zgodna ze stałą H w kalendarz.js.
+   Kolory wyłącznie przez tokeny --m-*; akcent "dziś": --m-dzis (#dc2626).
    ============================================================ */
 
 .m-view__panel { width: 100%; }
 .m-view__panel[hidden] { display: none; }
 
 /* ============================================================
-   Widok DZIEŃ — pasek całodzienny (sticky) + lista godzin 0-23
+   Widok DZIEŃ
    ============================================================ */
 
 .day-head {
@@ -29,7 +32,9 @@
   border-top: 1px solid var(--m-line-soft);
 }
 
-.day-body {
+.day-body { position: relative; }
+
+.day-grid {
   display: grid;
   grid-template-columns: 64px 1fr;
 }
@@ -37,10 +42,12 @@
 .day-row { display: contents; }
 
 .day-hour {
+  height: 52px;
+  box-sizing: border-box;
   font-family: var(--m-font-mono);
   font-size: 11px;
   color: var(--m-ink-soft);
-  padding: var(--m-s-2) var(--m-s-3);
+  padding: 2px var(--m-s-3) 0;
   border-right: 1px solid var(--m-line);
   border-bottom: 1px solid var(--m-line-soft);
   text-align: right;
@@ -48,18 +55,26 @@
 }
 
 .day-slot {
-  position: relative;
-  min-height: 56px;
-  padding: 4px 8px;
+  height: 52px;
+  box-sizing: border-box;
   border-bottom: 1px solid var(--m-line-soft);
   cursor: pointer;
 }
 
 .day-slot:hover { background: var(--m-bg-soft); }
 
+/* warstwa wydarzeń godzinowych — nad siatką godzin */
+.day-events {
+  position: absolute;
+  top: 0;
+  left: 64px;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
 /* ============================================================
-   Widok TYDZIEŃ — sticky head (daty + pasek całodzienny)
-   + scrollujące ciało (7 kolumn × godziny)
+   Widok TYDZIEŃ
    ============================================================ */
 
 .week-head {
@@ -86,6 +101,11 @@
   background: var(--m-bg-soft);
 }
 
+/* nagłówek dnia — klikalny (przejście do widoku Dnia) */
+.week-header__col { cursor: pointer; }
+.week-header__col:hover { background: var(--m-bg); }
+.week-header__col--selected { background: var(--m-bg); }
+
 .week-header__day-num {
   display: block;
   font-family: var(--m-font-display);
@@ -95,7 +115,6 @@
   margin-top: 2px;
 }
 
-/* dzisiejszy dzień — akcent "dziś" (token, z fallbackiem) */
 .week-header__day-num--today { color: var(--m-dzis, #dc2626); }
 
 .week-allday {
@@ -107,28 +126,39 @@
   display: grid;
   grid-template-columns: 56px repeat(7, 1fr);
   border-top: 1px solid var(--m-line-soft);
-}
-
-.week-cell {
   position: relative;
-  min-height: 44px;
-  border-right: 1px solid var(--m-line-soft);
-  border-bottom: 1px solid var(--m-line-soft);
-  cursor: pointer;
-  padding: 2px;
 }
-
-.week-cell:hover { background: var(--m-bg-soft); }
 
 .week-hour {
+  height: 52px;
+  box-sizing: border-box;
   font-family: var(--m-font-mono);
   font-size: 10px;
   color: var(--m-ink-soft);
-  padding: 4px var(--m-s-2);
+  padding: 2px var(--m-s-2) 0;
   border-right: 1px solid var(--m-line);
   border-bottom: 1px solid var(--m-line-soft);
   text-align: right;
   background: var(--m-bg);
+}
+
+.week-day-col { position: relative; }
+
+.week-cell {
+  height: 52px;
+  box-sizing: border-box;
+  border-right: 1px solid var(--m-line-soft);
+  border-bottom: 1px solid var(--m-line-soft);
+  cursor: pointer;
+}
+
+.week-cell:hover { background: var(--m-bg-soft); }
+
+/* warstwa wydarzeń godzinowych jednej kolumny-dnia */
+.week-day-events {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 /* ============================================================
@@ -167,7 +197,7 @@
 .week-allday__cell:hover { background: var(--m-bg); }
 
 /* ============================================================
-   Widok MIESIĄC — siatka 5/6 × 7
+   Widok MIESIĄC
    ============================================================ */
 
 .month-grid {
@@ -206,18 +236,21 @@
 }
 
 .month-cell:hover { background: var(--m-bg-soft); }
-
-.month-cell--other {
-  background: var(--m-bg-soft);
-  color: var(--m-ink-soft);
-}
+.month-cell--other { background: var(--m-bg-soft); }
+.month-cell--selected { outline: 2px solid var(--m-turkus); outline-offset: -2px; }
 
 .month-cell__num {
   font-family: var(--m-font-display);
   font-size: 16px;
   font-weight: 400;
   color: var(--m-ink);
+  cursor: pointer;
+  align-self: flex-start;
+  padding: 0 4px;
+  border-radius: 3px;
 }
+
+.month-cell__num:hover { background: var(--m-turkus-l); }
 
 .month-cell__num--today {
   color: var(--m-dzis, #dc2626);
@@ -227,7 +260,7 @@
 .month-cell--other .month-cell__num { color: var(--m-line); }
 
 /* ============================================================
-   Karty eventów — wspólny wygląd we wszystkich widokach
+   Karty / bloki wydarzeń
    ============================================================ */
 
 .m-event {
@@ -261,14 +294,31 @@
 
 .m-event:hover .m-event__time { color: var(--m-bg); opacity: 0.8; }
 
-/* karta wydarzenia całodziennego — w pasku, kompaktowa */
+/* karta w pasku całodziennym */
 .m-event--allday {
   margin-bottom: 2px;
   font-size: 12px;
   padding: 2px 8px;
 }
 
-/* w widoku miesiąca eventy są kompaktowe */
+/* BLOK wydarzenia godzinowego — pozycja/wymiar liczone w JS (inline style).
+   Wysokość = czas trwania, szerokość/lewa = pas przy nakładaniu. */
+.m-event--blok {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  z-index: 2;
+  font-size: 12px;
+  padding: 3px 6px;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+/* wydarzenia (bloki) są klikalne, choć warstwa-rodzic ma pointer-events:none */
+.day-events .m-event,
+.week-day-events .m-event { pointer-events: auto; }
+
+/* w widoku miesiąca eventy kompaktowe */
 .month-cell .m-event {
   font-size: 11px;
   padding: 2px 6px;
@@ -276,7 +326,6 @@
 
 .month-cell .m-event__time { display: none; }
 
-/* dot dla widoku miesiąca gdy >2 eventy */
 .month-cell__more {
   font-family: var(--m-font-mono);
   font-size: 10px;
