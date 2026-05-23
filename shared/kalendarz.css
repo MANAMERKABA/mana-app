@@ -2,11 +2,11 @@
    MANA — wspólny komponent-widok KALENDARZ
    Widoki Dzień / Tydzień / Miesiąc dla danych kafla EVENT.
 
-   Przeniesione 23.05.2026 z rooms/horyzont/horyzont.css (ETAP 2b)
-   — kalendarz jako reużywalny komponent-widok (Horyzont, Puls…).
+   Przeniesione 23.05.2026 z rooms/horyzont/horyzont.css (ETAP 2b).
+   23.05.2026 — wydarzenia całodzienne: pasek na górze, przyklejony
+   razem z nagłówkiem daty (sticky head + scrollujące się ciało).
 
    Kolory WYŁĄCZNIE przez tokeny --m-* (shared/styles.css).
-   Zmiana motywu = zmiana tokenów, bez dotykania tego pliku.
    Akcent "dziś / teraz": token --m-dzis (fallback #dc2626).
    ============================================================ */
 
@@ -14,18 +14,27 @@
 .m-view__panel[hidden] { display: none; }
 
 /* ============================================================
-   Widok DZIEŃ — pionowa lista godzin 0-23
+   Widok DZIEŃ — pasek całodzienny (sticky) + lista godzin 0-23
    ============================================================ */
 
-.day-grid {
+.day-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.day-allday {
   display: grid;
   grid-template-columns: 64px 1fr;
   border-top: 1px solid var(--m-line-soft);
 }
 
-.day-row {
-  display: contents;
+.day-body {
+  display: grid;
+  grid-template-columns: 64px 1fr;
 }
+
+.day-row { display: contents; }
 
 .day-hour {
   font-family: var(--m-font-mono);
@@ -49,17 +58,19 @@
 .day-slot:hover { background: var(--m-bg-soft); }
 
 /* ============================================================
-   Widok TYDZIEŃ — 7 kolumn × godziny
+   Widok TYDZIEŃ — sticky head (daty + pasek całodzienny)
+   + scrollujące ciało (7 kolumn × godziny)
    ============================================================ */
 
-.week-grid {
-  display: grid;
-  grid-template-columns: 56px repeat(7, 1fr);
-  border-top: 1px solid var(--m-line-soft);
+.week-head {
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
 
 .week-header {
-  display: contents;
+  display: grid;
+  grid-template-columns: 56px repeat(7, 1fr);
 }
 
 .week-header > * {
@@ -73,10 +84,6 @@
   border-right: 1px solid var(--m-line-soft);
   border-bottom: 1px solid var(--m-line);
   background: var(--m-bg-soft);
-  /* sticky nagłówki dni przy scrollu (było: wstrzyknięte z JS) */
-  position: sticky;
-  top: 0;
-  z-index: 20;
 }
 
 .week-header__day-num {
@@ -90,6 +97,17 @@
 
 /* dzisiejszy dzień — akcent "dziś" (token, z fallbackiem) */
 .week-header__day-num--today { color: var(--m-dzis, #dc2626); }
+
+.week-allday {
+  display: grid;
+  grid-template-columns: 56px repeat(7, 1fr);
+}
+
+.week-body {
+  display: grid;
+  grid-template-columns: 56px repeat(7, 1fr);
+  border-top: 1px solid var(--m-line-soft);
+}
 
 .week-cell {
   position: relative;
@@ -114,6 +132,41 @@
 }
 
 /* ============================================================
+   Pasek całodzienny — wspólne komórki (Dzień + Tydzień)
+   ============================================================ */
+
+.day-allday__label,
+.week-allday__label {
+  font-family: var(--m-font-mono);
+  font-size: 9px;
+  line-height: 1.15;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--m-ink-soft);
+  background: var(--m-bg-soft);
+  border-right: 1px solid var(--m-line);
+  border-bottom: 1px solid var(--m-line);
+  padding: 4px var(--m-s-2);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.day-allday__cell,
+.week-allday__cell {
+  min-height: 28px;
+  padding: 3px;
+  background: var(--m-bg-soft);
+  border-right: 1px solid var(--m-line-soft);
+  border-bottom: 1px solid var(--m-line);
+  cursor: pointer;
+}
+
+.day-allday__cell:hover,
+.week-allday__cell:hover { background: var(--m-bg); }
+
+/* ============================================================
    Widok MIESIĄC — siatka 5/6 × 7
    ============================================================ */
 
@@ -135,7 +188,6 @@
   background: var(--m-bg-soft);
   border-right: 1px solid var(--m-line-soft);
   border-bottom: 1px solid var(--m-line);
-  /* sticky nazwy dni przy scrollu (było: wstrzyknięte z JS) */
   position: sticky;
   top: 0;
   z-index: 20;
@@ -167,7 +219,6 @@
   color: var(--m-ink);
 }
 
-/* dzisiejszy dzień — akcent "dziś" (token, z fallbackiem) */
 .month-cell__num--today {
   color: var(--m-dzis, #dc2626);
   font-weight: 700;
@@ -209,6 +260,13 @@
 }
 
 .m-event:hover .m-event__time { color: var(--m-bg); opacity: 0.8; }
+
+/* karta wydarzenia całodziennego — w pasku, kompaktowa */
+.m-event--allday {
+  margin-bottom: 2px;
+  font-size: 12px;
+  padding: 2px 8px;
+}
 
 /* w widoku miesiąca eventy są kompaktowe */
 .month-cell .m-event {
