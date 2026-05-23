@@ -69,14 +69,9 @@
           <input type="text" id="f-tytul" name="tytul" required maxlength="200" autocomplete="off">
         </label>
 
-        <label class="m-field">
-          <span class="m-field__label">Typ</span>
-          <select id="f-typ" name="typ">
-            <option value="wydarzenie">Wydarzenie</option>
-            <option value="zadanie">Zadanie</option>
-            <option value="wizyta">Wizyta</option>
-            <option value="wydatek">Wydatek</option>
-          </select>
+        <label class="m-field m-field--checkbox">
+          <input type="checkbox" id="f-caly-dzien" name="caly_dzien">
+          <span class="m-field__label">Wydarzenie całodzienne</span>
         </label>
 
         <div class="m-field-row">
@@ -84,7 +79,7 @@
             <span class="m-field__label">Data i godzina <em>*</em></span>
             <input type="datetime-local" id="f-data-czas" name="data_czas" required>
           </label>
-          <label class="m-field">
+          <label class="m-field" id="m-field-trwanie">
             <span class="m-field__label">Czas trwania (min)</span>
             <input type="number" id="f-czas-trwania" name="czas_trwania_min" min="1" max="1440" value="60">
           </label>
