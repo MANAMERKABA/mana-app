@@ -10,6 +10,8 @@
 // 23.05.2026 — Paczka 1: klik w dzień → przejście do widoku Dnia.
 // 23.05.2026 — Paczka 2: wydarzenia godzinowe jako BLOKI o wysokości
 //   równej czasowi trwania; nakładające się wydarzenia obok siebie.
+// 23.05.2026 — Z1: handler .m-toggle ignoruje widoki spoza kalendarza
+//   (np. "zadania" — obsługuje go pokój Horyzont, nie ten komponent).
 //
 // Szkielet DOM (w mana-app: index.html):
 //   .m-toggle[data-view], #m-prev #m-today #m-next #m-period-label
@@ -18,7 +20,7 @@
 // Użycie:
 //   const kal = montujKalendarz({
 //     zaladujEventy: async (from, to) => ({ ok, events, error }),
-//     onSlotClick:   (date, opcje) => {...},   // opcje.calyDzien gdy pasek całodzienny
+//     onSlotClick:   (date, opcje) => {...},
 //     onEventClick:  (event) => {...},
 //     startowyWidok: "week",
 //   });
@@ -104,9 +106,7 @@ function renderEventBlock(b) {
        + `title="${czas} ${tytul}"><span class="m-event__time">${czas}</span>${tytul}</a>`;
 }
 
-/* ---- układ nakładających się wydarzeń ----
-   Dzieli wydarzenia jednego dnia na "klastry" zachodzące na siebie;
-   w każdym klastrze przydziela pasy (kolumny). Zwraca bloki z pozycją. */
+/* ---- układ nakładających się wydarzeń ---- */
 
 function ulozBloki(evs, dzien) {
   const dayStart = startOfDay(dzien).getTime();
@@ -129,7 +129,7 @@ function ulozBloki(evs, dzien) {
   let clusterEnd = -Infinity;
 
   const flush = () => {
-    const lanes = []; // lanes[i] = koniec (min) ostatniego wydarzenia w pasie i
+    const lanes = [];
     for (const it of cluster) {
       let li = lanes.findIndex((end) => end <= it.startMin);
       if (li === -1) { li = lanes.length; lanes.push(it.endMin); }
@@ -178,12 +178,10 @@ export function montujKalendarz(opcje) {
 
   const state = {
     view: ["day", "week", "month"].includes(startowyWidok) ? startowyWidok : "week",
-    refDate: new Date(),   // dzień w centrum uwagi (i "wybrany" dzień)
+    refDate: new Date(),
     events: [],
     didInitialScroll: false,
   };
-
-  /* ---- podział eventów ---- */
 
   function calodzienneDnia(d) {
     return state.events.filter((e) => e.caly_dzien && isSameDay(new Date(e.data_czas), d));
@@ -192,14 +190,10 @@ export function montujKalendarz(opcje) {
     return state.events.filter((e) => !e.caly_dzien && isSameDay(new Date(e.data_czas), d));
   }
 
-  /* ---- status ---- */
-
   function setStatus(msg) {
     const el = document.getElementById("m-status");
     if (el) el.textContent = msg || "";
   }
-
-  /* ---- zakres widoku ---- */
 
   function getViewRange() {
     const ref = state.refDate;
@@ -222,8 +216,6 @@ export function montujKalendarz(opcje) {
       case "month": return `${MIESIACE[state.refDate.getMonth()]} ${state.refDate.getFullYear()}`;
     }
   }
-
-  /* ---- pobranie eventów ---- */
 
   async function loadEvents() {
     setStatus("Ładuję eventy…");
@@ -253,8 +245,6 @@ export function montujKalendarz(opcje) {
       : `${state.events.length} event(y) załadowane.`);
   }
 
-  /* ---- render — wybór widoku ---- */
-
   function render() {
     ["day", "week", "month"].forEach((v) => {
       const panel = document.getElementById(`m-view-${v}`);
@@ -262,6 +252,7 @@ export function montujKalendarz(opcje) {
     });
 
     document.querySelectorAll(".m-toggle").forEach((btn) => {
+      if (!["day", "week", "month"].includes(btn.dataset.view)) return;
       btn.setAttribute("aria-pressed", btn.dataset.view === state.view ? "true" : "false");
     });
 
@@ -275,14 +266,11 @@ export function montujKalendarz(opcje) {
     }
   }
 
-  /* ---- render DZIEŃ ---- */
-
   function renderDay() {
     const panel = document.getElementById("m-view-day");
     const day = state.refDate;
     const dayStart = startOfDay(day);
 
-    // pasek całodzienny (sticky)
     const head = `
       <div class="day-head">
         <div class="day-allday">
@@ -293,7 +281,6 @@ export function montujKalendarz(opcje) {
         </div>
       </div>`;
 
-    // siatka godzin (tło)
     let grid = `<div class="day-grid">`;
     for (const h of GODZINY) {
       const slot = new Date(dayStart);
@@ -306,7 +293,6 @@ export function montujKalendarz(opcje) {
     }
     grid += `</div>`;
 
-    // bloki wydarzeń godzinowych
     const bloki = ulozBloki(godzinoweDnia(day), day);
     const overlay = `<div class="day-events">${bloki.map(renderEventBlock).join("")}</div>`;
 
@@ -318,15 +304,12 @@ export function montujKalendarz(opcje) {
     maybeInitialScroll(panel, "day");
   }
 
-  /* ---- render TYDZIEŃ ---- */
-
   function renderWeek() {
     const panel = document.getElementById("m-view-week");
     const weekStart = startOfWeek(state.refDate);
     const dni = [];
     for (let i = 0; i < 7; i++) dni.push(addDays(weekStart, i));
 
-    // nagłówek dat — kolumny klikalne (przejście do widoku Dnia)
     let header = `<div class="week-header"><div></div>`;
     for (let i = 0; i < 7; i++) {
       const d = dni[i];
@@ -340,7 +323,6 @@ export function montujKalendarz(opcje) {
     }
     header += `</div>`;
 
-    // pasek całodzienny
     let allday = `<div class="week-allday"><div class="week-allday__label">cały dzień</div>`;
     for (let i = 0; i < 7; i++) {
       const d = dni[i];
@@ -351,7 +333,6 @@ export function montujKalendarz(opcje) {
     }
     allday += `</div>`;
 
-    // ciało: kolumna godzin + 7 kolumn-dni
     let hoursCol = `<div class="week-hours">`;
     for (const h of GODZINY) hoursCol += `<div class="week-hour">${pad2(h)}:00</div>`;
     hoursCol += `</div>`;
@@ -383,8 +364,6 @@ export function montujKalendarz(opcje) {
     maybeInitialScroll(panel, "week");
   }
 
-  /* ---- render MIESIĄC ---- */
-
   function renderMonth() {
     const panel = document.getElementById("m-view-month");
     const ref = state.refDate;
@@ -411,8 +390,6 @@ export function montujKalendarz(opcje) {
         const visible = eventsToday.slice(0, 2);
         const more = eventsToday.length - visible.length;
 
-        // Widok Miesiąc = przeglądowy: klik w cały dzień otwiera ten dzień.
-        // Tworzenie eventu: przycisk "+ Nowy event" lub klik w godzinę w Dzień/Tydzień.
         html += `
           <div class="month-cell${otherClass}${selClass}" data-goto-day="${startOfDay(d).toISOString()}">
             <span class="month-cell__num ${todayClass}">${d.getDate()}</span>
@@ -429,14 +406,11 @@ export function montujKalendarz(opcje) {
     attachGotoDay(panel);
   }
 
-  /* ---- czerwona linia "teraz" ---- */
-
   function renderNowLine(panel, view) {
     panel.querySelectorAll(".m-now-line, .m-now-label").forEach((e) => e.remove());
 
     const now = new Date();
 
-    // tylko gdy "dziś" jest w widoku
     if (view === "day" && !isToday(state.refDate)) return;
     if (view === "week") {
       const ws = startOfWeek(state.refDate);
@@ -475,8 +449,6 @@ export function montujKalendarz(opcje) {
     container.appendChild(label);
   }
 
-  /* ---- auto-scroll do aktualnej godziny (raz, przy otwarciu) ---- */
-
   function maybeInitialScroll(panel, view) {
     if (state.didInitialScroll) return;
     state.didInitialScroll = true;
@@ -500,8 +472,6 @@ export function montujKalendarz(opcje) {
     }
   }
 
-  /* ---- interakcje ---- */
-
   function attachSlotClicks(scope) {
     scope.querySelectorAll("[data-slot-time]").forEach((el) => {
       el.addEventListener("click", (e) => {
@@ -524,7 +494,6 @@ export function montujKalendarz(opcje) {
     });
   }
 
-  // Paczka 1: klik w dzień → przejście do widoku Dnia tego dnia.
   function attachGotoDay(scope) {
     scope.querySelectorAll("[data-goto-day]").forEach((el) => {
       el.addEventListener("click", (e) => {
@@ -536,8 +505,6 @@ export function montujKalendarz(opcje) {
       });
     });
   }
-
-  /* ---- nawigacja ---- */
 
   function shiftDate(direction) {
     const d = new Date(state.refDate);
@@ -554,11 +521,11 @@ export function montujKalendarz(opcje) {
     render();
   }
 
-  /* ---- init ---- */
-
   function init() {
     document.querySelectorAll(".m-toggle").forEach((btn) => {
       btn.addEventListener("click", async () => {
+        // Z1: ignoruj widoki spoza kalendarza (np. "zadania" — obsługuje Horyzont).
+        if (!["day", "week", "month"].includes(btn.dataset.view)) return;
         state.view = btn.dataset.view;
         state.didInitialScroll = false;
         await reloadAndRender();
