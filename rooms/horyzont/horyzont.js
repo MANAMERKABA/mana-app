@@ -2,32 +2,35 @@
 //
 // MANA — Faza A (z5.A) — pokój Horyzont.
 //
-// Pokój CIENKI — kompozycja, nie biblioteka:
-//   * widok kalendarza → wspólny komponent  shared/kalendarz.js
-//   * widok listy zadań → wspólny komponent shared/zadania.js
-//   * dane → wspólny klient kafla EVENT      shared/event.js
-//   * Horyzont → spina to + obsługuje okienka (modale)
+// Pokój CIENKI — kompozycja:
+//   * widok kalendarza → shared/kalendarz.js
+//   * widok listy zadań → shared/zadania.js
+//   * dane → shared/event.js (kafel EVENT)
+//   * logowanie → shared/auth.js (Warstwa 1 PODRÓŻNIK)
 //
-// Historia:
-//   21–23.05.2026 — ETAP 1/2: migracja, komponent kalendarza, całodzienne
-//   23.05.2026 — Z1 widok: lista zadań jako czwarty widok obok
-//     Dzień / Tydzień / Miesiąc. Zadanie = typ="zadanie" w kaflu EVENT.
+// 24.05.2026 — Krok 1: brama logowania. Aplikacja startuje przez start():
+//   niezalogowany → ekran logowania; zalogowany → aplikacja z jego
+//   traveler_id (koniec sztywnej "1"). Powrót z linka resetu hasła →
+//   ekran "ustaw nowe hasło".
 
 import {
   pobierzEventy, utworzEvent, zaktualizujEvent, usunEvent, utworzZadanie,
 } from "../../shared/event.js";
 import { montujKalendarz } from "../../shared/kalendarz.js";
 import { montujZadania } from "../../shared/zadania.js";
+import {
+  getCurrentTraveler, montujEkranLogowania, nasluchujOdzyskiwania, wyloguj,
+} from "../../shared/auth.js";
 
 /* ============================================================
    KONFIGURACJA
    ============================================================ */
 
-// MerKaBa_2026: Adam = travels.id 1.
-const TRAVELER_ID = 1;
+// Ustawiane po zalogowaniu na podstawie sesji (dawniej sztywne 1).
+let TRAVELER_ID = null;
 
-let kal = null;          // instancja komponentu kalendarza
-let zadaniaKomp = null;  // instancja komponentu listy zadań
+let kal = null;
+let zadaniaKomp = null;
 
 /* ============================================================
    POMOCNICZE — daty (okienka)
@@ -62,8 +65,6 @@ function czasTrwaniaZEventu(ev) {
    PRZEŁĄCZANIE WIDOKÓW — kalendarz / zadania
    ============================================================ */
 
-// Chowamy przez style.display (a nie atrybut hidden), bo .m-subnav ma
-// w CSS display:flex — to przebija [hidden]. Inline style wygrywa.
 function pokazZadania() {
   document.querySelector(".m-view").style.display = "none";
   document.querySelector(".m-subnav").style.display = "none";
@@ -249,7 +250,7 @@ async function handleDelete() {
 }
 
 /* ============================================================
-   OKIENKO — ZADANIE (Z1)
+   OKIENKO — ZADANIE
    ============================================================ */
 
 const PRIORYTETY = ["niski", "normalny", "wysoki", "pilny"];
@@ -308,7 +309,6 @@ async function handleZadanieSubmit(e) {
 
   if (!tytul) { showZError("Tytuł jest wymagany."); return; }
 
-  // Termin zadania jest OPCJONALNY — puste = zadanie bez terminu.
   let dataCzasISO = null;
   if (terminRaw) {
     dataCzasISO = datetimeLocalToISO(terminRaw);
@@ -330,7 +330,6 @@ async function handleZadanieSubmit(e) {
   if (id) {
     result = await zaktualizujEvent({ id, traveler_id: TRAVELER_ID, ...payload });
   } else {
-    // utworzZadanie wymusza typ="zadanie".
     result = await utworzZadanie({ traveler_id: TRAVELER_ID, ...payload });
   }
 
@@ -364,7 +363,7 @@ async function handleZadanieDelete() {
 }
 
 /* ============================================================
-   INIT — Horyzont jako kompozycja
+   INIT — montaż aplikacji (po zalogowaniu)
    ============================================================ */
 
 function init() {
@@ -382,7 +381,6 @@ function init() {
     onEdytuj: openZadanieEdit,
   });
 
-  // Przełączanie widoków: 3 toggle kalendarza + Zadania.
   document.querySelectorAll(".m-toggle").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll(".m-toggle").forEach((b) => {
@@ -393,7 +391,6 @@ function init() {
     });
   });
 
-  // Okienko wydarzenia.
   document.getElementById("m-add").addEventListener("click", () => openModalCreate(new Date()));
   document.querySelectorAll("[data-close]").forEach((el) => el.addEventListener("click", closeModal));
   document.getElementById("m-form").addEventListener("submit", handleSubmit);
@@ -402,7 +399,6 @@ function init() {
     ustawTrybCalodzienny(e.target.checked);
   });
 
-  // Okienko zadania.
   document.querySelectorAll("[data-zclose]").forEach((el) => el.addEventListener("click", closeZadanie));
   document.getElementById("z-form").addEventListener("submit", handleZadanieSubmit);
   document.getElementById("z-delete").addEventListener("click", handleZadanieDelete);
@@ -412,8 +408,57 @@ function init() {
   });
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", init);
-} else {
+/* ============================================================
+   START — brama logowania
+   ============================================================ */
+
+async function start() {
+  const loginEl = document.getElementById("m-login");
+  const appEl = document.getElementById("m-app");
+
+  // Powrót z linka resetu hasła → ekran "ustaw nowe hasło".
+  let recovery = false;
+  nasluchujOdzyskiwania(() => {
+    recovery = true;
+    appEl.style.display = "none";
+    loginEl.style.display = "block";
+    montujEkranLogowania(loginEl, {
+      startowy: "nowehaslo",
+      onZalogowano: () => location.reload(),
+    });
+  });
+
+  // Krótka chwila na ewentualne zdarzenie PASSWORD_RECOVERY.
+  await new Promise((r) => setTimeout(r, 250));
+  if (recovery) return;
+
+  const traveler = await getCurrentTraveler();
+
+  if (!traveler) {
+    appEl.style.display = "none";
+    loginEl.style.display = "block";
+    montujEkranLogowania(loginEl, { onZalogowano: () => location.reload() });
+    return;
+  }
+
+  // Zalogowany — wpuszczamy do aplikacji z jego traveler_id.
+  TRAVELER_ID = traveler.id;
+  loginEl.style.display = "none";
+  appEl.style.display = "";
+
+  const logoutBtn = document.getElementById("m-logout");
+  if (logoutBtn) {
+    logoutBtn.addEventListener("click", async () => {
+      await wyloguj();
+      location.reload();
+    });
+  }
+
   init();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", start);
+} else {
+  start();
 }
