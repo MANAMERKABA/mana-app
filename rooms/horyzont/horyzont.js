@@ -62,17 +62,19 @@ function czasTrwaniaZEventu(ev) {
    PRZEŁĄCZANIE WIDOKÓW — kalendarz / zadania
    ============================================================ */
 
+// Chowamy przez style.display (a nie atrybut hidden), bo .m-subnav ma
+// w CSS display:flex — to przebija [hidden]. Inline style wygrywa.
 function pokazZadania() {
-  document.querySelector(".m-view").hidden = true;
-  document.querySelector(".m-subnav").hidden = true;
-  document.getElementById("m-view-zadania").hidden = false;
+  document.querySelector(".m-view").style.display = "none";
+  document.querySelector(".m-subnav").style.display = "none";
+  document.getElementById("m-view-zadania").style.display = "block";
   if (zadaniaKomp) zadaniaKomp.odswiez();
 }
 
 function pokazKalendarz() {
-  document.querySelector(".m-view").hidden = false;
-  document.querySelector(".m-subnav").hidden = false;
-  document.getElementById("m-view-zadania").hidden = true;
+  document.querySelector(".m-view").style.display = "";
+  document.querySelector(".m-subnav").style.display = "";
+  document.getElementById("m-view-zadania").style.display = "none";
 }
 
 /* ============================================================
