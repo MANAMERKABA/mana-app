@@ -370,6 +370,28 @@ export function montujEkranLogowania(kontener, opcje) {
     onZalogowano();
   });
 
+  // Podgląd hasła — „oko" przy każdym polu typu password.
+  kontener.querySelectorAll('input[type="password"]').forEach((inp) => {
+    inp.style.paddingRight = "42px";
+    const wrap = document.createElement("span");
+    wrap.style.cssText = "position:relative; display:block;";
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+    const oko = document.createElement("button");
+    oko.type = "button";
+    oko.textContent = "\u{1F441}";
+    oko.setAttribute("aria-label", "Pokaż hasło");
+    oko.style.cssText = "position:absolute; right:6px; top:50%; transform:translateY(-50%);"
+      + " background:none; border:none; cursor:pointer; font-size:16px; opacity:0.5; padding:4px;";
+    oko.addEventListener("click", () => {
+      const pokaz = inp.type === "password";
+      inp.type = pokaz ? "text" : "password";
+      oko.style.opacity = pokaz ? "1" : "0.5";
+      oko.setAttribute("aria-label", pokaz ? "Ukryj hasło" : "Pokaż hasło");
+    });
+    wrap.appendChild(oko);
+  });
+
   pokazWidok(startowy);
 
   return { pokazWidok };
