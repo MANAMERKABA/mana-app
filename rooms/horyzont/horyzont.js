@@ -448,6 +448,12 @@ async function start() {
 
   const logoutBtn = document.getElementById("m-logout");
   if (logoutBtn) {
+    // Pokaż, kto jest zalogowany — przed przyciskiem Wyloguj.
+    const kto = document.createElement("span");
+    kto.id = "m-kto";
+    kto.textContent = traveler.nick || traveler.email || "podróżnik";
+    kto.style.cssText = "font-size:13px; color:var(--m-ink-soft,#888); padding:8px 6px;";
+    logoutBtn.parentNode.insertBefore(kto, logoutBtn);
     logoutBtn.addEventListener("click", async () => {
       await wyloguj();
       location.reload();
