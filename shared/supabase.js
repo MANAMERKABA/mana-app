@@ -4,7 +4,7 @@
 //
 // Single source of truth for project URL + anon key. Anon key jest
 // publiczny z założenia (frontend), bezpieczeństwo zapewnia RLS
-// (MVP: anon_all; z-security: per podróżnik wg [600]).
+// (per podróżnik — events_wlasne, auth-aware).
 //
 // supabase-js z esm.sh (vanilla, bez build steps).
 //
@@ -16,6 +16,14 @@
 //     * Nowa baza  (MerKaBa_2026) — klient `supabase2026`, helper `callEdge2026`
 //         Używa: pokój Horyzont (kafel EVENT).
 //   Gdy wszystkie pokoje przejdą na nową bazę — stary klient i helper znikają.
+//
+// 24.05.2026 — Krok 2: izolacja zapisu.
+//   callEdge wysyła teraz TOKEN SESJI zalogowanego podróżnika
+//   (access_token) w nagłówku Authorization — zamiast klucza publicznego.
+//   Edge Functions event-* wyprowadzają z tego tokenu tożsamość podróżnika
+//   i nie ufają już `traveler_id` z ciała żądania. Klucz publiczny idzie
+//   nadal jako nagłówek `apikey` (wymagany przez bramę Supabase).
+//   Bez ważnej sesji wywołanie zapisu dostanie 401 — i słusznie.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
@@ -45,35 +53,49 @@ export const supabase2026 = createClient(SUPABASE_URL_2026, SUPABASE_KEY_2026);
 
 /**
  * Fabryka helpera callEdge — wiąże wywołania Edge Functions z jedną bazą.
- * (Wcześniej callEdge było pojedynczą funkcją zaszytą na stałe pod starą
- *  bazę. Po cezurze potrzebujemy dwóch — po jednej na bazę.)
  *
- * Wszystkie Edge Functions Fazy A (event-create/update/delete) używają POST + JSON.
+ * Wszystkie Edge Functions Fazy A (event-*) używają POST + JSON.
+ *
+ * Tożsamość (Krok 2, 24.05.2026):
+ *   Helper pobiera access_token z bieżącej sesji `client` i wysyła go
+ *   w nagłówku Authorization. Edge Function weryfikuje token i z niego
+ *   wyprowadza podróżnika. Gdy sesji brak — w Authorization leci klucz
+ *   publiczny (fallback): wywołanie dotrze, ale zahartowana funkcja
+ *   odrzuci je 401 ("zaloguj sie"). Klucz publiczny zawsze leci jako
+ *   nagłówek `apikey` — brama Supabase tego wymaga.
  *
  * Semantyka pola `ok` (fix [622] dług #3, 29.04.2026):
  *   ok = true   ↔  HTTP 2xx + parseable JSON + brak pola data.error
  *   ok = false  ↔  HTTP non-2xx, niepoprawny JSON, lub data.error obecne
  *
- * Wcześniej `ok` wymagał jawnego `data.ok === true` od Edge Function.
- * Większość EF (call-serce → {response}, summarize-conversation → {propozycje})
- * tego pola nie zwracała → callEdge.ok zawsze false → pokoje robiły workaround.
- * Po fixie kontrakt jest semantyczny (sukces = brak błędu), nie syntaktyczny.
- * Workaround w asystent.js (sprawdzanie data.response) zostaje jako defense-in-depth.
- *
  * @param {string} baseUrl  URL projektu Supabase
  * @param {string} apiKey   klucz publiczny tego projektu
+ * @param {object} client   klient supabase-js tej bazy (źródło sesji)
  * @returns {(fnName:string, body:object) => Promise<{ok:boolean,status:number,data:any,error:string|null}>}
  */
-function makeCallEdge(baseUrl, apiKey) {
+function makeCallEdge(baseUrl, apiKey, client) {
   return async function callEdge(fnName, body) {
     const url = `${baseUrl}/functions/v1/${fnName}`;
+
+    // Token tożsamości — access_token zalogowanego podróżnika.
+    // Bez sesji: fallback na klucz publiczny (funkcja odrzuci 401).
+    let token = apiKey;
+    try {
+      const { data } = await client.auth.getSession();
+      if (data && data.session && data.session.access_token) {
+        token = data.session.access_token;
+      }
+    } catch (sesjaErr) {
+      console.warn("callEdge: brak dostępu do sesji:", sesjaErr);
+    }
 
     let res;
     try {
       res = await fetch(url, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${apiKey}`,
+          "Authorization": `Bearer ${token}`,
+          "apikey": apiKey,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
@@ -111,13 +133,11 @@ function makeCallEdge(baseUrl, apiKey) {
 /**
  * callEdge — Edge Functions STAREJ bazy (mana-serce).
  * Backend pokoju Asystent osobisty.
- * @type {(fnName:string, body:object) => Promise<{ok:boolean,status:number,data:any,error:string|null}>}
  */
-export const callEdge = makeCallEdge(SUPABASE_URL, SUPABASE_ANON_KEY);
+export const callEdge = makeCallEdge(SUPABASE_URL, SUPABASE_ANON_KEY, supabase);
 
 /**
  * callEdge2026 — Edge Functions NOWEJ bazy (MerKaBa_2026).
- * Backend kafla EVENT / pokoju Horyzont (event-create/update/delete).
- * @type {(fnName:string, body:object) => Promise<{ok:boolean,status:number,data:any,error:string|null}>}
+ * Backend kafla EVENT / pokoju Horyzont (event-create/list/update/delete).
  */
-export const callEdge2026 = makeCallEdge(SUPABASE_URL_2026, SUPABASE_KEY_2026);
+export const callEdge2026 = makeCallEdge(SUPABASE_URL_2026, SUPABASE_KEY_2026, supabase2026);
