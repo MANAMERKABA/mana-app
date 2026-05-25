@@ -82,6 +82,9 @@
   .m-msg--asystent { background: #faf8f2; border: 1px solid var(--line); color: var(--ink); }
   .m-msg--ja { background: var(--turkus); color: #fff; align-self: flex-end; max-width: 85%; }
   .m-msg--mysli { color: var(--ink-soft); font-style: italic; }
+  .m-msg ul { margin: 5px 0; padding-left: 20px; }
+  .m-msg li { margin: 3px 0; }
+  .m-msg div + div { margin-top: 4px; }
 
   .m-wejscie { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
   .m-fala { display: flex; align-items: flex-end; gap: 2px; height: 18px; flex: 0 0 auto; }
@@ -948,9 +951,27 @@ async function ustawStatus(id, status) {
 /* ====================================================================
    ASYSTENT — call-serce (żywy EA)
    ==================================================================== */
+/* render wiadomości asystenta — prosta składnia: pogrubienie **...** i listy „- " */
+function formatujAsystenta(tekst) {
+  const pogrub = (s) => s.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  let html = "", wLiscie = false;
+  for (const surowa of String(tekst).split("\n")) {
+    const mList = surowa.match(/^\s*[-*•]\s+(.*)$/);
+    if (mList) {
+      if (!wLiscie) { html += "<ul>"; wLiscie = true; }
+      html += `<li>${pogrub(esc(mList[1]))}</li>`;
+    } else {
+      if (wLiscie) { html += "</ul>"; wLiscie = false; }
+      html += surowa.trim() === "" ? "<br>" : `<div>${pogrub(esc(surowa))}</div>`;
+    }
+  }
+  if (wLiscie) html += "</ul>";
+  return html;
+}
 function dodajWiadomosc(klasa, tekst) {
   const stream = $("m-stream");
-  const m = el(`<div class="m-msg m-msg--${klasa}">${esc(tekst)}</div>`);
+  const tresc = (klasa === "asystent") ? formatujAsystenta(tekst) : esc(tekst);
+  const m = el(`<div class="m-msg m-msg--${klasa}">${tresc}</div>`);
   stream.appendChild(m);
   stream.scrollTop = stream.scrollHeight;
   return m;
