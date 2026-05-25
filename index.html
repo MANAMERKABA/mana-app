@@ -1,170 +1,1197 @@
 <!DOCTYPE html>
 <html lang="pl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MANA — Horyzont</title>
-  <meta name="description" content="MANA aplikacja główna — Faza A z5.A — Horyzont, kalendarz prywatny.">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>MANA — ekran startowy + Horyzont</title>
+<meta name="description" content="MANA — ekran startowy z żywym EA oraz pokój Horyzont (kalendarz + zadania).">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
+<style>
+  /* ====================================================================
+     MANA — mana-app-krok3 — 25.05.2026
+     Ekran startowy (żywy EA, brief, kalendarz dziś, zadania, rocznice)
+     + pokój Horyzont wg specyfikacji v2: kalendarz (4 widoki, siatka doby,
+     przesuwanie palcem, menu, wejście w dzień, dodawanie/edycja wydarzeń)
+     + zadania (lista, przeciąganie pointer-events, V, Zrobione, edycja).
+     ==================================================================== */
+  :root {
+    --bg: #f3f0e8; --surface: #ffffff;
+    --ink: #2c2a26; --ink-soft: #8c887e;
+    --line: #e4dfd1; --turkus: #1a7158; --turkus-bg: #e8efe9;
+    --rocznica-bg: #e6eef4; --rocznica-ink: #2e5a7a;
+    --font-display: "Fraunces", Georgia, serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: var(--font-body); -webkit-font-smoothing: antialiased;
+    display: flex; justify-content: center;
+  }
+  #m-app, #m-login { width: 100%; max-width: 440px; min-height: 100%; display: flex; flex-direction: column; }
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  /* ---- HEADER ---- */
+  .m-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    padding: 18px 20px 14px;
+  }
+  .m-brand__name { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: 0.06em; }
+  .m-brand__date { font-size: 13px; color: var(--ink-soft); margin-top: 2px; text-transform: lowercase; }
+  .m-logout {
+    background: none; border: 1px solid var(--line); cursor: pointer;
+    font-size: 12.5px; color: var(--ink-soft); line-height: 1;
+    padding: 8px 14px; border-radius: 16px; font-family: var(--font-body);
+  }
+  .m-logout:hover { border-color: var(--turkus); color: var(--turkus); }
 
-  <!-- Shared design tokens -->
-  <link rel="stylesheet" href="shared/styles.css">
-  <!-- Wspólny komponent-widok kalendarza -->
-  <link rel="stylesheet" href="shared/kalendarz.css">
-  <!-- Wspólny komponent listy zadań -->
-  <link rel="stylesheet" href="shared/zadania.css">
-  <!-- Pokój Horyzont — styling lokalny -->
-  <link rel="stylesheet" href="rooms/horyzont/horyzont.css">
+  /* ---- KAFLE POKOI ---- */
+  .m-rooms { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 4px 16px 14px; }
+  .m-room {
+    background: none; border: none; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 6px 2px; font-family: var(--font-body);
+  }
+  .m-room__icon {
+    width: 52px; height: 52px; border-radius: 50%; background: var(--turkus-bg);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .m-room__icon svg { width: 22px; height: 22px; }
+  .m-room__name { font-size: 12px; color: var(--ink); }
+  .m-room--soon { opacity: 0.4; cursor: default; }
+  .m-room--soon .m-room__icon { background: #eae6da; }
+
+  /* ---- EA — EKRAN ASYSTENTA ---- */
+  .m-ea {
+    margin: 0 16px 14px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 16px; padding: 16px;
+    display: flex; flex-direction: column; transition: box-shadow 0.25s ease;
+  }
+  .m-ea--rozmowa { box-shadow: 0 6px 22px rgba(26,113,88,0.10); }
+  .m-ea__head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .m-ea__spark {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--turkus-bg); color: var(--turkus);
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+  }
+  .m-ea__title { font-size: 15px; font-weight: 600; }
+  .m-ea__stream { display: flex; flex-direction: column; gap: 10px; max-height: 46vh; overflow-y: auto; }
+  .m-msg { border-radius: 12px; padding: 12px 14px; font-size: 14.5px; line-height: 1.5; }
+  .m-msg--asystent { background: #faf8f2; border: 1px solid var(--line); color: var(--ink); }
+  .m-msg--ja { background: var(--turkus); color: #fff; align-self: flex-end; max-width: 85%; }
+  .m-msg--mysli { color: var(--ink-soft); font-style: italic; }
+
+  .m-wejscie { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .m-fala { display: flex; align-items: flex-end; gap: 2px; height: 18px; flex: 0 0 auto; }
+  .m-fala span { width: 3px; background: var(--turkus); border-radius: 2px; opacity: 0.5; height: 6px; }
+  .m-fala--zywa span { animation: fala 0.9s ease-in-out infinite; }
+  .m-fala--zywa span:nth-child(2){animation-delay:.1s} .m-fala--zywa span:nth-child(3){animation-delay:.2s}
+  .m-fala--zywa span:nth-child(4){animation-delay:.3s} .m-fala--zywa span:nth-child(5){animation-delay:.15s}
+  @keyframes fala { 0%,100%{height:5px} 50%{height:17px} }
+  .m-pole {
+    flex: 1; resize: none; min-height: 42px; max-height: 120px;
+    border: 1px solid var(--line); border-radius: 21px; padding: 11px 16px;
+    font-size: 14px; font-family: var(--font-body); background: #faf8f2; color: var(--ink); line-height: 1.4;
+  }
+  .m-pole:focus { outline: none; border-color: var(--turkus); }
+  .m-mik {
+    flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--turkus-bg); color: var(--turkus);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .m-mik--slucha { background: var(--turkus); color: #fff; }
+  .m-mik svg { width: 18px; height: 18px; }
+
+  /* ---- SEKCJE EKRANU STARTOWEGO ---- */
+  .m-sekcja {
+    margin: 0 16px 12px; background: var(--surface);
+    border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px;
+  }
+  .m-sekcja__head {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--ink-soft); margin-bottom: 10px;
+  }
+  .m-sekcja__head svg { width: 15px; height: 15px; }
+  .m-poz { display: flex; gap: 12px; align-items: baseline; padding: 7px 0; }
+  .m-poz + .m-poz { border-top: 1px solid #f0ece0; }
+  .m-poz__czas { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--turkus); flex: 0 0 46px; }
+  .m-poz__tytul { font-size: 14.5px; }
+  .m-pusto { font-size: 14px; color: var(--ink-soft); padding: 4px 0; }
+
+  .m-zad { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+  .m-zad + .m-zad { border-top: 1px solid #f0ece0; }
+  .m-zad__box {
+    width: 19px; height: 19px; border-radius: 5px; border: 1.6px solid var(--line);
+    cursor: pointer; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; background: none;
+  }
+  .m-zad__box--zrobione { background: var(--turkus); border-color: var(--turkus); }
+  .m-zad__box svg { width: 12px; height: 12px; color: #fff; }
+  .m-zad__kropka { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+  .m-zad__tytul { font-size: 14.5px; }
+  .m-zad__tytul--zrobione { text-decoration: line-through; color: var(--ink-soft); }
+
+  /* ---- PASEK ROCZNIC ---- */
+  .m-rocznica {
+    margin: 2px 16px 20px; background: var(--rocznica-bg); color: var(--rocznica-ink);
+    border-radius: 12px; padding: 11px 16px; font-size: 13.5px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .m-rocznica svg { width: 15px; height: 15px; }
+
+  /* ---- POKÓJ HORYZONT ---- */
+  .m-hyz-bar { display: flex; align-items: center; gap: 10px; padding: 16px 18px 8px; }
+  .m-back { background: none; border: none; cursor: pointer; font-family: var(--font-body); font-size: 13px; color: var(--ink-soft); padding: 6px 8px 6px 0; }
+  .m-back:hover { color: var(--turkus); }
+  .m-hyz-tytul { font-family: var(--font-display); font-size: 20px; font-weight: 600; }
+  .m-warstwa { margin-bottom: 4px; }
+  .m-warstwa__head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); padding: 12px 18px 4px; }
+  .m-warstwa__head svg { width: 15px; height: 15px; }
+  .m-warstwa__head span { font-family: var(--font-display); font-size: 16px; color: var(--ink); }
+
+  /* pasek nawigacji kalendarza */
+  .m-kalbar { position: relative; display: flex; align-items: center; gap: 4px; margin: 4px 16px 8px; }
+  .m-kalmenu { flex: 0 0 auto; background: none; border: 1px solid var(--line); border-radius: 9px; width: 34px; height: 34px; font-size: 14px; color: var(--ink); cursor: pointer; }
+  .m-kaletyk { flex: 1; font-family: var(--font-display); font-size: 15px; text-transform: capitalize; padding-left: 4px; }
+  .m-kalnav { flex: 0 0 auto; background: none; border: 1px solid var(--line); border-radius: 9px; width: 30px; height: 34px; font-size: 16px; color: var(--ink); cursor: pointer; }
+  .m-kaldzis { flex: 0 0 auto; background: none; border: 1px solid var(--line); border-radius: 9px; height: 34px; padding: 0 10px; font-size: 12px; color: var(--ink-soft); cursor: pointer; font-family: var(--font-body); }
+  .m-kaltresc { touch-action: pan-y; }
+  .m-kalmenu-panel { position: absolute; top: 40px; left: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.14); padding: 6px; z-index: 40; min-width: 190px; }
+  .m-kalmenu-panel button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 9px 12px; font-size: 14px; font-family: var(--font-body); color: var(--ink); cursor: pointer; border-radius: 8px; }
+  .m-kalmenu-panel button:hover { background: var(--turkus-bg); }
+  .m-kalmenu-panel button.m-kalmenu--on { color: var(--turkus); font-weight: 600; }
+  .m-kalmenu-sep { border-top: 1px solid var(--line); margin: 4px 0; }
+
+  /* siatka miesiąca */
+  .m-mc { margin: 0 16px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 12px 14px; }
+  .m-mc__siatka { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .m-mc__dow { text-align: center; font-size: 11px; color: var(--ink-soft); padding-bottom: 4px; }
+  .m-mc__dzien { position: relative; text-align: center; font-size: 13px; padding: 9px 0; border-radius: 8px; color: var(--ink); cursor: pointer; }
+  .m-mc__dzien:hover { background: var(--turkus-bg); }
+  .m-mc__dzien--dzis { background: var(--turkus); color: #fff; font-weight: 600; }
+  .m-mc__dzien--dzis:hover { background: var(--turkus); }
+  .m-mc__kropka { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: var(--turkus); }
+  .m-mc__dzien--dzis .m-mc__kropka { background: #fff; }
+  .m-mlist { margin: 0 16px 8px; }
+  .m-mlist .m-poz { padding: 7px 4px; }
+  .m-mlist .m-poz__czas { flex: 0 0 96px; }
+
+  /* siatka czasu */
+  .m-tg__naglowki { display: grid; align-items: end; }
+  .m-tg__hdr { text-align: center; font-size: 11px; color: var(--ink-soft); padding: 4px 2px 6px; cursor: pointer; }
+  .m-tg__hdr b { display: block; font-size: 15px; color: var(--ink); font-weight: 600; }
+  .m-tg__hdr--dzis b { color: #fff; background: var(--turkus); border-radius: 50%; width: 26px; height: 26px; line-height: 26px; margin: 2px auto 0; }
+  .m-tg__scroll { max-height: 54vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .m-tg__plansza { display: grid; grid-template-columns: 38px 1fr; }
+  .m-tg__godz { font-size: 10px; color: var(--ink-soft); text-align: right; padding-right: 5px; box-sizing: border-box; }
+  .m-tg__kolumny { display: grid; }
+  .m-tg__kol { position: relative; border-left: 1px solid #efeadd; }
+  .m-tg__linia { position: absolute; left: 0; right: 0; border-top: 1px solid #f4f1e8; }
+  .m-tg__event { position: absolute; left: 2px; right: 2px; background: var(--turkus-bg); border-left: 3px solid var(--turkus); border-radius: 5px; padding: 2px 5px; font-size: 10.5px; line-height: 1.2; overflow: hidden; box-sizing: border-box; cursor: pointer; }
+  .m-tg__event--zad { background: #f6ecd6; border-left-color: #e0a020; }
+  .m-tg__event-czas { color: var(--turkus); font-weight: 600; }
+  .m-tg__event--zad .m-tg__event-czas { color: #b97e10; }
+  .m-tg__teraz { position: absolute; left: 0; right: 0; border-top: 2px solid #d23b3b; z-index: 3; }
+
+  /* okno / modal */
+  .m-overlay { position: fixed; inset: 0; background: rgba(24,22,16,0.45); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
+  .m-modal { background: var(--surface); width: 100%; max-width: 440px; border-radius: 18px 18px 0 0; padding: 18px 18px 24px; max-height: 86vh; overflow-y: auto; }
+  .m-modal__head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .m-modal__tytul { font-family: var(--font-display); font-size: 19px; }
+  .m-modal__x { background: none; border: none; font-size: 20px; color: var(--ink-soft); cursor: pointer; padding: 4px 6px; }
+  .m-form label { display: block; font-size: 12px; color: var(--ink-soft); margin: 10px 0 3px; }
+  .m-form input[type=text], .m-form input[type=date], .m-form input[type=time],
+  .m-form input[type=number], .m-form input[type=datetime-local], .m-form textarea, .m-form select {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 9px;
+    padding: 10px 12px; font-size: 14px; font-family: var(--font-body); background: #faf8f2; color: var(--ink);
+  }
+  .m-form input:focus, .m-form textarea:focus, .m-form select:focus { outline: none; border-color: var(--turkus); }
+  .m-form textarea { resize: vertical; min-height: 54px; }
+  .m-form__row { display: flex; gap: 8px; }
+  .m-form__row > div { flex: 1; }
+  .m-form__check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; }
+  .m-form__check input { width: 18px; height: 18px; }
+  .m-modal__akcje { display: flex; gap: 8px; margin-top: 18px; }
+  .m-btn { border: none; border-radius: 10px; padding: 12px; font-size: 14px; font-family: var(--font-body); cursor: pointer; }
+  .m-btn--zapisz { flex: 1; background: var(--turkus); color: #fff; }
+  .m-btn--usun { background: #fce4e4; color: #8b1a1a; padding: 12px 16px; }
+
+  /* zadania w Horyzoncie */
+  .m-quickadd { display: flex; gap: 8px; margin: 0 16px 12px; }
+  .m-quickadd input { flex: 1; border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; font-size: 14px; font-family: var(--font-body); background: var(--surface); color: var(--ink); }
+  .m-quickadd input:focus { outline: none; border-color: var(--turkus); }
+  .m-quickadd button { flex: 0 0 auto; border: none; background: var(--turkus); color: #fff; border-radius: 10px; padding: 0 16px; font-size: 20px; cursor: pointer; }
+  .m-lista { margin: 0 16px 6px; max-height: 52vh; overflow-y: auto; }
+  .m-zad-d { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 11px 12px; margin-bottom: 7px; }
+  .m-zad-d--ciagniety { opacity: 0.55; box-shadow: 0 5px 16px rgba(0,0,0,0.14); }
+  .m-zad-d--zalegle { border-color: #e7b7b7; }
+  .m-uchwyt { flex: 0 0 auto; color: #c7c1b0; font-size: 15px; line-height: 1; cursor: grab; touch-action: none; padding: 2px 3px; }
+  .m-zad-d .m-zad__box { width: 21px; height: 21px; }
+  .m-zad-d__tresc { flex: 1; cursor: pointer; }
+  .m-zad-d__tytul { font-size: 14.5px; }
+  .m-zad-d__termin { font-size: 11px; color: var(--ink-soft); margin-top: 1px; }
+  .m-zad-d__termin--zalegly { color: #d23b3b; }
+  .m-zrob-naglowek { margin: 14px 16px 8px; font-size: 13px; color: var(--ink-soft); background: none; border: none; cursor: pointer; font-family: var(--font-body); }
+  .m-zad-z { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin: 0 16px 6px; background: #efece3; border-radius: 10px; }
+  .m-zad-z .m-zad__tytul { flex: 1; text-decoration: line-through; color: var(--ink-soft); font-size: 14px; }
+  .m-restore { flex: 0 0 auto; background: none; border: 1px solid var(--line); border-radius: 14px; padding: 5px 11px; cursor: pointer; font-size: 12px; color: var(--ink-soft); font-family: var(--font-body); }
+  .m-restore:hover { border-color: var(--turkus); color: var(--turkus); }
+
+  /* ---- EKRAN LOGOWANIA ---- */
+  #m-login { justify-content: center; padding: 0 24px; }
+  .m-login__box { text-align: center; }
+  .m-login__name {
+    font-family: var(--font-display); font-size: 30px; font-weight: 600;
+    letter-spacing: 0.06em; color: var(--turkus);
+  }
+  .m-login__pod { font-size: 13px; color: var(--ink-soft); margin: 2px 0 22px; }
+  .m-login__pole {
+    width: 100%; padding: 12px 14px; margin-bottom: 10px;
+    border: 1px solid var(--line); border-radius: 8px;
+    font-size: 15px; font-family: var(--font-body); background: var(--surface);
+  }
+  .m-login__pole:focus { outline: none; border-color: var(--turkus); }
+  .m-login__btn {
+    width: 100%; padding: 13px; margin-top: 6px;
+    background: var(--turkus); color: #fff; border: none; border-radius: 8px;
+    font-size: 15px; cursor: pointer; font-family: var(--font-body);
+  }
+  .m-login__btn:disabled { opacity: 0.6; }
+  .m-login__msg { margin-top: 14px; font-size: 13px; min-height: 18px; }
+  .m-login__msg--err { color: #8b1a1a; }
+
+  .m-loader { margin: auto; color: var(--ink-soft); font-size: 14px; padding: 40px; }
+  .m-stopka { padding: 10px 16px 24px; }
+</style>
 </head>
 <body>
 
-  <!-- EKRAN WEJŚCIA — logowanie/rejestracja. Wypełnia shared/auth.js. -->
-  <div id="m-login" style="display:none"></div>
+<!-- EKRAN LOGOWANIA -->
+<div id="m-login" style="display:none">
+  <div class="m-login__box">
+    <div class="m-login__name">MANA</div>
+    <div class="m-login__pod">Wejście</div>
+    <form id="m-login-form">
+      <input class="m-login__pole" type="email" id="m-l-email" placeholder="Email" autocomplete="email" required>
+      <input class="m-login__pole" type="password" id="m-l-haslo" placeholder="Hasło" autocomplete="current-password" required>
+      <button class="m-login__btn" type="submit" id="m-l-btn">Zaloguj się</button>
+    </form>
+    <div class="m-login__msg" id="m-l-msg"></div>
+  </div>
+</div>
 
-  <!-- APLIKACJA — widoczna dopiero po zalogowaniu. -->
-  <div id="m-app" style="display:none">
+<!-- APLIKACJA -->
+<div id="m-app" style="display:none">
 
+  <!-- ===== WIDOK: EKRAN STARTOWY ===== -->
+  <div id="m-widok-ekran">
     <header class="m-header">
-      <div class="m-header__brand">
-        <span class="m-header__logo">◇</span>
-        <h1 class="m-header__title">MANA</h1>
-        <span class="m-header__divider">·</span>
-        <span class="m-header__room">Horyzont</span>
+      <div class="m-brand">
+        <div class="m-brand__name">MANA</div>
+        <div class="m-brand__date" id="m-data">—</div>
       </div>
-      <nav class="m-header__nav" aria-label="Widoki">
-        <button class="m-toggle" data-view="day"   aria-pressed="false">Dzień</button>
-        <button class="m-toggle" data-view="week"  aria-pressed="true">Tydzień</button>
-        <button class="m-toggle" data-view="month" aria-pressed="false">Miesiąc</button>
-        <button class="m-toggle" data-view="zadania" aria-pressed="false">Zadania</button>
-        <button id="m-logout" type="button" style="background:none;border:none;color:var(--m-ink-soft,#888);font-size:13px;cursor:pointer;padding:8px;">Wyloguj</button>
-      </nav>
+      <button class="m-logout" id="m-logout" title="Wyloguj">Wyloguj</button>
     </header>
 
-    <section class="m-subnav">
-      <button id="m-prev" class="m-subnav__btn" aria-label="Poprzedni okres">←</button>
-      <button id="m-today" class="m-subnav__today">Dziś</button>
-      <button id="m-next" class="m-subnav__btn" aria-label="Następny okres">→</button>
-      <span id="m-period-label" class="m-subnav__label"></span>
-      <button id="m-add" class="m-subnav__add">+ Nowy event</button>
+    <nav class="m-rooms" id="m-rooms" aria-label="Pokoje"></nav>
+
+    <section class="m-ea" id="m-ea" aria-label="Ekran Asystenta">
+      <div class="m-ea__head">
+        <span class="m-ea__spark">&#10022;</span>
+        <span class="m-ea__title">Asystent osobisty</span>
+      </div>
+      <div class="m-ea__stream" id="m-stream"></div>
+      <div class="m-wejscie">
+        <div class="m-fala" id="m-fala"><span></span><span></span><span></span><span></span><span></span></div>
+        <textarea class="m-pole" id="m-pole" rows="1" placeholder="Napisz albo powiedz…"></textarea>
+        <button class="m-mik" id="m-mik" title="Mów">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+        </button>
+      </div>
     </section>
 
-    <main class="m-view" aria-live="polite">
-      <div id="m-view-day"   class="m-view__panel" hidden></div>
-      <div id="m-view-week"  class="m-view__panel"></div>
-      <div id="m-view-month" class="m-view__panel" hidden></div>
-      <p id="m-status" class="m-status" role="status"></p>
-    </main>
+    <section class="m-sekcja">
+      <div class="m-sekcja__head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span id="m-kal-naglowek">Dziś</span>
+      </div>
+      <div id="m-kal-lista"></div>
+    </section>
 
-    <section id="m-view-zadania" class="m-zadania" hidden></section>
+    <section class="m-sekcja">
+      <div class="m-sekcja__head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>Zadania</span>
+      </div>
+      <div id="m-zad-lista"></div>
+    </section>
 
-    <!-- MODAL — wydarzenie -->
-    <div id="m-modal" class="m-modal" hidden role="dialog" aria-modal="true" aria-labelledby="m-modal-title">
-      <div class="m-modal__backdrop" data-close></div>
-      <form id="m-form" class="m-modal__panel">
-        <header class="m-modal__header">
-          <h2 id="m-modal-title" class="m-modal__title">Nowy event</h2>
-          <button type="button" class="m-modal__close" data-close aria-label="Zamknij">×</button>
-        </header>
-        <div class="m-modal__body">
-          <input type="hidden" id="f-id" name="id">
-          <label class="m-field">
-            <span class="m-field__label">Tytuł <em>*</em></span>
-            <input type="text" id="f-tytul" name="tytul" required maxlength="200" autocomplete="off">
-          </label>
-          <label class="m-field m-field--checkbox">
-            <input type="checkbox" id="f-caly-dzien" name="caly_dzien">
-            <span class="m-field__label">Wydarzenie całodzienne</span>
-          </label>
-          <div class="m-field-row">
-            <label class="m-field">
-              <span class="m-field__label">Data i godzina <em>*</em></span>
-              <input type="datetime-local" id="f-data-czas" name="data_czas" required>
-            </label>
-            <label class="m-field" id="m-field-trwanie">
-              <span class="m-field__label">Czas trwania (min)</span>
-              <input type="number" id="f-czas-trwania" name="czas_trwania_min" min="1" max="1440" value="60">
-            </label>
-          </div>
-          <label class="m-field">
-            <span class="m-field__label">Opis</span>
-            <textarea id="f-opis" name="opis" rows="3" maxlength="2000"></textarea>
-          </label>
-          <div class="m-field-row">
-            <label class="m-field">
-              <span class="m-field__label">Lokalizacja</span>
-              <input type="text" id="f-lokalizacja" name="lokalizacja" maxlength="200" autocomplete="off">
-            </label>
-            <label class="m-field">
-              <span class="m-field__label">Przypomnienie (min przed)</span>
-              <input type="number" id="f-przypomnienie" name="przypomnienie_min_przed" min="0" max="10080">
-            </label>
-          </div>
-          <p id="m-form-error" class="m-form-error" hidden></p>
-        </div>
-        <footer class="m-modal__footer">
-          <button type="button" id="m-delete" class="m-btn m-btn--danger" hidden>Usuń</button>
-          <span class="m-modal__spacer"></span>
-          <button type="button" class="m-btn m-btn--ghost" data-close>Anuluj</button>
-          <button type="submit" id="m-save" class="m-btn m-btn--primary">Zapisz</button>
-        </footer>
-      </form>
-    </div>
-
-    <!-- MODAL — zadanie -->
-    <div id="z-modal" class="m-modal" hidden role="dialog" aria-modal="true" aria-labelledby="z-modal-title">
-      <div class="m-modal__backdrop" data-zclose></div>
-      <form id="z-form" class="m-modal__panel">
-        <header class="m-modal__header">
-          <h2 id="z-modal-title" class="m-modal__title">Nowe zadanie</h2>
-          <button type="button" class="m-modal__close" data-zclose aria-label="Zamknij">×</button>
-        </header>
-        <div class="m-modal__body">
-          <input type="hidden" id="fz-id">
-          <label class="m-field">
-            <span class="m-field__label">Tytuł <em>*</em></span>
-            <input type="text" id="fz-tytul" required maxlength="200" autocomplete="off">
-          </label>
-          <div class="m-field-row">
-            <label class="m-field">
-              <span class="m-field__label">Priorytet</span>
-              <select id="fz-priorytet">
-                <option value="niski">Niski</option>
-                <option value="normalny" selected>Normalny</option>
-                <option value="wysoki">Wysoki</option>
-                <option value="pilny">Pilny</option>
-              </select>
-            </label>
-            <label class="m-field">
-              <span class="m-field__label">Termin (opcjonalny)</span>
-              <input type="datetime-local" id="fz-termin">
-            </label>
-          </div>
-          <label class="m-field">
-            <span class="m-field__label">Opis</span>
-            <textarea id="fz-opis" rows="3" maxlength="2000"></textarea>
-          </label>
-          <p id="z-form-error" class="m-form-error" hidden></p>
-        </div>
-        <footer class="m-modal__footer">
-          <button type="button" id="z-delete" class="m-btn m-btn--danger" hidden>Usuń</button>
-          <span class="m-modal__spacer"></span>
-          <button type="button" class="m-btn m-btn--ghost" data-zclose>Anuluj</button>
-          <button type="submit" id="z-save" class="m-btn m-btn--primary">Zapisz</button>
-        </footer>
-      </form>
-    </div>
-
-    <footer class="m-footer">
-      <span>MANA · Faza A z5.A · Horyzont MVP</span>
-      <span class="m-footer__pulse" title="Trwa MVP, brzydki bo szczery"></span>
-    </footer>
-
+    <div class="m-rocznica" id="m-rocznica" style="display:none"></div>
   </div>
 
-  <!-- Logic: ES module -->
-  <script type="module" src="rooms/horyzont/horyzont.js"></script>
+  <!-- ===== WIDOK: POKÓJ HORYZONT ===== -->
+  <div id="m-widok-horyzont" style="display:none">
+    <div class="m-hyz-bar">
+      <button class="m-back" id="m-back">&#8592; Ekran startowy</button>
+      <span class="m-hyz-tytul">Horyzont</span>
+    </div>
+    <div class="m-warstwa">
+      <div class="m-warstwa__head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span>Kalendarz</span>
+      </div>
+      <div id="hyz-kalendarz"></div>
+    </div>
+
+    <div class="m-warstwa">
+      <div class="m-warstwa__head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span>Zadania</span>
+      </div>
+      <div class="m-quickadd">
+        <input type="text" id="hyz-nowe" placeholder="Nowe zadanie…" maxlength="200">
+        <button id="hyz-dodaj" title="Dodaj zadanie">+</button>
+      </div>
+      <div class="m-lista" id="hyz-zad-aktywne"></div>
+      <button class="m-zrob-naglowek" id="hyz-zrob-toggle"></button>
+      <div id="hyz-zad-zrobione" style="display:none"></div>
+    </div>
+    <div class="m-stopka"></div>
+  </div>
+
+</div>
+
+<div class="m-loader" id="m-loader">Wczytuję MANĘ…</div>
+
+<script type="module">
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+
+/* ---- baza MerKaBa_2026 ---- */
+const SUPABASE_URL = "https://olyqkajsgcgrjfmhfycb.supabase.co";
+const SUPABASE_KEY = "sb_publishable_lEM7JYJreuymivywT9xELw_gHaUnrC9";
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const POKOJE = [
+  { nazwa: "Horyzont", zywy: true, akcja: "horyzont",
+    ikona: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
+  { nazwa: "Trzos", zywy: false,
+    ikona: '<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M16 14h2"/>' },
+  { nazwa: "Puls", zywy: false,
+    ikona: '<path d="M20.8 5.6a5.5 5.5 0 0 0-8.8-1.4L12 4l-.1-.1A5.5 5.5 0 0 0 3.2 11c1.6 4.3 8.8 9 8.8 9s7.2-4.7 8.8-9z"/>' },
+  { nazwa: "Gawęda", zywy: false,
+    ikona: '<path d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 21l2.2-5.4A8.4 8.4 0 1 1 21 11.5z"/>' },
+];
+const KOLOR_PRIO = { niski: "#9aa0a6", normalny: "#e0a020", wysoki: "#e07a20", pilny: "#d23b3b" };
+
+const $ = (id) => document.getElementById(id);
+const el = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const dwa = (n) => String(n).padStart(2, "0");
+const odmiana = (n, j, k, w) => {
+  if (n === 1) return j;
+  const o = n % 10, o2 = n % 100;
+  return (o >= 2 && o <= 4 && !(o2 >= 12 && o2 <= 14)) ? k : w;
+};
+function granceDnia(przesuniecieDni = 0) {
+  const t = new Date();
+  const s = new Date(t.getFullYear(), t.getMonth(), t.getDate() + przesuniecieDni, 0, 0, 0);
+  const e = new Date(t.getFullYear(), t.getMonth(), t.getDate() + przesuniecieDni, 23, 59, 59, 999);
+  return { s, e };
+}
+
+let TRAVELER = null;
+let trwaRozmowa = false;
+
+/* ====================================================================
+   START / LOGOWANIE
+   ==================================================================== */
+async function start() {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) { pokazLogowanie(); return; }
+  await wejdz();
+}
+function pokazLogowanie() {
+  $("m-loader").style.display = "none";
+  $("m-app").style.display = "none";
+  $("m-login").style.display = "flex";
+}
+$("m-login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = $("m-l-btn"), msg = $("m-l-msg");
+  msg.className = "m-login__msg"; msg.textContent = "";
+  btn.disabled = true; btn.textContent = "Logowanie…";
+  const { error } = await supabase.auth.signInWithPassword({
+    email: $("m-l-email").value.trim(), password: $("m-l-haslo").value,
+  });
+  btn.disabled = false; btn.textContent = "Zaloguj się";
+  if (error) { msg.className = "m-login__msg m-login__msg--err"; msg.textContent = "Błąd logowania: " + error.message; return; }
+  $("m-login").style.display = "none";
+  $("m-loader").style.display = "block";
+  await wejdz();
+});
+async function wejdz() {
+  const { data: { session } } = await supabase.auth.getSession();
+  const { data: trav } = await supabase
+    .from("travels").select("id, nick").eq("auth_user_id", session.user.id).maybeSingle();
+  if (!trav) { $("m-loader").textContent = "Nie znaleziono profilu podróżnika."; return; }
+  TRAVELER = trav;
+  $("m-loader").style.display = "none";
+  $("m-app").style.display = "flex";
+  renderHeader();
+  renderPokoje();
+  await wczytajDzien();
+}
+
+function renderHeader() {
+  $("m-data").textContent = new Date().toLocaleDateString("pl-PL",
+    { weekday: "long", day: "numeric", month: "long" });
+}
+$("m-logout").addEventListener("click", async () => {
+  await supabase.auth.signOut(); location.reload();
+});
+
+/* ====================================================================
+   PRZEŁĄCZANIE WIDOKÓW
+   ==================================================================== */
+function pokazWidok(nazwa) {
+  $("m-widok-ekran").style.display = nazwa === "ekran" ? "block" : "none";
+  $("m-widok-horyzont").style.display = nazwa === "horyzont" ? "block" : "none";
+  window.scrollTo(0, 0);
+}
+$("m-back").addEventListener("click", () => pokazWidok("ekran"));
+
+function renderPokoje() {
+  const wrap = $("m-rooms");
+  wrap.innerHTML = "";
+  for (const p of POKOJE) {
+    const btn = el(`<button class="m-room ${p.zywy ? "" : "m-room--soon"}">
+      <span class="m-room__icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="${p.zywy ? "#1a7158" : "#8c887e"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p.ikona}</svg>
+      </span><span class="m-room__name">${esc(p.nazwa)}</span></button>`);
+    if (p.akcja === "horyzont") btn.addEventListener("click", otworzHoryzont);
+    wrap.appendChild(btn);
+  }
+}
+
+/* ====================================================================
+   EKRAN STARTOWY — dane dnia
+   ==================================================================== */
+async function wczytajDzien() {
+  const { s, e } = granceDnia(0);
+
+  const { data: wydarzenia = [] } = await supabase
+    .from("events").select("*")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
+    .gte("data_czas", s.toISOString()).lte("data_czas", e.toISOString())
+    .order("data_czas", { ascending: true });
+
+  const { data: zadania = [] } = await supabase
+    .from("events").select("*")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
+    .neq("status", "zrobione")
+    .order("pozycja", { ascending: true, nullsFirst: false });
+
+  const oknoRocznic = new Date(s.getTime() + 8 * 86400000);
+  const { data: caloDniowe = [] } = await supabase
+    .from("events").select("tytul, data_czas")
+    .eq("traveler_id", TRAVELER.id).eq("caly_dzien", true)
+    .gte("data_czas", s.toISOString()).lt("data_czas", oknoRocznic.toISOString())
+    .order("data_czas", { ascending: true }).limit(1);
+
+  renderBrief((wydarzenia || []).length, (zadania || []).length);
+  renderKalendarzDzis(wydarzenia || []);
+  renderZadaniaEkran(zadania || []);
+  renderRocznica((caloDniowe || [])[0] || null, s);
+}
+
+function renderBrief(ileWyd, ileZad) {
+  const nick = TRAVELER.nick || "podróżniku";
+  let tekst;
+  if (ileWyd === 0 && ileZad === 0) {
+    tekst = `Dzień dobry, ${nick}. Dziś kalendarz i lista zadań są puste — spokojny dzień. Od czego zaczynamy?`;
+  } else {
+    const cz = [];
+    if (ileWyd) cz.push(`${ileWyd} ${odmiana(ileWyd, "wydarzenie", "wydarzenia", "wydarzeń")}`);
+    if (ileZad) cz.push(`${ileZad} ${odmiana(ileZad, "zadanie", "zadania", "zadań")}`);
+    tekst = `Dzień dobry, ${nick}. Masz dziś ${cz.join(" i ")}. Od czego zaczynamy?`;
+  }
+  const stream = $("m-stream");
+  stream.innerHTML = "";
+  stream.appendChild(el(`<div class="m-msg m-msg--asystent">${esc(tekst)}</div>`));
+}
+
+function renderKalendarzDzis(wyd) {
+  $("m-kal-naglowek").textContent = "Dziś · " +
+    new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long" });
+  const lista = $("m-kal-lista");
+  lista.innerHTML = "";
+  if (!wyd.length) { lista.appendChild(el(`<div class="m-pusto">Dziś w kalendarzu pusto.</div>`)); return; }
+  for (const e of wyd) {
+    const czas = e.caly_dzien ? "cały dzień"
+      : new Date(e.data_czas).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+    lista.appendChild(el(`<div class="m-poz"><span class="m-poz__czas">${esc(czas)}</span><span class="m-poz__tytul">${esc(e.tytul)}</span></div>`));
+  }
+}
+
+function renderZadaniaEkran(zad) {
+  const lista = $("m-zad-lista");
+  lista.innerHTML = "";
+  if (!zad.length) { lista.appendChild(el(`<div class="m-pusto">Brak otwartych zadań.</div>`)); return; }
+  for (const z of zad) {
+    const w = el(`<div class="m-zad">
+      <button class="m-zad__box" aria-label="Oznacz zrobione">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5L20 6"/></svg>
+      </button>
+      <span class="m-zad__kropka" style="background:${KOLOR_PRIO[z.priorytet] || "#e0a020"}"></span>
+      <span class="m-zad__tytul">${esc(z.tytul)}</span></div>`);
+    w.querySelector(".m-zad__box").addEventListener("click", async () => {
+      w.querySelector(".m-zad__box").classList.add("m-zad__box--zrobione");
+      w.querySelector(".m-zad__tytul").classList.add("m-zad__tytul--zrobione");
+      const ok = await ustawStatus(z.id, "zrobione");
+      if (ok) setTimeout(() => { w.remove(); wczytajDzien(); }, 420);
+    });
+    lista.appendChild(w);
+  }
+}
+
+function renderRocznica(wpis, startDnia) {
+  const pasek = $("m-rocznica");
+  if (!wpis) { pasek.style.display = "none"; return; }
+  const data = new Date(wpis.data_czas);
+  const dzis = data >= startDnia && data < new Date(startDnia.getTime() + 86400000);
+  const kiedy = dzis ? "Dziś" : data.toLocaleDateString("pl-PL", { day: "numeric", month: "long" });
+  pasek.innerHTML = "";
+  pasek.appendChild(el(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7C12 7 12 2 8.5 2 6 2 6 7 12 7zM12 7C12 7 12 2 15.5 2 18 2 18 7 12 7z"/></svg>`));
+  pasek.appendChild(el(`<span><strong>${esc(kiedy)}</strong> · ${esc(wpis.tytul)}</span>`));
+  pasek.style.display = "flex";
+}
+
+/* wspólna zmiana statusu — kafel EVENT (RLS pilnuje własności) */
+async function ustawStatus(id, status) {
+  const { error } = await supabase.from("events").update({ status }).eq("id", id);
+  if (error) { alert("Nie udało się zapisać: " + error.message); return false; }
+  return true;
+}
+
+/* ====================================================================
+   ASYSTENT — call-serce (żywy EA)
+   ==================================================================== */
+function dodajWiadomosc(klasa, tekst) {
+  const stream = $("m-stream");
+  const m = el(`<div class="m-msg m-msg--${klasa}">${esc(tekst)}</div>`);
+  stream.appendChild(m);
+  stream.scrollTop = stream.scrollHeight;
+  return m;
+}
+async function wyslij() {
+  const pole = $("m-pole");
+  const tekst = pole.value.trim();
+  if (!tekst || trwaRozmowa) return;
+  trwaRozmowa = true;
+  pole.value = ""; pole.style.height = "auto";
+  $("m-ea").classList.add("m-ea--rozmowa");
+  dodajWiadomosc("ja", tekst);
+  const mysl = dodajWiadomosc("mysli", "Asystent myśli…");
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/call-serce`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${session.access_token}`,
+        "apikey": SUPABASE_KEY, "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message: tekst, duch: "duch_asystent_prywatny" }),
+    });
+    const dane = await res.json().catch(() => ({}));
+    mysl.remove();
+    if (res.ok && dane.response) dodajWiadomosc("asystent", dane.response);
+    else dodajWiadomosc("asystent", "Asystent chwilowo nie odpowiada (" + (dane.error || `HTTP ${res.status}`) + ").");
+  } catch (err) {
+    mysl.remove();
+    dodajWiadomosc("asystent", "Brak połączenia z asystentem: " + err.message);
+  }
+  trwaRozmowa = false;
+}
+const pole = $("m-pole");
+pole.addEventListener("input", () => {
+  pole.style.height = "auto";
+  pole.style.height = Math.min(pole.scrollHeight, 120) + "px";
+});
+pole.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); wyslij(); }
+});
+const Rozpoznanie = window.SpeechRecognition || window.webkitSpeechRecognition;
+const mik = $("m-mik");
+if (Rozpoznanie) {
+  const rozp = new Rozpoznanie();
+  rozp.lang = "pl-PL"; rozp.interimResults = false;
+  let slucha = false;
+  mik.addEventListener("click", () => { slucha ? rozp.stop() : rozp.start(); });
+  rozp.onstart = () => { slucha = true; mik.classList.add("m-mik--slucha"); $("m-fala").classList.add("m-fala--zywa"); };
+  rozp.onend = () => { slucha = false; mik.classList.remove("m-mik--slucha"); $("m-fala").classList.remove("m-fala--zywa"); };
+  rozp.onresult = (e) => {
+    pole.value = (pole.value ? pole.value + " " : "") + e.results[0][0].transcript;
+    pole.dispatchEvent(new Event("input")); pole.focus();
+  };
+} else {
+  mik.title = "Mowa niedostępna w tej przeglądarce — pisz w polu";
+}
+
+/* ====================================================================
+   POKÓJ HORYZONT — kalendarz (4 widoki, swipe, menu) + zadania
+   ==================================================================== */
+let widokKal = "3dni";
+let kotwica = new Date();
+let pokazRocznice = true;
+
+async function otworzHoryzont() {
+  pokazWidok("horyzont");
+  kotwica = new Date();
+  widokKal = "3dni";
+  await Promise.all([renderKalendarz(), wczytajZadaniaHoryzont()]);
+}
+
+/* --- okres bieżącego widoku --- */
+function zakresOkresu() {
+  const k = new Date(kotwica.getFullYear(), kotwica.getMonth(), kotwica.getDate());
+  if (widokKal === "miesiac")
+    return { od: new Date(k.getFullYear(), k.getMonth(), 1), miesiac: true };
+  if (widokKal === "tydzien") {
+    const dow = (k.getDay() + 6) % 7;
+    return { od: new Date(k.getFullYear(), k.getMonth(), k.getDate() - dow), dni: 7 };
+  }
+  return { od: k, dni: widokKal === "3dni" ? 3 : 1 };
+}
+function przesunOkres(kier) {
+  const k = kotwica;
+  if (widokKal === "miesiac") kotwica = new Date(k.getFullYear(), k.getMonth() + kier, 1);
+  else if (widokKal === "tydzien") kotwica = new Date(k.getFullYear(), k.getMonth(), k.getDate() + 7 * kier);
+  else if (widokKal === "3dni") kotwica = new Date(k.getFullYear(), k.getMonth(), k.getDate() + 3 * kier);
+  else kotwica = new Date(k.getFullYear(), k.getMonth(), k.getDate() + kier);
+  renderKalendarz();
+}
+function etykietaOkresu(z) {
+  if (z.miesiac)
+    return z.od.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+  if (z.dni === 1)
+    return z.od.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
+  const ost = new Date(z.od.getTime() + (z.dni - 1) * 86400000);
+  const a = z.od.getMonth() === ost.getMonth()
+    ? String(z.od.getDate())
+    : z.od.toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+  const b = ost.toLocaleDateString("pl-PL", { day: "numeric", month: "short" });
+  return `${a} – ${b}`;
+}
+
+async function renderKalendarz() {
+  const wrap = $("hyz-kalendarz");
+  const z = zakresOkresu();
+  wrap.innerHTML = `
+    <div class="m-kalbar">
+      <button class="m-kalmenu" id="kal-menu" aria-label="Widoki">&#9776;</button>
+      <span class="m-kaletyk">${esc(etykietaOkresu(z))}</span>
+      <button class="m-kalnav" data-k="-1" aria-label="Wstecz">&#8249;</button>
+      <button class="m-kaldzis" id="kal-dzis">Dziś</button>
+      <button class="m-kalnav" data-k="1" aria-label="Naprzód">&#8250;</button>
+    </div>
+    <div class="m-kaltresc" id="kal-tresc"></div>`;
+  wrap.querySelectorAll(".m-kalnav").forEach((b) =>
+    b.addEventListener("click", () => przesunOkres(Number(b.dataset.k))));
+  $("kal-dzis").addEventListener("click", () => { kotwica = new Date(); renderKalendarz(); });
+  $("kal-menu").addEventListener("click", (e) => { e.stopPropagation(); otworzMenuKal(); });
+  const box = $("kal-tresc");
+  podepnijSwipe(box);
+  if (z.miesiac) await renderMiesiacGrid(box, z.od);
+  else await renderSiatka(box, z.od, z.dni);
+}
+
+function otworzMenuKal() {
+  const istn = document.getElementById("kal-menu-panel");
+  if (istn) { istn.remove(); return; }
+  const panel = el(`<div class="m-kalmenu-panel" id="kal-menu-panel">
+    <button data-w="dzis">Dziś</button>
+    <button data-w="3dni">3 dni</button>
+    <button data-w="tydzien">Tydzień</button>
+    <button data-w="miesiac">Miesiąc</button>
+    <div class="m-kalmenu-sep"></div>
+    <button data-toggle="rocznice">${pokazRocznice ? "✓ " : ""}Rocznice i urodziny</button>
+  </div>`);
+  panel.querySelectorAll("button[data-w]").forEach((b) => {
+    if (b.dataset.w === widokKal) b.classList.add("m-kalmenu--on");
+    b.addEventListener("click", () => { widokKal = b.dataset.w; panel.remove(); renderKalendarz(); });
+  });
+  panel.querySelector("button[data-toggle]").addEventListener("click", () => {
+    pokazRocznice = !pokazRocznice; panel.remove(); renderKalendarz();
+  });
+  $("hyz-kalendarz").querySelector(".m-kalbar").appendChild(panel);
+  setTimeout(() => {
+    document.addEventListener("click", function zamk(ev) {
+      if (!panel.contains(ev.target)) { panel.remove(); document.removeEventListener("click", zamk); }
+    });
+  }, 0);
+}
+
+function podepnijSwipe(box) {
+  let x0 = null, y0 = null;
+  box.addEventListener("pointerdown", (e) => { x0 = e.clientX; y0 = e.clientY; });
+  box.addEventListener("pointerup", (e) => {
+    if (x0 == null) return;
+    const dx = e.clientX - x0, dy = e.clientY - y0;
+    x0 = null;
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.4)
+      przesunOkres(dx < 0 ? 1 : -1);
+  });
+}
+
+/* --- pobranie wydarzeń (i zadań z terminem) dla zakresu --- */
+async function wczytajWydarzeniaZakres(od, doData) {
+  const { data } = await supabase
+    .from("events").select("*")
+    .eq("traveler_id", TRAVELER.id)
+    .in("typ", ["wydarzenie", "zadanie"])
+    .gte("data_czas", od.toISOString()).lt("data_czas", doData.toISOString())
+    .order("data_czas", { ascending: true });
+  let lista = data || [];
+  if (!pokazRocznice) lista = lista.filter((e) => !e.caly_dzien);
+  return lista;
+}
+
+/* --- widok Miesiąc --- */
+async function renderMiesiacGrid(box, od) {
+  const rok = od.getFullYear(), mies = od.getMonth();
+  const dniWMies = new Date(rok, mies + 1, 0).getDate();
+  const pierwszyDow = (new Date(rok, mies, 1).getDay() + 6) % 7;
+  const dzisD = new Date();
+  const dzisTen = dzisD.getFullYear() === rok && dzisD.getMonth() === mies ? dzisD.getDate() : -1;
+
+  const wyd = await wczytajWydarzeniaZakres(
+    new Date(rok, mies, 1), new Date(rok, mies + 1, 1));
+  const dniZWyd = new Set(wyd.map((e) => new Date(e.data_czas).getDate()));
+
+  let html = `<div class="m-mc"><div class="m-mc__siatka">`;
+  for (const d of ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"])
+    html += `<div class="m-mc__dow">${d}</div>`;
+  for (let i = 0; i < pierwszyDow; i++) html += `<div></div>`;
+  for (let d = 1; d <= dniWMies; d++) {
+    const dzisKl = d === dzisTen ? " m-mc__dzien--dzis" : "";
+    const kropka = dniZWyd.has(d) ? `<span class="m-mc__kropka"></span>` : "";
+    html += `<div class="m-mc__dzien${dzisKl}" data-d="${d}">${d}${kropka}</div>`;
+  }
+  html += `</div></div>`;
+  box.innerHTML = html;
+  box.querySelectorAll(".m-mc__dzien").forEach((cell) => {
+    cell.addEventListener("click", () => {
+      kotwica = new Date(rok, mies, Number(cell.dataset.d));
+      widokKal = "dzis";
+      renderKalendarz();
+    });
+  });
+
+  const lista = document.createElement("div");
+  lista.className = "m-mlist";
+  if (!wyd.length) {
+    lista.appendChild(el(`<div class="m-pusto" style="padding:8px 4px">Brak wydarzeń w tym miesiącu.</div>`));
+  } else {
+    for (const e of wyd) {
+      const dt = new Date(e.data_czas);
+      const kiedy = dt.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })
+        + (e.caly_dzien ? "" : " · " + dt.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" }));
+      const wier = el(`<div class="m-poz"><span class="m-poz__czas">${esc(kiedy)}</span><span class="m-poz__tytul">${esc(e.tytul)}</span></div>`);
+      wier.style.cursor = "pointer";
+      wier.addEventListener("click", () => oknoWydarzenia({ event: e }));
+      lista.appendChild(wier);
+    }
+  }
+  box.appendChild(lista);
+}
+
+/* --- widok Dziś / 3 dni / Tydzień: siatka czasu --- */
+async function renderSiatka(box, od, dni) {
+  const H = 44;
+  const teraz = new Date();
+  const dzisKl = teraz.toDateString();
+  const koniec = new Date(od.getTime() + dni * 86400000);
+  const wyd = await wczytajWydarzeniaZakres(od, koniec);
+
+  let naglowki = `<div></div>`;
+  for (let i = 0; i < dni; i++) {
+    const dz = new Date(od.getTime() + i * 86400000);
+    const on = dz.toDateString() === dzisKl ? " m-tg__hdr--dzis" : "";
+    naglowki += `<div class="m-tg__hdr${on}" data-iso="${dz.toISOString()}">`
+      + esc(dz.toLocaleDateString("pl-PL", { weekday: "short" }))
+      + `<b>${dz.getDate()}</b></div>`;
+  }
+  let godziny = "";
+  for (let h = 0; h < 24; h++)
+    godziny += `<div class="m-tg__godz" style="height:${H}px">${dwa(h)}</div>`;
+  let kolumny = "";
+  for (let i = 0; i < dni; i++) {
+    let linie = "";
+    for (let h = 1; h < 24; h++) linie += `<div class="m-tg__linia" style="top:${h * H}px"></div>`;
+    kolumny += `<div class="m-tg__kol" data-i="${i}" style="height:${24 * H}px">${linie}</div>`;
+  }
+  box.innerHTML = `<div class="m-tg">
+    <div class="m-tg__naglowki" style="grid-template-columns:38px repeat(${dni},1fr)">${naglowki}</div>
+    <div class="m-tg__scroll"><div class="m-tg__plansza">
+      <div class="m-tg__godziny">${godziny}</div>
+      <div class="m-tg__kolumny" style="grid-template-columns:repeat(${dni},1fr)">${kolumny}</div>
+    </div></div>
+  </div>`;
+
+  const kolEls = box.querySelectorAll(".m-tg__kol");
+  for (const e of wyd) {
+    const dt = new Date(e.data_czas);
+    let idx = -1;
+    for (let i = 0; i < dni; i++) {
+      const dz = new Date(od.getTime() + i * 86400000);
+      if (dz.toDateString() === dt.toDateString()) { idx = i; break; }
+    }
+    if (idx < 0) continue;
+    let trwanie = 60;
+    if (e.koniec) { const d = (new Date(e.koniec) - dt) / 60000; if (d > 0) trwanie = d; }
+    const top = (dt.getHours() * 60 + dt.getMinutes()) / 60 * H;
+    const wys = Math.max(trwanie / 60 * H, 22);
+    const klasaZad = e.typ === "zadanie" ? " m-tg__event--zad" : "";
+    const blok = el(`<div class="m-tg__event${klasaZad}" style="top:${top}px;height:${wys}px">`
+      + `<span class="m-tg__event-czas">${dt.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}</span> `
+      + `<span>${esc(e.tytul)}</span></div>`);
+    blok.addEventListener("click", (ev) => { ev.stopPropagation(); oknoWydarzenia({ event: e }); });
+    kolEls[idx].appendChild(blok);
+  }
+  for (let i = 0; i < dni; i++) {
+    const dz = new Date(od.getTime() + i * 86400000);
+    if (dz.toDateString() === dzisKl) {
+      const top = (teraz.getHours() * 60 + teraz.getMinutes()) / 60 * H;
+      kolEls[i].appendChild(el(`<div class="m-tg__teraz" style="top:${top}px"></div>`));
+    }
+    kolEls[i].addEventListener("click", (ev) => {
+      const rect = kolEls[i].getBoundingClientRect();
+      const godz = Math.max(0, Math.min(23, Math.floor((ev.clientY - rect.top) / H)));
+      oknoWydarzenia({ data: new Date(od.getTime() + i * 86400000), godzina: godz });
+    });
+  }
+  box.querySelectorAll(".m-tg__hdr").forEach((h) => {
+    if (!h.dataset.iso) return;
+    h.addEventListener("click", () => {
+      kotwica = new Date(h.dataset.iso);
+      widokKal = "dzis";
+      renderKalendarz();
+    });
+  });
+  const scr = box.querySelector(".m-tg__scroll");
+  if (scr) scr.scrollTop = Math.max(0, (teraz.getHours() - 1) * H);
+}
+
+/* --- okno wydarzenia: dodanie albo edycja --- */
+function oknoWydarzenia(opcje) {
+  opcje = opcje || {};
+  const ev = opcje.event || null;
+  let baza;
+  if (ev) baza = ev.data_czas ? new Date(ev.data_czas) : new Date();
+  else {
+    baza = opcje.data ? new Date(opcje.data) : new Date();
+    if (opcje.godzina != null) baza.setHours(opcje.godzina, 0, 0, 0);
+  }
+  const dataVal = `${baza.getFullYear()}-${dwa(baza.getMonth() + 1)}-${dwa(baza.getDate())}`;
+  const godzVal = `${dwa(baza.getHours())}:${dwa(baza.getMinutes())}`;
+  let trwanie = 60;
+  if (ev && ev.koniec && ev.data_czas) {
+    const d = (new Date(ev.koniec) - new Date(ev.data_czas)) / 60000;
+    if (d > 0) trwanie = Math.round(d);
+  }
+  const calyDzien = ev ? !!ev.caly_dzien : false;
+
+  const overlay = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head">
+      <span class="m-modal__tytul">${ev ? "Wydarzenie" : "Nowe wydarzenie"}</span>
+      <button class="m-modal__x" aria-label="Zamknij">&#10005;</button>
+    </div>
+    <div class="m-form">
+      <label>Tytuł</label>
+      <input type="text" id="w-tytul" maxlength="200" value="${ev ? esc(ev.tytul) : ""}">
+      <div class="m-form__check"><input type="checkbox" id="w-caly"${calyDzien ? " checked" : ""}><span>Wydarzenie całodzienne</span></div>
+      <div class="m-form__row">
+        <div><label>Data</label><input type="date" id="w-data" value="${dataVal}"></div>
+        <div id="w-godz-box"><label>Godzina</label><input type="time" id="w-godz" value="${godzVal}"></div>
+      </div>
+      <div id="w-trw-box"><label>Czas trwania (min)</label><input type="number" id="w-trw" min="5" step="5" value="${trwanie}"></div>
+      <label>Opis</label>
+      <textarea id="w-opis">${ev ? esc(ev.opis || "") : ""}</textarea>
+      <label>Lokalizacja</label>
+      <input type="text" id="w-lok" maxlength="200" value="${ev ? esc(ev.lokalizacja || "") : ""}">
+    </div>
+    <div class="m-modal__akcje">
+      ${ev ? `<button class="m-btn m-btn--usun" id="w-usun">Usuń</button>` : ""}
+      <button class="m-btn m-btn--zapisz" id="w-zapisz">Zapisz</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(overlay);
+  const zamknij = () => overlay.remove();
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
+  overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+
+  const caly = overlay.querySelector("#w-caly");
+  const aktualizujCaly = () => {
+    overlay.querySelector("#w-godz-box").style.display = caly.checked ? "none" : "";
+    overlay.querySelector("#w-trw-box").style.display = caly.checked ? "none" : "";
+  };
+  caly.addEventListener("change", aktualizujCaly);
+  aktualizujCaly();
+
+  overlay.querySelector("#w-zapisz").addEventListener("click", async () => {
+    const tytul = overlay.querySelector("#w-tytul").value.trim();
+    if (!tytul) { overlay.querySelector("#w-tytul").focus(); return; }
+    const dataStr = overlay.querySelector("#w-data").value;
+    if (!dataStr) { alert("Podaj datę."); return; }
+    const calyD = caly.checked;
+    let dataCzas, koniec = null;
+    if (calyD) {
+      dataCzas = new Date(dataStr + "T00:00").toISOString();
+    } else {
+      const g = overlay.querySelector("#w-godz").value || "12:00";
+      dataCzas = new Date(dataStr + "T" + g).toISOString();
+      const trw = parseInt(overlay.querySelector("#w-trw").value, 10) || 60;
+      koniec = new Date(new Date(dataCzas).getTime() + trw * 60000).toISOString();
+    }
+    const rekord = {
+      tytul, data_czas: dataCzas, koniec, caly_dzien: calyD,
+      opis: overlay.querySelector("#w-opis").value.trim() || null,
+      lokalizacja: overlay.querySelector("#w-lok").value.trim() || null,
+    };
+    let error;
+    if (ev) ({ error } = await supabase.from("events").update(rekord).eq("id", ev.id));
+    else ({ error } = await supabase.from("events").insert({
+      ...rekord, traveler_id: TRAVELER.id, typ: "wydarzenie", status: "planowane",
+    }));
+    if (error) { alert("Nie udało się zapisać: " + error.message); return; }
+    zamknij();
+    renderKalendarz();
+  });
+  if (ev) overlay.querySelector("#w-usun").addEventListener("click", async () => {
+    if (!confirm("Usunąć to wydarzenie?")) return;
+    const { error } = await supabase.from("events").delete().eq("id", ev.id);
+    if (error) { alert("Nie udało się usunąć: " + error.message); return; }
+    zamknij();
+    renderKalendarz();
+  });
+}
+
+/* ====================================================================
+   HORYZONT — zadania (lista, przeciąganie pointer-events, V, Zrobione)
+   ==================================================================== */
+async function wczytajZadaniaHoryzont() {
+  const { data: aktywne = [] } = await supabase
+    .from("events").select("*")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
+    .neq("status", "zrobione")
+    .order("pozycja", { ascending: true, nullsFirst: false });
+
+  const { data: zrobione = [] } = await supabase
+    .from("events").select("*")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
+    .eq("status", "zrobione")
+    .order("updated_at", { ascending: false }).limit(30);
+
+  renderZadaniaAktywne(aktywne || []);
+  renderZadaniaZrobione(zrobione || []);
+}
+
+function renderZadaniaAktywne(zad) {
+  const lista = $("hyz-zad-aktywne");
+  lista.innerHTML = "";
+  if (!zad.length) {
+    lista.appendChild(el(`<div class="m-pusto" style="margin:4px 0">Brak otwartych zadań — dodaj pierwsze powyżej.</div>`));
+    return;
+  }
+  const teraz = new Date();
+  for (const z of zad) {
+    const zalegle = z.data_czas && new Date(z.data_czas) < teraz;
+    let terminHtml = "";
+    if (z.data_czas) {
+      const dt = new Date(z.data_czas);
+      const t = dt.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })
+        + " · " + dt.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+      terminHtml = `<div class="m-zad-d__termin${zalegle ? " m-zad-d__termin--zalegly" : ""}">${zalegle ? "zaległe — " : ""}${esc(t)}</div>`;
+    }
+    const w = el(`<div class="m-zad-d${zalegle ? " m-zad-d--zalegle" : ""}" data-id="${esc(z.id)}" data-poz="${z.pozycja ?? ""}">
+      <span class="m-uchwyt" title="Przeciągnij">&#8942;&#8942;</span>
+      <button class="m-zad__box" aria-label="Oznacz zrobione">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5L20 6"/></svg>
+      </button>
+      <span class="m-zad__kropka" style="background:${KOLOR_PRIO[z.priorytet] || "#e0a020"}"></span>
+      <div class="m-zad-d__tresc">
+        <div class="m-zad-d__tytul">${esc(z.tytul)}</div>${terminHtml}
+      </div></div>`);
+    w.querySelector(".m-zad__box").addEventListener("click", async () => {
+      const ok = await ustawStatus(z.id, "zrobione");
+      if (ok) wczytajZadaniaHoryzont();
+    });
+    w.querySelector(".m-zad-d__tresc").addEventListener("click", () => oknoZadania(z));
+    podepnijPrzeciaganie(w, lista);
+    lista.appendChild(w);
+  }
+}
+
+function renderZadaniaZrobione(zad) {
+  const toggle = $("hyz-zrob-toggle");
+  const box = $("hyz-zad-zrobione");
+  box.innerHTML = "";
+  if (!zad.length) { toggle.style.display = "none"; box.style.display = "none"; return; }
+  toggle.style.display = "block";
+  const otwarte = box.style.display === "block";
+  toggle.textContent = `Zrobione (${zad.length}) ${otwarte ? "▴" : "▾"}`;
+  for (const z of zad) {
+    const w = el(`<div class="m-zad-z">
+      <span class="m-zad__tytul">${esc(z.tytul)}</span>
+      <button class="m-restore">↩ przywróć</button></div>`);
+    w.querySelector(".m-restore").addEventListener("click", async () => {
+      const ok = await ustawStatus(z.id, "planowane");
+      if (ok) wczytajZadaniaHoryzont();
+    });
+    box.appendChild(w);
+  }
+}
+$("hyz-zrob-toggle").addEventListener("click", () => {
+  const box = $("hyz-zad-zrobione");
+  const otwarte = box.style.display === "block";
+  box.style.display = otwarte ? "none" : "block";
+  const toggle = $("hyz-zrob-toggle");
+  toggle.textContent = toggle.textContent.replace(/[▴▾]/, otwarte ? "▾" : "▴");
+});
+
+/* --- przeciąganie zadań — pointer events (działa palcem i myszą) --- */
+function elementPonizej(lista, y) {
+  const rzedy = [...lista.querySelectorAll(".m-zad-d:not(.m-zad-d--ciagniety)")];
+  let wynik = { offset: -Infinity, el: null };
+  for (const r of rzedy) {
+    const box = r.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > wynik.offset) wynik = { offset, el: r };
+  }
+  return wynik.el;
+}
+function podepnijPrzeciaganie(row, lista) {
+  const uchwyt = row.querySelector(".m-uchwyt");
+  uchwyt.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    row.classList.add("m-zad-d--ciagniety");
+    const onMove = (ev) => {
+      const pod = elementPonizej(lista, ev.clientY);
+      if (pod == null) lista.appendChild(row);
+      else if (pod !== row) lista.insertBefore(row, pod);
+    };
+    const onUp = async () => {
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      row.classList.remove("m-zad-d--ciagniety");
+      await zapiszPozycje(row, lista);
+    };
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  });
+}
+async function zapiszPozycje(row, lista) {
+  const rzedy = [...lista.querySelectorAll(".m-zad-d")];
+  const i = rzedy.indexOf(row);
+  const poprz = rzedy[i - 1], nast = rzedy[i + 1];
+  const pP = poprz && poprz.dataset.poz !== "" ? Number(poprz.dataset.poz) : null;
+  const pN = nast && nast.dataset.poz !== "" ? Number(nast.dataset.poz) : null;
+  let nowa;
+  if (pP == null && pN == null) nowa = 1000;
+  else if (pP == null) nowa = pN - 1000;
+  else if (pN == null) nowa = pP + 1000;
+  else nowa = (pP + pN) / 2;
+  row.dataset.poz = nowa;
+  const { error } = await supabase.from("events").update({ pozycja: nowa }).eq("id", row.dataset.id);
+  if (error) alert("Nie udało się zapisać kolejności: " + error.message);
+}
+
+/* --- okno edycji zadania --- */
+function oknoZadania(z) {
+  let terminVal = "";
+  if (z.data_czas) {
+    const d = new Date(z.data_czas);
+    terminVal = `${d.getFullYear()}-${dwa(d.getMonth() + 1)}-${dwa(d.getDate())}T${dwa(d.getHours())}:${dwa(d.getMinutes())}`;
+  }
+  const PRIO = ["niski", "normalny", "wysoki", "pilny"];
+  const opcjePrio = PRIO.map((p) =>
+    `<option value="${p}"${p === z.priorytet ? " selected" : ""}>${p}</option>`).join("");
+  const overlay = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head">
+      <span class="m-modal__tytul">Zadanie</span>
+      <button class="m-modal__x" aria-label="Zamknij">&#10005;</button>
+    </div>
+    <div class="m-form">
+      <label>Tytuł</label>
+      <input type="text" id="z-tytul" maxlength="200" value="${esc(z.tytul)}">
+      <div class="m-form__row">
+        <div><label>Priorytet</label><select id="z-prio">${opcjePrio}</select></div>
+        <div><label>Termin (opcjonalny)</label><input type="datetime-local" id="z-termin" value="${terminVal}"></div>
+      </div>
+      <label>Opis</label>
+      <textarea id="z-opis">${esc(z.opis || "")}</textarea>
+    </div>
+    <div class="m-modal__akcje">
+      <button class="m-btn m-btn--usun" id="z-usun">Usuń</button>
+      <button class="m-btn m-btn--zapisz" id="z-zapisz">Zapisz</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(overlay);
+  const zamknij = () => overlay.remove();
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
+  overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+
+  overlay.querySelector("#z-zapisz").addEventListener("click", async () => {
+    const tytul = overlay.querySelector("#z-tytul").value.trim();
+    if (!tytul) { overlay.querySelector("#z-tytul").focus(); return; }
+    const terminStr = overlay.querySelector("#z-termin").value;
+    const rekord = {
+      tytul,
+      priorytet: overlay.querySelector("#z-prio").value,
+      data_czas: terminStr ? new Date(terminStr).toISOString() : null,
+      opis: overlay.querySelector("#z-opis").value.trim() || null,
+    };
+    const { error } = await supabase.from("events").update(rekord).eq("id", z.id);
+    if (error) { alert("Nie udało się zapisać: " + error.message); return; }
+    zamknij();
+    wczytajZadaniaHoryzont();
+  });
+  overlay.querySelector("#z-usun").addEventListener("click", async () => {
+    if (!confirm("Usunąć to zadanie?")) return;
+    const { error } = await supabase.from("events").delete().eq("id", z.id);
+    if (error) { alert("Nie udało się usunąć: " + error.message); return; }
+    zamknij();
+    wczytajZadaniaHoryzont();
+  });
+}
+
+/* --- szybkie dodanie zadania --- */
+async function dodajZadanie() {
+  const input = $("hyz-nowe");
+  const tytul = input.value.trim();
+  if (!tytul) return;
+  input.value = "";
+  const { data: ost = [] } = await supabase
+    .from("events").select("pozycja")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
+    .order("pozycja", { ascending: false, nullsFirst: false }).limit(1);
+  const nowaPoz = ((ost || [])[0]?.pozycja ?? 0) + 1000;
+  const { error } = await supabase.from("events").insert({
+    traveler_id: TRAVELER.id, typ: "zadanie", tytul,
+    status: "planowane", priorytet: "normalny", pozycja: nowaPoz,
+  });
+  if (error) { alert("Nie udało się dodać zadania: " + error.message); return; }
+  await wczytajZadaniaHoryzont();
+}
+$("hyz-dodaj").addEventListener("click", dodajZadanie);
+$("hyz-nowe").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); dodajZadanie(); }
+});
+
+start();
+</script>
 </body>
 </html>
