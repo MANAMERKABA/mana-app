@@ -267,19 +267,8 @@
 </head>
 <body>
 
-<!-- EKRAN LOGOWANIA -->
-<div id="m-login" style="display:none">
-  <div class="m-login__box">
-    <div class="m-login__name">MANA</div>
-    <div class="m-login__pod">Wejście</div>
-    <form id="m-login-form">
-      <input class="m-login__pole" type="email" id="m-l-email" placeholder="Email" autocomplete="email" required>
-      <input class="m-login__pole" type="password" id="m-l-haslo" placeholder="Hasło" autocomplete="current-password" required>
-      <button class="m-login__btn" type="submit" id="m-l-btn">Zaloguj się</button>
-    </form>
-    <div class="m-login__msg" id="m-l-msg"></div>
-  </div>
-</div>
+<!-- EKRAN WEJŚCIA — logowanie / rejestracja / odzyskiwanie hasła (wypełnia montujEkranLogowania) -->
+<div id="m-login" style="display:none"></div>
 
 <!-- APLIKACJA -->
 <div id="m-app" style="display:none">
@@ -408,7 +397,278 @@ let trwaRozmowa = false;
 /* ====================================================================
    START / LOGOWANIE
    ==================================================================== */
+/* ---- API logowania (port z shared/auth.js) ---- */
+async function logujHistorie(payload) {
+  try {
+    await supabase.from("login_history").insert({
+      ...payload, user_agent: navigator.userAgent, app_context: "mana.app — logowanie",
+    });
+  } catch (e) { console.warn("auth: login_history:", e); }
+}
+async function zaloguj({ email, haslo }) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password: haslo });
+  let travelerId = null, authId = null;
+  if (data && data.user) {
+    authId = data.user.id;
+    const { data: t } = await supabase.from("travels").select("id").eq("auth_user_id", authId).maybeSingle();
+    if (t) travelerId = t.id;
+  }
+  await logujHistorie({
+    traveler_id: travelerId, auth_user_id: authId, email,
+    success: !error, failure_reason: error ? error.message : null,
+    login_method: error ? "login_failed" : "login_email_password",
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+async function zarejestruj({ email, haslo, nick, rokUrodzenia, zgodaRegulamin, zgodaRodo }) {
+  const { data, error } = await supabase.auth.signUp({ email, password: haslo });
+  if (error) return { ok: false, error: error.message };
+  const authId = data.user.id;
+  const patch = {
+    nick, consent: !!zgodaRegulamin, consent_timestamp: new Date().toISOString(),
+    gdpr_consent: !!zgodaRodo, gdpr_consent_at: new Date().toISOString(),
+  };
+  if (rokUrodzenia) {
+    const r = parseInt(rokUrodzenia, 10);
+    if (Number.isFinite(r)) patch.birth_year = r;
+  }
+  const { data: upd, error: updErr } = await supabase
+    .from("travels").update(patch).eq("auth_user_id", authId).select().maybeSingle();
+  if (updErr) return { ok: false, error: "Konto utworzone, ale błąd profilu: " + updErr.message };
+  await logujHistorie({
+    traveler_id: upd ? upd.id : null, auth_user_id: authId, email,
+    success: true, login_method: "signup_email_password",
+  });
+  return { ok: true, potwierdzEmail: !data.session };
+}
+async function wyslijResetHasla(email) {
+  const redirectTo = location.origin + location.pathname;
+  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+async function ustawNoweHaslo(haslo) {
+  const { error } = await supabase.auth.updateUser({ password: haslo });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+function nasluchujOdzyskiwania(callback) {
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === "PASSWORD_RECOVERY") callback();
+  });
+}
+
+/* ---- EKRAN WEJŚCIA — logowanie / rejestracja / reset / nowe hasło ---- */
+function wstrzyknijStyleLog() {
+  if (document.getElementById("mlog-style")) return;
+  const s = document.createElement("style");
+  s.id = "mlog-style";
+  s.textContent = `
+    .mlog-wrap { max-width: 380px; margin: 7vh auto; padding: 0 16px; font-family: var(--font-body); }
+    .mlog-tytul { font-family: var(--font-display); font-size: 30px; font-weight: 600; text-align: center; color: var(--turkus); margin-bottom: 2px; }
+    .mlog-pod { text-align: center; color: var(--ink-soft); font-size: 13px; margin-bottom: 22px; }
+    .mlog-taby { display: flex; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+    .mlog-tab { flex: 1; padding: 10px; background: none; border: none; cursor: pointer; font-size: 15px; color: var(--ink-soft); font-family: var(--font-body); }
+    .mlog-tab--on { color: var(--turkus); font-weight: 600; border-bottom: 2px solid var(--turkus); }
+    .mlog-pole { margin-bottom: 12px; }
+    .mlog-pole label { display: block; font-size: 13px; color: var(--ink-soft); margin-bottom: 4px; }
+    .mlog-pole input { width: 100%; box-sizing: border-box; padding: 11px; border: 1px solid var(--line); border-radius: 8px; font-size: 15px; font-family: var(--font-body); background: var(--surface); }
+    .mlog-pole input:focus { outline: none; border-color: var(--turkus); }
+    .mlog-zgoda { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--ink-soft); margin-bottom: 10px; }
+    .mlog-przycisk { width: 100%; padding: 13px; background: var(--turkus); color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 8px; font-family: var(--font-body); }
+    .mlog-przycisk:disabled { opacity: 0.6; cursor: default; }
+    .mlog-link { display: inline-block; margin-top: 12px; background: none; border: none; color: var(--turkus); font-size: 13px; cursor: pointer; padding: 0; text-decoration: underline; font-family: var(--font-body); }
+    .mlog-naglowek { font-family: var(--font-display); font-size: 18px; margin-bottom: 4px; }
+    .mlog-opis { font-size: 13px; color: var(--ink-soft); margin-bottom: 14px; }
+    .mlog-msg { margin-top: 14px; padding: 12px; border-radius: 8px; font-size: 14px; }
+    .mlog-msg--err { background: #fce4e4; color: #8b1a1a; }
+    .mlog-msg--ok { background: #d4f1e3; color: #1a5e3a; }
+    .mlog-msg--info { background: #e4eef5; color: #1a4a7a; }
+  `;
+  document.head.appendChild(s);
+}
+function montujEkranLogowania(kontener, opcje) {
+  opcje = opcje || {};
+  const onZalogowano = opcje.onZalogowano || (() => location.reload());
+  const startowy = opcje.startowy || "login";
+  wstrzyknijStyleLog();
+  kontener.innerHTML = `
+    <div class="mlog-wrap">
+      <div class="mlog-tytul">MANA</div>
+      <div class="mlog-pod">Wejście</div>
+      <div class="mlog-taby" id="mlog-taby">
+        <button type="button" class="mlog-tab mlog-tab--on" data-tab="login">Logowanie</button>
+        <button type="button" class="mlog-tab" data-tab="rejestracja">Rejestracja</button>
+      </div>
+      <form id="mlog-v-login" class="mlog-v">
+        <div class="mlog-pole"><label>Email</label>
+          <input type="email" id="mlog-l-email" autocomplete="email" required></div>
+        <div class="mlog-pole"><label>Hasło</label>
+          <input type="password" id="mlog-l-haslo" autocomplete="current-password" required></div>
+        <button type="submit" class="mlog-przycisk" id="mlog-l-btn">Zaloguj się</button>
+        <button type="button" class="mlog-link" id="mlog-do-reset">Nie pamiętasz hasła?</button>
+      </form>
+      <form id="mlog-v-rejestracja" class="mlog-v" hidden>
+        <div class="mlog-pole"><label>Email</label>
+          <input type="email" id="mlog-r-email" autocomplete="email" required></div>
+        <div class="mlog-pole"><label>Nick</label>
+          <input type="text" id="mlog-r-nick" maxlength="80" required></div>
+        <div class="mlog-pole"><label>Rok urodzenia (opcjonalny)</label>
+          <input type="number" id="mlog-r-rok" min="1900" max="2026"></div>
+        <div class="mlog-pole"><label>Hasło (min. 6 znaków)</label>
+          <input type="password" id="mlog-r-h1" autocomplete="new-password" required></div>
+        <div class="mlog-pole"><label>Powtórz hasło</label>
+          <input type="password" id="mlog-r-h2" autocomplete="new-password" required></div>
+        <label class="mlog-zgoda"><input type="checkbox" id="mlog-r-reg">
+          <span>Akceptuję regulamin MANY</span></label>
+        <label class="mlog-zgoda"><input type="checkbox" id="mlog-r-rodo">
+          <span>Zgoda na przetwarzanie danych zgodnie z RODO</span></label>
+        <button type="submit" class="mlog-przycisk" id="mlog-r-btn">Zarejestruj się</button>
+      </form>
+      <form id="mlog-v-reset" class="mlog-v" hidden>
+        <div class="mlog-naglowek">Odzyskiwanie hasła</div>
+        <div class="mlog-opis">Podaj email — wyślemy link do ustawienia nowego hasła.</div>
+        <div class="mlog-pole"><label>Email</label>
+          <input type="email" id="mlog-reset-email" autocomplete="email" required></div>
+        <button type="submit" class="mlog-przycisk" id="mlog-reset-btn">Wyślij link</button>
+        <button type="button" class="mlog-link" id="mlog-do-login">Wróć do logowania</button>
+      </form>
+      <form id="mlog-v-nowehaslo" class="mlog-v" hidden>
+        <div class="mlog-naglowek">Ustaw nowe hasło</div>
+        <div class="mlog-opis">Wpisz nowe hasło do swojego konta.</div>
+        <div class="mlog-pole"><label>Nowe hasło (min. 6 znaków)</label>
+          <input type="password" id="mlog-nh-h1" autocomplete="new-password" required></div>
+        <div class="mlog-pole"><label>Powtórz nowe hasło</label>
+          <input type="password" id="mlog-nh-h2" autocomplete="new-password" required></div>
+        <button type="submit" class="mlog-przycisk" id="mlog-nh-btn">Ustaw hasło</button>
+      </form>
+      <div id="mlog-msg"></div>
+    </div>`;
+  const widoki = {
+    login: kontener.querySelector("#mlog-v-login"),
+    rejestracja: kontener.querySelector("#mlog-v-rejestracja"),
+    reset: kontener.querySelector("#mlog-v-reset"),
+    nowehaslo: kontener.querySelector("#mlog-v-nowehaslo"),
+  };
+  const taby = kontener.querySelector("#mlog-taby");
+  const msg = kontener.querySelector("#mlog-msg");
+  function pokazMsg(typ, tekst) { msg.className = "mlog-msg mlog-msg--" + typ; msg.textContent = tekst; }
+  function czyscMsg() { msg.className = ""; msg.textContent = ""; }
+  function pokazWidok(nazwa) {
+    Object.keys(widoki).forEach((k) => { widoki[k].hidden = (k !== nazwa); });
+    taby.style.display = (nazwa === "login" || nazwa === "rejestracja") ? "flex" : "none";
+    if (nazwa === "login" || nazwa === "rejestracja") {
+      taby.querySelectorAll(".mlog-tab").forEach((t) =>
+        t.classList.toggle("mlog-tab--on", t.dataset.tab === nazwa));
+    }
+    czyscMsg();
+  }
+  taby.querySelectorAll(".mlog-tab").forEach((tab) => {
+    tab.addEventListener("click", () => pokazWidok(tab.dataset.tab));
+  });
+  kontener.querySelector("#mlog-do-reset").addEventListener("click", () => pokazWidok("reset"));
+  kontener.querySelector("#mlog-do-login").addEventListener("click", () => pokazWidok("login"));
+  widoki.login.addEventListener("submit", async (e) => {
+    e.preventDefault(); czyscMsg();
+    const btn = kontener.querySelector("#mlog-l-btn");
+    btn.disabled = true; btn.textContent = "Logowanie…";
+    const wynik = await zaloguj({
+      email: kontener.querySelector("#mlog-l-email").value.trim(),
+      haslo: kontener.querySelector("#mlog-l-haslo").value,
+    });
+    btn.disabled = false; btn.textContent = "Zaloguj się";
+    if (!wynik.ok) { pokazMsg("err", "Błąd logowania: " + wynik.error); return; }
+    pokazMsg("ok", "Zalogowano. Wchodzę…");
+    onZalogowano();
+  });
+  widoki.rejestracja.addEventListener("submit", async (e) => {
+    e.preventDefault(); czyscMsg();
+    const email = kontener.querySelector("#mlog-r-email").value.trim();
+    const nick = kontener.querySelector("#mlog-r-nick").value.trim();
+    const rok = kontener.querySelector("#mlog-r-rok").value.trim();
+    const h1 = kontener.querySelector("#mlog-r-h1").value;
+    const h2 = kontener.querySelector("#mlog-r-h2").value;
+    const reg = kontener.querySelector("#mlog-r-reg").checked;
+    const rodo = kontener.querySelector("#mlog-r-rodo").checked;
+    if (!email || !nick || !h1) { pokazMsg("err", "Wypełnij email, nick i hasło."); return; }
+    if (h1.length < 6) { pokazMsg("err", "Hasło musi mieć min. 6 znaków."); return; }
+    if (h1 !== h2) { pokazMsg("err", "Hasła nie są zgodne."); return; }
+    if (!reg || !rodo) { pokazMsg("err", "Wymagane obie zgody."); return; }
+    const btn = kontener.querySelector("#mlog-r-btn");
+    btn.disabled = true; btn.textContent = "Rejestracja…";
+    const wynik = await zarejestruj({
+      email, haslo: h1, nick, rokUrodzenia: rok, zgodaRegulamin: reg, zgodaRodo: rodo,
+    });
+    btn.disabled = false; btn.textContent = "Zarejestruj się";
+    if (!wynik.ok) { pokazMsg("err", wynik.error); return; }
+    if (wynik.potwierdzEmail) {
+      pokazMsg("info", "Konto utworzone. Potwierdź email z linka, potem zaloguj się.");
+      pokazWidok("login");
+      return;
+    }
+    pokazMsg("ok", "Konto utworzone. Wchodzę…");
+    onZalogowano();
+  });
+  widoki.reset.addEventListener("submit", async (e) => {
+    e.preventDefault(); czyscMsg();
+    const email = kontener.querySelector("#mlog-reset-email").value.trim();
+    if (!email) { pokazMsg("err", "Podaj email."); return; }
+    const btn = kontener.querySelector("#mlog-reset-btn");
+    btn.disabled = true; btn.textContent = "Wysyłanie…";
+    const wynik = await wyslijResetHasla(email);
+    btn.disabled = false; btn.textContent = "Wyślij link";
+    if (!wynik.ok) { pokazMsg("err", "Błąd: " + wynik.error); return; }
+    pokazMsg("info", "Jeśli konto istnieje — link do zmiany hasła został wysłany na podany email.");
+  });
+  widoki.nowehaslo.addEventListener("submit", async (e) => {
+    e.preventDefault(); czyscMsg();
+    const h1 = kontener.querySelector("#mlog-nh-h1").value;
+    const h2 = kontener.querySelector("#mlog-nh-h2").value;
+    if (h1.length < 6) { pokazMsg("err", "Hasło musi mieć min. 6 znaków."); return; }
+    if (h1 !== h2) { pokazMsg("err", "Hasła nie są zgodne."); return; }
+    const btn = kontener.querySelector("#mlog-nh-btn");
+    btn.disabled = true; btn.textContent = "Zapisywanie…";
+    const wynik = await ustawNoweHaslo(h1);
+    btn.disabled = false; btn.textContent = "Ustaw hasło";
+    if (!wynik.ok) { pokazMsg("err", "Błąd: " + wynik.error); return; }
+    pokazMsg("ok", "Hasło zmienione. Wchodzę…");
+    onZalogowano();
+  });
+  kontener.querySelectorAll('input[type="password"]').forEach((inp) => {
+    inp.style.paddingRight = "42px";
+    const wrap = document.createElement("span");
+    wrap.style.cssText = "position:relative; display:block;";
+    inp.parentNode.insertBefore(wrap, inp);
+    wrap.appendChild(inp);
+    const oko = document.createElement("button");
+    oko.type = "button";
+    oko.textContent = "\u{1F441}";
+    oko.setAttribute("aria-label", "Pokaż hasło");
+    oko.style.cssText = "position:absolute; right:6px; top:50%; transform:translateY(-50%);"
+      + " background:none; border:none; cursor:pointer; font-size:16px; opacity:0.5; padding:4px;";
+    oko.addEventListener("click", () => {
+      const pokaz = inp.type === "password";
+      inp.type = pokaz ? "text" : "password";
+      oko.style.opacity = pokaz ? "1" : "0.5";
+    });
+    wrap.appendChild(oko);
+  });
+  pokazWidok(startowy);
+  return { pokazWidok };
+}
+
 async function start() {
+  let recovery = false;
+  nasluchujOdzyskiwania(() => {
+    recovery = true;
+    $("m-loader").style.display = "none";
+    $("m-app").style.display = "none";
+    $("m-login").style.display = "block";
+    montujEkranLogowania($("m-login"), { startowy: "nowehaslo", onZalogowano: () => location.reload() });
+  });
+  await new Promise((r) => setTimeout(r, 250));
+  if (recovery) return;
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) { pokazLogowanie(); return; }
   await wejdz();
@@ -416,22 +676,9 @@ async function start() {
 function pokazLogowanie() {
   $("m-loader").style.display = "none";
   $("m-app").style.display = "none";
-  $("m-login").style.display = "flex";
+  $("m-login").style.display = "block";
+  montujEkranLogowania($("m-login"), { onZalogowano: () => location.reload() });
 }
-$("m-login-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const btn = $("m-l-btn"), msg = $("m-l-msg");
-  msg.className = "m-login__msg"; msg.textContent = "";
-  btn.disabled = true; btn.textContent = "Logowanie…";
-  const { error } = await supabase.auth.signInWithPassword({
-    email: $("m-l-email").value.trim(), password: $("m-l-haslo").value,
-  });
-  btn.disabled = false; btn.textContent = "Zaloguj się";
-  if (error) { msg.className = "m-login__msg m-login__msg--err"; msg.textContent = "Błąd logowania: " + error.message; return; }
-  $("m-login").style.display = "none";
-  $("m-loader").style.display = "block";
-  await wejdz();
-});
 async function wejdz() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: trav } = await supabase
