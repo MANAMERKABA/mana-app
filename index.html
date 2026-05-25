@@ -384,10 +384,65 @@ const odmiana = (n, j, k, w) => {
   const o = n % 10, o2 = n % 100;
   return (o >= 2 && o <= 4 && !(o2 >= 12 && o2 <= 14)) ? k : w;
 };
+/* ════════════════════════════════════════════════════════════════════
+   KAFEL CZAS — wszystkie daty przypięte do strefy Europe/Warsaw.
+   offsetWarszawyMin i isoZWarszawy są IDENTYCZNE jak w Edge Function
+   call-serce — wspólna logika, gotowa do ponownego użycia (gospodarz.app).
+   ════════════════════════════════════════════════════════════════════ */
+const TZ = "Europe/Warsaw";
+/* offset Warszawy (w minutach) dla danej daty — obsługuje CET/CEST */
+function offsetWarszawyMin(dataStr) {
+  const probny = new Date(dataStr + "T12:00:00Z");
+  const napis = new Intl.DateTimeFormat("en-US", { timeZone: TZ, timeZoneName: "shortOffset" }).format(probny);
+  const m = napis.match(/GMT([+-]\d{1,2})/);
+  return m ? Number(m[1]) * 60 : 120;
+}
+/* czas ścienny warszawski ("YYYY-MM-DD", "HH:MM") → moment UTC (ISO) */
+function isoZWarszawy(dataStr, godzStr) {
+  const [Y, M, D] = String(dataStr).split("-").map(Number);
+  const [h, mi] = String(godzStr || "00:00").split(":").map(Number);
+  const off = offsetWarszawyMin(dataStr);
+  return new Date(Date.UTC(Y, M - 1, D, h || 0, mi || 0) - off * 60000).toISOString();
+}
+/* moment UTC → składowe czasu ściennego w Warszawie */
+function czesciWarszawy(wejscie) {
+  const d = (wejscie instanceof Date) ? wejscie : new Date(wejscie);
+  const cz = {};
+  for (const p of new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).formatToParts(d)) cz[p.type] = p.value;
+  const hh = (cz.hour === "24") ? "00" : cz.hour;
+  return {
+    rok: +cz.year, mies: +cz.month, dzien: +cz.day,
+    godz: +hh, min: +cz.minute,
+    dataISO: `${cz.year}-${cz.month}-${cz.day}`,   // "YYYY-MM-DD" w Warszawie
+    godzISO: `${hh}:${cz.minute}`,                  // "HH:MM" w Warszawie
+  };
+}
+/* dzisiejsza data warszawska jako Date-etykieta (lokalna północ) */
+function dzisWarszawa() {
+  const t = czesciWarszawy(new Date());
+  return new Date(t.rok, t.mies - 1, t.dzien);
+}
+/* Date-etykieta kalendarza → "YYYY-MM-DD" (pola lokalne, bez strefy) */
+function dataKalISO(d) {
+  return `${d.getFullYear()}-${dwa(d.getMonth() + 1)}-${dwa(d.getDate())}`;
+}
+/* formatery wyświetlania — zawsze strefa warszawska */
+function fmtData(iso, opcje) {
+  return new Date(iso).toLocaleDateString("pl-PL", { ...opcje, timeZone: TZ });
+}
+function fmtGodz(iso) {
+  return new Date(iso).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+}
+/* granice dnia warszawskiego (dziś + przesunięcie) jako momenty UTC */
 function granceDnia(przesuniecieDni = 0) {
-  const t = new Date();
-  const s = new Date(t.getFullYear(), t.getMonth(), t.getDate() + przesuniecieDni, 0, 0, 0);
-  const e = new Date(t.getFullYear(), t.getMonth(), t.getDate() + przesuniecieDni, 23, 59, 59, 999);
+  const t = czesciWarszawy(new Date());
+  const baza = new Date(Date.UTC(t.rok, t.mies - 1, t.dzien + przesuniecieDni, 12));
+  const cz = czesciWarszawy(baza);
+  const s = new Date(isoZWarszawy(cz.dataISO, "00:00"));
+  const e = new Date(isoZWarszawy(cz.dataISO, "23:59"));
   return { s, e };
 }
 
@@ -694,7 +749,7 @@ async function wejdz() {
 
 function renderHeader() {
   $("m-data").textContent = new Date().toLocaleDateString("pl-PL",
-    { weekday: "long", day: "numeric", month: "long" });
+    { weekday: "long", day: "numeric", month: "long", timeZone: TZ });
 }
 $("m-logout").addEventListener("click", async () => {
   await supabase.auth.signOut(); location.reload();
@@ -772,13 +827,12 @@ function renderBrief(ileWyd, ileZad) {
 
 function renderKalendarzDzis(wyd) {
   $("m-kal-naglowek").textContent = "Dziś · " +
-    new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long" });
+    new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long", timeZone: TZ });
   const lista = $("m-kal-lista");
   lista.innerHTML = "";
   if (!wyd.length) { lista.appendChild(el(`<div class="m-pusto">Dziś w kalendarzu pusto.</div>`)); return; }
   for (const e of wyd) {
-    const czas = e.caly_dzien ? "cały dzień"
-      : new Date(e.data_czas).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+    const czas = e.caly_dzien ? "cały dzień" : fmtGodz(e.data_czas);
     lista.appendChild(el(`<div class="m-poz"><span class="m-poz__czas">${esc(czas)}</span><span class="m-poz__tytul">${esc(e.tytul)}</span></div>`));
   }
 }
@@ -809,7 +863,7 @@ function renderRocznica(wpis, startDnia) {
   if (!wpis) { pasek.style.display = "none"; return; }
   const data = new Date(wpis.data_czas);
   const dzis = data >= startDnia && data < new Date(startDnia.getTime() + 86400000);
-  const kiedy = dzis ? "Dziś" : data.toLocaleDateString("pl-PL", { day: "numeric", month: "long" });
+  const kiedy = dzis ? "Dziś" : fmtData(wpis.data_czas, { day: "numeric", month: "long" });
   pasek.innerHTML = "";
   pasek.appendChild(el(`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 12v10H4V12M2 7h20v5H2zM12 22V7M12 7C12 7 12 2 8.5 2 6 2 6 7 12 7zM12 7C12 7 12 2 15.5 2 18 2 18 7 12 7z"/></svg>`));
   pasek.appendChild(el(`<span><strong>${esc(kiedy)}</strong> · ${esc(wpis.tytul)}</span>`));
@@ -891,12 +945,12 @@ if (Rozpoznanie) {
    POKÓJ HORYZONT — kalendarz (4 widoki, swipe, menu) + zadania
    ==================================================================== */
 let widokKal = "3dni";
-let kotwica = new Date();
+let kotwica = dzisWarszawa();
 let pokazRocznice = true;
 
 async function otworzHoryzont() {
   pokazWidok("horyzont");
-  kotwica = new Date();
+  kotwica = dzisWarszawa();
   widokKal = "3dni";
   await Promise.all([renderKalendarz(), wczytajZadaniaHoryzont()]);
 }
@@ -947,7 +1001,7 @@ async function renderKalendarz() {
     <div class="m-kaltresc" id="kal-tresc"></div>`;
   wrap.querySelectorAll(".m-kalnav").forEach((b) =>
     b.addEventListener("click", () => przesunOkres(Number(b.dataset.k))));
-  $("kal-dzis").addEventListener("click", () => { kotwica = new Date(); renderKalendarz(); });
+  $("kal-dzis").addEventListener("click", () => { kotwica = dzisWarszawa(); renderKalendarz(); });
   $("kal-menu").addEventListener("click", (e) => { e.stopPropagation(); otworzMenuKal(); });
   const box = $("kal-tresc");
   podepnijSwipe(box);
@@ -999,7 +1053,8 @@ async function wczytajWydarzeniaZakres(od, doData) {
     .from("events").select("*")
     .eq("traveler_id", TRAVELER.id)
     .in("typ", ["wydarzenie", "zadanie"])
-    .gte("data_czas", od.toISOString()).lt("data_czas", doData.toISOString())
+    .gte("data_czas", isoZWarszawy(dataKalISO(od), "00:00"))
+    .lt("data_czas", isoZWarszawy(dataKalISO(doData), "00:00"))
     .order("data_czas", { ascending: true });
   let lista = data || [];
   if (!pokazRocznice) lista = lista.filter((e) => !e.caly_dzien);
@@ -1011,12 +1066,12 @@ async function renderMiesiacGrid(box, od) {
   const rok = od.getFullYear(), mies = od.getMonth();
   const dniWMies = new Date(rok, mies + 1, 0).getDate();
   const pierwszyDow = (new Date(rok, mies, 1).getDay() + 6) % 7;
-  const dzisD = new Date();
-  const dzisTen = dzisD.getFullYear() === rok && dzisD.getMonth() === mies ? dzisD.getDate() : -1;
+  const dzisD = czesciWarszawy(new Date());
+  const dzisTen = (dzisD.rok === rok && dzisD.mies - 1 === mies) ? dzisD.dzien : -1;
 
   const wyd = await wczytajWydarzeniaZakres(
     new Date(rok, mies, 1), new Date(rok, mies + 1, 1));
-  const dniZWyd = new Set(wyd.map((e) => new Date(e.data_czas).getDate()));
+  const dniZWyd = new Set(wyd.map((e) => czesciWarszawy(e.data_czas).dzien));
 
   let html = `<div class="m-mc"><div class="m-mc__siatka">`;
   for (const d of ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"])
@@ -1043,9 +1098,8 @@ async function renderMiesiacGrid(box, od) {
     lista.appendChild(el(`<div class="m-pusto" style="padding:8px 4px">Brak wydarzeń w tym miesiącu.</div>`));
   } else {
     for (const e of wyd) {
-      const dt = new Date(e.data_czas);
-      const kiedy = dt.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })
-        + (e.caly_dzien ? "" : " · " + dt.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" }));
+      const kiedy = fmtData(e.data_czas, { day: "numeric", month: "short" })
+        + (e.caly_dzien ? "" : " · " + fmtGodz(e.data_czas));
       const wier = el(`<div class="m-poz"><span class="m-poz__czas">${esc(kiedy)}</span><span class="m-poz__tytul">${esc(e.tytul)}</span></div>`);
       wier.style.cursor = "pointer";
       wier.addEventListener("click", () => oknoWydarzenia({ event: e }));
@@ -1058,15 +1112,15 @@ async function renderMiesiacGrid(box, od) {
 /* --- widok Dziś / 3 dni / Tydzień: siatka czasu --- */
 async function renderSiatka(box, od, dni) {
   const H = 44;
-  const teraz = new Date();
-  const dzisKl = teraz.toDateString();
+  const teraz = czesciWarszawy(new Date());
+  const dzisISO = dataKalISO(dzisWarszawa());
   const koniec = new Date(od.getTime() + dni * 86400000);
   const wyd = await wczytajWydarzeniaZakres(od, koniec);
 
   let naglowki = `<div></div>`;
   for (let i = 0; i < dni; i++) {
     const dz = new Date(od.getTime() + i * 86400000);
-    const on = dz.toDateString() === dzisKl ? " m-tg__hdr--dzis" : "";
+    const on = dataKalISO(dz) === dzisISO ? " m-tg__hdr--dzis" : "";
     naglowki += `<div class="m-tg__hdr${on}" data-iso="${dz.toISOString()}">`
       + esc(dz.toLocaleDateString("pl-PL", { weekday: "short" }))
       + `<b>${dz.getDate()}</b></div>`;
@@ -1090,28 +1144,28 @@ async function renderSiatka(box, od, dni) {
 
   const kolEls = box.querySelectorAll(".m-tg__kol");
   for (const e of wyd) {
-    const dt = new Date(e.data_czas);
+    const cz = czesciWarszawy(e.data_czas);
     let idx = -1;
     for (let i = 0; i < dni; i++) {
       const dz = new Date(od.getTime() + i * 86400000);
-      if (dz.toDateString() === dt.toDateString()) { idx = i; break; }
+      if (dataKalISO(dz) === cz.dataISO) { idx = i; break; }
     }
     if (idx < 0) continue;
     let trwanie = 60;
-    if (e.koniec) { const d = (new Date(e.koniec) - dt) / 60000; if (d > 0) trwanie = d; }
-    const top = (dt.getHours() * 60 + dt.getMinutes()) / 60 * H;
+    if (e.koniec) { const d = (new Date(e.koniec) - new Date(e.data_czas)) / 60000; if (d > 0) trwanie = d; }
+    const top = (cz.godz * 60 + cz.min) / 60 * H;
     const wys = Math.max(trwanie / 60 * H, 22);
     const klasaZad = e.typ === "zadanie" ? " m-tg__event--zad" : "";
     const blok = el(`<div class="m-tg__event${klasaZad}" style="top:${top}px;height:${wys}px">`
-      + `<span class="m-tg__event-czas">${dt.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" })}</span> `
+      + `<span class="m-tg__event-czas">${fmtGodz(e.data_czas)}</span> `
       + `<span>${esc(e.tytul)}</span></div>`);
     blok.addEventListener("click", (ev) => { ev.stopPropagation(); oknoWydarzenia({ event: e }); });
     kolEls[idx].appendChild(blok);
   }
   for (let i = 0; i < dni; i++) {
     const dz = new Date(od.getTime() + i * 86400000);
-    if (dz.toDateString() === dzisKl) {
-      const top = (teraz.getHours() * 60 + teraz.getMinutes()) / 60 * H;
+    if (dataKalISO(dz) === dzisISO) {
+      const top = (teraz.godz * 60 + teraz.min) / 60 * H;
       kolEls[i].appendChild(el(`<div class="m-tg__teraz" style="top:${top}px"></div>`));
     }
     kolEls[i].addEventListener("click", (ev) => {
@@ -1129,21 +1183,23 @@ async function renderSiatka(box, od, dni) {
     });
   });
   const scr = box.querySelector(".m-tg__scroll");
-  if (scr) scr.scrollTop = Math.max(0, (teraz.getHours() - 1) * H);
+  if (scr) scr.scrollTop = Math.max(0, (teraz.godz - 1) * H);
 }
 
 /* --- okno wydarzenia: dodanie albo edycja --- */
 function oknoWydarzenia(opcje) {
   opcje = opcje || {};
   const ev = opcje.event || null;
-  let baza;
-  if (ev) baza = ev.data_czas ? new Date(ev.data_czas) : new Date();
-  else {
-    baza = opcje.data ? new Date(opcje.data) : new Date();
-    if (opcje.godzina != null) baza.setHours(opcje.godzina, 0, 0, 0);
+  let dataVal, godzVal;
+  if (ev) {
+    const cz = czesciWarszawy(ev.data_czas ? ev.data_czas : new Date());
+    dataVal = cz.dataISO; godzVal = cz.godzISO;
+  } else {
+    dataVal = opcje.data ? dataKalISO(opcje.data) : czesciWarszawy(new Date()).dataISO;
+    godzVal = (opcje.godzina != null)
+      ? `${dwa(opcje.godzina)}:00`
+      : czesciWarszawy(new Date()).godzISO;
   }
-  const dataVal = `${baza.getFullYear()}-${dwa(baza.getMonth() + 1)}-${dwa(baza.getDate())}`;
-  const godzVal = `${dwa(baza.getHours())}:${dwa(baza.getMinutes())}`;
   let trwanie = 60;
   if (ev && ev.koniec && ev.data_czas) {
     const d = (new Date(ev.koniec) - new Date(ev.data_czas)) / 60000;
@@ -1196,10 +1252,10 @@ function oknoWydarzenia(opcje) {
     const calyD = caly.checked;
     let dataCzas, koniec = null;
     if (calyD) {
-      dataCzas = new Date(dataStr + "T00:00").toISOString();
+      dataCzas = isoZWarszawy(dataStr, "00:00");
     } else {
       const g = overlay.querySelector("#w-godz").value || "12:00";
-      dataCzas = new Date(dataStr + "T" + g).toISOString();
+      dataCzas = isoZWarszawy(dataStr, g);
       const trw = parseInt(overlay.querySelector("#w-trw").value, 10) || 60;
       koniec = new Date(new Date(dataCzas).getTime() + trw * 60000).toISOString();
     }
@@ -1258,9 +1314,8 @@ function renderZadaniaAktywne(zad) {
     const zalegle = z.data_czas && new Date(z.data_czas) < teraz;
     let terminHtml = "";
     if (z.data_czas) {
-      const dt = new Date(z.data_czas);
-      const t = dt.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })
-        + " · " + dt.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+      const t = fmtData(z.data_czas, { day: "numeric", month: "short" })
+        + " · " + fmtGodz(z.data_czas);
       terminHtml = `<div class="m-zad-d__termin${zalegle ? " m-zad-d__termin--zalegly" : ""}">${zalegle ? "zaległe — " : ""}${esc(t)}</div>`;
     }
     const w = el(`<div class="m-zad-d${zalegle ? " m-zad-d--zalegle" : ""}" data-id="${esc(z.id)}" data-poz="${z.pozycja ?? ""}">
@@ -1360,8 +1415,8 @@ async function zapiszPozycje(row, lista) {
 function oknoZadania(z) {
   let terminVal = "";
   if (z.data_czas) {
-    const d = new Date(z.data_czas);
-    terminVal = `${d.getFullYear()}-${dwa(d.getMonth() + 1)}-${dwa(d.getDate())}T${dwa(d.getHours())}:${dwa(d.getMinutes())}`;
+    const cz = czesciWarszawy(z.data_czas);
+    terminVal = `${cz.dataISO}T${cz.godzISO}`;
   }
   const PRIO = ["niski", "normalny", "wysoki", "pilny"];
   const opcjePrio = PRIO.map((p) =>
@@ -1395,10 +1450,15 @@ function oknoZadania(z) {
     const tytul = overlay.querySelector("#z-tytul").value.trim();
     if (!tytul) { overlay.querySelector("#z-tytul").focus(); return; }
     const terminStr = overlay.querySelector("#z-termin").value;
+    let terminISO = null;
+    if (terminStr) {
+      const [dCz, gCz] = terminStr.split("T");
+      terminISO = isoZWarszawy(dCz, gCz || "00:00");
+    }
     const rekord = {
       tytul,
       priorytet: overlay.querySelector("#z-prio").value,
-      data_czas: terminStr ? new Date(terminStr).toISOString() : null,
+      data_czas: terminISO,
       opis: overlay.querySelector("#z-opis").value.trim() || null,
     };
     const { error } = await supabase.from("events").update(rekord).eq("id", z.id);
