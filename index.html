@@ -122,6 +122,14 @@
   .m-poz__czas { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--turkus); flex: 0 0 46px; }
   .m-poz__tytul { font-size: 14.5px; }
   .m-pusto { font-size: 14px; color: var(--ink-soft); padding: 4px 0; }
+  .m-dzien-naglowek { font-size: 12px; font-weight: 600; color: var(--ink-soft); padding: 9px 0 2px; }
+  .m-poz + .m-dzien-naglowek { border-top: 1px solid #f0ece0; margin-top: 4px; }
+  .m-wiecej {
+    display: block; width: 100%; text-align: left; background: none; border: none;
+    cursor: pointer; font-family: var(--font-body); font-size: 13px; color: var(--turkus);
+    padding: 10px 0 2px;
+  }
+  .m-wiecej:hover { text-decoration: underline; }
 
   .m-zad { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
   .m-zad + .m-zad { border-top: 1px solid #f0ece0; }
@@ -334,14 +342,6 @@
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
         </button>
       </div>
-    </section>
-
-    <section class="m-sekcja">
-      <div class="m-sekcja__head">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        <span id="m-kal-naglowek">Dziś</span>
-      </div>
-      <div id="m-kal-lista"></div>
     </section>
 
     <section class="m-sekcja">
@@ -839,12 +839,7 @@ function renderPokoje() {
    ==================================================================== */
 async function wczytajDzien() {
   const { s, e } = granceDnia(0);
-
-  const { data: wydarzenia = [] } = await supabase
-    .from("events").select("*")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
-    .gte("data_czas", s.toISOString()).lte("data_czas", e.toISOString())
-    .order("data_czas", { ascending: true });
+  const oknoDo = new Date(s.getTime() + 8 * 86400000);
 
   const { data: zadania = [] } = await supabase
     .from("events").select("*")
@@ -852,23 +847,24 @@ async function wczytajDzien() {
     .neq("status", "zrobione")
     .order("pozycja", { ascending: true, nullsFirst: false });
 
-  const oknoRocznic = new Date(s.getTime() + 8 * 86400000);
+  // dzisiejsze wydarzenia — tylko do policzenia w powitaniu;
+  // pełna lista wydarzeń żyje w pokoju Horyzont, ekran startowy jej nie dubluje.
+  const { data: wydDzis = [] } = await supabase
+    .from("events").select("data_czas, koniec, caly_dzien")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
+    .gte("data_czas", s.toISOString()).lte("data_czas", e.toISOString());
+
   const { data: caloDniowe = [] } = await supabase
     .from("events").select("tytul, data_czas")
     .eq("traveler_id", TRAVELER.id).eq("caly_dzien", true)
-    .gte("data_czas", s.toISOString()).lt("data_czas", oknoRocznic.toISOString())
+    .gte("data_czas", s.toISOString()).lt("data_czas", oknoDo.toISOString())
     .order("data_czas", { ascending: true }).limit(1);
 
-  // ekran startowy pokazuje tylko to, co jeszcze przed podróżnikiem —
-  // wydarzenia minione (koniec/godzina już za nami) znikają z listy „Dziś".
   const teraz = new Date();
-  const wszystkieWyd = wydarzenia || [];
-  const nadchodzace = wszystkieWyd.filter((e) =>
-    e.caly_dzien || new Date(e.koniec || e.data_czas) >= teraz);
-  const minione = wszystkieWyd.length - nadchodzace.length;
+  const dzisNadch = (wydDzis || []).filter((w) =>
+    w.caly_dzien || new Date(w.koniec || w.data_czas) >= teraz);
 
-  renderBrief(nadchodzace.length, (zadania || []).length);
-  renderKalendarzDzis(nadchodzace, minione);
+  renderBrief(dzisNadch.length, (zadania || []).length);
   renderZadaniaEkran(zadania || []);
   renderRocznica((caloDniowe || [])[0] || null, s);
 }
@@ -889,30 +885,21 @@ function renderBrief(ileWyd, ileZad) {
   stream.appendChild(el(`<div class="m-msg m-msg--asystent">${esc(tekst)}</div>`));
 }
 
-function renderKalendarzDzis(wyd, minione) {
-  $("m-kal-naglowek").textContent = "Dziś · " +
-    new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long", timeZone: TZ });
-  const lista = $("m-kal-lista");
-  lista.innerHTML = "";
-  if (!wyd.length) {
-    lista.appendChild(el(`<div class="m-pusto">${minione
-      ? "Na dziś nie ma już nic w kalendarzu."
-      : "Dziś w kalendarzu pusto."}</div>`));
-    return;
-  }
-  for (const e of wyd) {
-    const czas = e.caly_dzien ? "cały dzień" : fmtGodz(e.data_czas);
-    const obca = obcaStrefaLinia(e);
-    lista.appendChild(el(`<div class="m-poz"><span class="m-poz__czas">${esc(czas)}</span>`
-      + `<span class="m-poz__tytul">${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`));
-  }
-}
+/* Wydarzenia nie mają sekcji na ekranie startowym — ich lista i widoki
+   żyją w pokoju Horyzont; ekran startowy jest asystent-first. */
 
 function renderZadaniaEkran(zad) {
   const lista = $("m-zad-lista");
   lista.innerHTML = "";
   if (!zad.length) { lista.appendChild(el(`<div class="m-pusto">Brak otwartych zadań.</div>`)); return; }
-  for (const z of zad) {
+  // zaległe na wierzch, reszta zachowuje ręczną kolejność (sort jest stabilny)
+  const teraz = new Date();
+  const posortowane = [...zad].sort((a, b) => {
+    const za = (a.data_czas && new Date(a.data_czas) < teraz) ? 0 : 1;
+    const zb = (b.data_czas && new Date(b.data_czas) < teraz) ? 0 : 1;
+    return za - zb;
+  });
+  for (const z of posortowane.slice(0, 3)) {
     const w = el(`<div class="m-zad">
       <button class="m-zad__box" aria-label="Oznacz zrobione">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5L20 6"/></svg>
@@ -926,6 +913,11 @@ function renderZadaniaEkran(zad) {
       if (ok) setTimeout(() => { w.remove(); wczytajDzien(); }, 420);
     });
     lista.appendChild(w);
+  }
+  if (zad.length > 3) {
+    const link = el(`<button class="m-wiecej">więcej w Horyzoncie →</button>`);
+    link.addEventListener("click", otworzHoryzont);
+    lista.appendChild(link);
   }
 }
 
