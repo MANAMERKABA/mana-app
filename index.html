@@ -263,6 +263,37 @@
 
   .m-loader { margin: auto; color: var(--ink-soft); font-size: 14px; padding: 40px; }
   .m-stopka { padding: 10px 16px 24px; }
+
+  /* ---- WYBÓR STREFY CZASOWEJ ---- */
+  .m-strefa-btn {
+    width: 100%; box-sizing: border-box; text-align: left; cursor: pointer;
+    border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px;
+    font-size: 14px; font-family: var(--font-body); background: #faf8f2; color: var(--ink);
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .m-strefa-btn__zmien { font-size: 12px; color: var(--turkus); flex: 0 0 auto; }
+  .m-strefa-hint { font-size: 12px; color: var(--turkus); margin-top: 5px; line-height: 1.4; }
+  .m-strefa-szukaj {
+    width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 9px;
+    padding: 10px 12px; font-size: 14px; font-family: var(--font-body);
+    background: #faf8f2; color: var(--ink); margin-bottom: 8px;
+  }
+  .m-strefa-szukaj:focus { outline: none; border-color: var(--turkus); }
+  .m-strefa-lista { max-height: 54vh; overflow-y: auto; }
+  .m-strefa-poz {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+    padding: 10px 6px; border-bottom: 1px solid #f0ece0; cursor: pointer;
+  }
+  .m-strefa-poz:hover { background: var(--turkus-bg); }
+  .m-strefa-poz--on { background: var(--turkus-bg); }
+  .m-strefa-poz__miasto { font-size: 14px; }
+  .m-strefa-poz__reg { font-size: 11px; color: var(--ink-soft); flex: 0 0 auto; }
+  .m-strefa-pusto { padding: 16px 6px; font-size: 13px; color: var(--ink-soft); }
+
+  /* czas obcej strefy — druga linijka */
+  .m-tg__event-obca { display: block; font-size: 9px; color: var(--ink-soft); margin-top: 1px; }
+  .m-poz__obca { font-size: 11px; color: var(--ink-soft); }
+  .m-zad-d__obca { font-size: 11px; color: var(--ink-soft); margin-top: 1px; }
 </style>
 </head>
 <body>
@@ -389,37 +420,52 @@ const odmiana = (n, j, k, w) => {
    offsetWarszawyMin i isoZWarszawy są IDENTYCZNE jak w Edge Function
    call-serce — wspólna logika, gotowa do ponownego użycia (gospodarz.app).
    ════════════════════════════════════════════════════════════════════ */
+/* TZ = strefa bazowa podróżnika. W wersji 1 stała; faza 2 — podąża za
+   strefą wykrytą przez telefon (patrz MerKaBa_strefy_spec, decyzja 2). */
 const TZ = "Europe/Warsaw";
-/* offset Warszawy (w minutach) dla danej daty — obsługuje CET/CEST */
-function offsetWarszawyMin(dataStr) {
+/* offset dowolnej strefy IANA (w minutach) dla danej daty — obsługuje
+   znak i minuty offsetu (Nowy Jork -4, Indie +5:30, Nepal +5:45) */
+function offsetStrefyMin(dataStr, strefa) {
   const probny = new Date(dataStr + "T12:00:00Z");
-  const napis = new Intl.DateTimeFormat("en-US", { timeZone: TZ, timeZoneName: "shortOffset" }).format(probny);
-  const m = napis.match(/GMT([+-]\d{1,2})/);
-  return m ? Number(m[1]) * 60 : 120;
+  const napis = new Intl.DateTimeFormat("en-US", { timeZone: strefa, timeZoneName: "shortOffset" }).format(probny);
+  const m = napis.match(/GMT([+-]\d{1,2})(?::(\d{2}))?/);
+  if (!m) return 0;
+  const godz = Number(m[1]);
+  const min = m[2] ? Number(m[2]) : 0;
+  return godz * 60 + (godz < 0 ? -min : min);
 }
-/* czas ścienny warszawski ("YYYY-MM-DD", "HH:MM") → moment UTC (ISO) */
-function isoZWarszawy(dataStr, godzStr) {
+/* czas ścienny w danej strefie ("YYYY-MM-DD", "HH:MM", strefa) → moment UTC */
+function isoZeStrefy(dataStr, godzStr, strefa) {
   const [Y, M, D] = String(dataStr).split("-").map(Number);
   const [h, mi] = String(godzStr || "00:00").split(":").map(Number);
-  const off = offsetWarszawyMin(dataStr);
+  const off = offsetStrefyMin(dataStr, strefa);
   return new Date(Date.UTC(Y, M - 1, D, h || 0, mi || 0) - off * 60000).toISOString();
 }
-/* moment UTC → składowe czasu ściennego w Warszawie */
-function czesciWarszawy(wejscie) {
+/* moment UTC → składowe czasu ściennego w danej strefie */
+function czesciWStrefie(wejscie, strefa) {
   const d = (wejscie instanceof Date) ? wejscie : new Date(wejscie);
   const cz = {};
   for (const p of new Intl.DateTimeFormat("en-GB", {
-    timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit",
+    timeZone: strefa, year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", hour12: false,
   }).formatToParts(d)) cz[p.type] = p.value;
   const hh = (cz.hour === "24") ? "00" : cz.hour;
   return {
     rok: +cz.year, mies: +cz.month, dzien: +cz.day,
     godz: +hh, min: +cz.minute,
-    dataISO: `${cz.year}-${cz.month}-${cz.day}`,   // "YYYY-MM-DD" w Warszawie
-    godzISO: `${hh}:${cz.minute}`,                  // "HH:MM" w Warszawie
+    dataISO: `${cz.year}-${cz.month}-${cz.day}`,   // "YYYY-MM-DD" w tej strefie
+    godzISO: `${hh}:${cz.minute}`,                  // "HH:MM" w tej strefie
   };
 }
+/* nazwa miasta ze strefy IANA: "America/New_York" → "New York" */
+function miastoZeStrefy(strefa) {
+  if (!strefa) return "";
+  return String(strefa).split("/").pop().replace(/_/g, " ");
+}
+/* skróty dla strefy bazowej (Warszawa) — używane w całym kalendarzu */
+function offsetWarszawyMin(dataStr) { return offsetStrefyMin(dataStr, TZ); }
+function isoZWarszawy(dataStr, godzStr) { return isoZeStrefy(dataStr, godzStr, TZ); }
+function czesciWarszawy(wejscie) { return czesciWStrefie(wejscie, TZ); }
 /* dzisiejsza data warszawska jako Date-etykieta (lokalna północ) */
 function dzisWarszawa() {
   const t = czesciWarszawy(new Date());
@@ -444,6 +490,13 @@ function granceDnia(przesuniecieDni = 0) {
   const s = new Date(isoZWarszawy(cz.dataISO, "00:00"));
   const e = new Date(isoZWarszawy(cz.dataISO, "23:59"));
   return { s, e };
+}
+/* druga linijka: czas wydarzenia w jego własnej strefie — gdy obca i ma godzinę.
+   Główny czas pokazuje strefę bazową, ta linijka — strefę wydarzenia. */
+function obcaStrefaLinia(e) {
+  if (!e || !e.strefa || e.strefa === TZ || !e.data_czas || e.caly_dzien) return "";
+  const cz = czesciWStrefie(e.data_czas, e.strefa);
+  return `${cz.godzISO} ${miastoZeStrefy(e.strefa)}`;
 }
 
 let TRAVELER = null;
@@ -833,7 +886,9 @@ function renderKalendarzDzis(wyd) {
   if (!wyd.length) { lista.appendChild(el(`<div class="m-pusto">Dziś w kalendarzu pusto.</div>`)); return; }
   for (const e of wyd) {
     const czas = e.caly_dzien ? "cały dzień" : fmtGodz(e.data_czas);
-    lista.appendChild(el(`<div class="m-poz"><span class="m-poz__czas">${esc(czas)}</span><span class="m-poz__tytul">${esc(e.tytul)}</span></div>`));
+    const obca = obcaStrefaLinia(e);
+    lista.appendChild(el(`<div class="m-poz"><span class="m-poz__czas">${esc(czas)}</span>`
+      + `<span class="m-poz__tytul">${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`));
   }
 }
 
@@ -1100,7 +1155,9 @@ async function renderMiesiacGrid(box, od) {
     for (const e of wyd) {
       const kiedy = fmtData(e.data_czas, { day: "numeric", month: "short" })
         + (e.caly_dzien ? "" : " · " + fmtGodz(e.data_czas));
-      const wier = el(`<div class="m-poz"><span class="m-poz__czas">${esc(kiedy)}</span><span class="m-poz__tytul">${esc(e.tytul)}</span></div>`);
+      const obca = obcaStrefaLinia(e);
+      const wier = el(`<div class="m-poz"><span class="m-poz__czas">${esc(kiedy)}</span>`
+        + `<span class="m-poz__tytul">${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`);
       wier.style.cursor = "pointer";
       wier.addEventListener("click", () => oknoWydarzenia({ event: e }));
       lista.appendChild(wier);
@@ -1156,9 +1213,12 @@ async function renderSiatka(box, od, dni) {
     const top = (cz.godz * 60 + cz.min) / 60 * H;
     const wys = Math.max(trwanie / 60 * H, 22);
     const klasaZad = e.typ === "zadanie" ? " m-tg__event--zad" : "";
+    const obca = obcaStrefaLinia(e);
     const blok = el(`<div class="m-tg__event${klasaZad}" style="top:${top}px;height:${wys}px">`
       + `<span class="m-tg__event-czas">${fmtGodz(e.data_czas)}</span> `
-      + `<span>${esc(e.tytul)}</span></div>`);
+      + `<span>${esc(e.tytul)}</span>`
+      + (obca ? `<span class="m-tg__event-obca">${esc(obca)}</span>` : "")
+      + `</div>`);
     blok.addEventListener("click", (ev) => { ev.stopPropagation(); oknoWydarzenia({ event: e }); });
     kolEls[idx].appendChild(blok);
   }
@@ -1186,13 +1246,67 @@ async function renderSiatka(box, od, dni) {
   if (scr) scr.scrollTop = Math.max(0, (teraz.godz - 1) * H);
 }
 
+/* --- wybór strefy czasowej: wyszukiwarka miast --- */
+function listaStref() {
+  try {
+    if (typeof Intl.supportedValuesOf === "function") return Intl.supportedValuesOf("timeZone");
+  } catch (e) { /* fallback niżej */ }
+  return [
+    "Europe/Warsaw", "Europe/London", "Europe/Paris", "Europe/Berlin", "Europe/Madrid",
+    "Europe/Rome", "Europe/Athens", "Europe/Moscow", "America/New_York", "America/Chicago",
+    "America/Denver", "America/Los_Angeles", "America/Sao_Paulo", "America/Mexico_City",
+    "Asia/Dubai", "Asia/Kolkata", "Asia/Bangkok", "Asia/Shanghai", "Asia/Tokyo",
+    "Asia/Singapore", "Australia/Sydney", "Pacific/Auckland", "UTC",
+  ];
+}
+function wybierzStrefe(aktualna, callback) {
+  const strefy = listaStref();
+  const overlay = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head">
+      <span class="m-modal__tytul">Strefa czasowa</span>
+      <button class="m-modal__x" aria-label="Zamknij">&#10005;</button>
+    </div>
+    <input type="text" class="m-strefa-szukaj" id="strefa-szukaj" placeholder="Wpisz miasto — np. New York, Tokyo…">
+    <div class="m-strefa-lista" id="strefa-lista"></div>
+  </div></div>`);
+  document.body.appendChild(overlay);
+  const zamknij = () => overlay.remove();
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
+  overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  const lista = overlay.querySelector("#strefa-lista");
+  const szukaj = overlay.querySelector("#strefa-szukaj");
+  function rysuj(filtr) {
+    const f = String(filtr || "").trim().toLowerCase();
+    lista.innerHTML = "";
+    const pasuje = strefy.filter((s) =>
+      !f || miastoZeStrefy(s).toLowerCase().includes(f) || s.toLowerCase().includes(f)
+    ).slice(0, 200);
+    if (!pasuje.length) {
+      lista.appendChild(el(`<div class="m-strefa-pusto">Brak strefy dla „${esc(filtr)}".</div>`));
+      return;
+    }
+    for (const s of pasuje) {
+      const reg = s.includes("/") ? s.split("/")[0] : "";
+      const w = el(`<div class="m-strefa-poz${s === aktualna ? " m-strefa-poz--on" : ""}">
+        <span class="m-strefa-poz__miasto">${esc(miastoZeStrefy(s))}</span>
+        <span class="m-strefa-poz__reg">${esc(reg)}</span></div>`);
+      w.addEventListener("click", () => { zamknij(); callback(s); });
+      lista.appendChild(w);
+    }
+  }
+  szukaj.addEventListener("input", () => rysuj(szukaj.value));
+  rysuj("");
+  setTimeout(() => szukaj.focus(), 50);
+}
+
 /* --- okno wydarzenia: dodanie albo edycja --- */
 function oknoWydarzenia(opcje) {
   opcje = opcje || {};
   const ev = opcje.event || null;
+  let wybranaStrefa = (ev && ev.strefa) ? ev.strefa : TZ;
   let dataVal, godzVal;
   if (ev) {
-    const cz = czesciWarszawy(ev.data_czas ? ev.data_czas : new Date());
+    const cz = czesciWStrefie(ev.data_czas ? ev.data_czas : new Date(), wybranaStrefa);
     dataVal = cz.dataISO; godzVal = cz.godzISO;
   } else {
     dataVal = opcje.data ? dataKalISO(opcje.data) : czesciWarszawy(new Date()).dataISO;
@@ -1220,6 +1334,13 @@ function oknoWydarzenia(opcje) {
         <div><label>Data</label><input type="date" id="w-data" value="${dataVal}"></div>
         <div id="w-godz-box"><label>Godzina</label><input type="time" id="w-godz" value="${godzVal}"></div>
       </div>
+      <div id="w-strefa-box">
+        <label>Strefa czasowa</label>
+        <button type="button" class="m-strefa-btn" id="w-strefa">
+          <span id="w-strefa-nazwa"></span><span class="m-strefa-btn__zmien">zmień</span>
+        </button>
+        <div class="m-strefa-hint" id="w-strefa-hint" style="display:none"></div>
+      </div>
       <div id="w-trw-box"><label>Czas trwania (min)</label><input type="number" id="w-trw" min="5" step="5" value="${trwanie}"></div>
       <label>Opis</label>
       <textarea id="w-opis">${ev ? esc(ev.opis || "") : ""}</textarea>
@@ -1238,11 +1359,36 @@ function oknoWydarzenia(opcje) {
 
   const caly = overlay.querySelector("#w-caly");
   const aktualizujCaly = () => {
-    overlay.querySelector("#w-godz-box").style.display = caly.checked ? "none" : "";
-    overlay.querySelector("#w-trw-box").style.display = caly.checked ? "none" : "";
+    const ukryj = caly.checked;
+    overlay.querySelector("#w-godz-box").style.display = ukryj ? "none" : "";
+    overlay.querySelector("#w-trw-box").style.display = ukryj ? "none" : "";
+    overlay.querySelector("#w-strefa-box").style.display = ukryj ? "none" : "";
   };
   caly.addEventListener("change", aktualizujCaly);
   aktualizujCaly();
+
+  /* strefa czasowa wydarzenia — przycisk, podpowiedź „u Ciebie" */
+  function aktualizujStrefe() {
+    const reg = wybranaStrefa.includes("/") ? wybranaStrefa.split("/")[0] : "";
+    overlay.querySelector("#w-strefa-nazwa").textContent =
+      miastoZeStrefy(wybranaStrefa) + (reg ? " · " + reg : "");
+    const hint = overlay.querySelector("#w-strefa-hint");
+    if (wybranaStrefa === TZ) { hint.style.display = "none"; hint.textContent = ""; return; }
+    const dStr = overlay.querySelector("#w-data").value;
+    const gStr = overlay.querySelector("#w-godz").value || "12:00";
+    if (!dStr) { hint.style.display = "none"; return; }
+    const instant = isoZeStrefy(dStr, gStr, wybranaStrefa);
+    const u = czesciWarszawy(instant);
+    hint.textContent = `U Ciebie (Warszawa): ${u.godzISO} · `
+      + fmtData(instant, { weekday: "long", day: "numeric", month: "long" });
+    hint.style.display = "";
+  }
+  overlay.querySelector("#w-strefa").addEventListener("click", () => {
+    wybierzStrefe(wybranaStrefa, (s) => { wybranaStrefa = s; aktualizujStrefe(); });
+  });
+  overlay.querySelector("#w-data").addEventListener("input", aktualizujStrefe);
+  overlay.querySelector("#w-godz").addEventListener("input", aktualizujStrefe);
+  aktualizujStrefe();
 
   overlay.querySelector("#w-zapisz").addEventListener("click", async () => {
     const tytul = overlay.querySelector("#w-tytul").value.trim();
@@ -1251,16 +1397,17 @@ function oknoWydarzenia(opcje) {
     if (!dataStr) { alert("Podaj datę."); return; }
     const calyD = caly.checked;
     let dataCzas, koniec = null;
+    const strefaWyd = calyD ? TZ : wybranaStrefa;
     if (calyD) {
-      dataCzas = isoZWarszawy(dataStr, "00:00");
+      dataCzas = isoZeStrefy(dataStr, "00:00", TZ);
     } else {
       const g = overlay.querySelector("#w-godz").value || "12:00";
-      dataCzas = isoZWarszawy(dataStr, g);
+      dataCzas = isoZeStrefy(dataStr, g, wybranaStrefa);
       const trw = parseInt(overlay.querySelector("#w-trw").value, 10) || 60;
       koniec = new Date(new Date(dataCzas).getTime() + trw * 60000).toISOString();
     }
     const rekord = {
-      tytul, data_czas: dataCzas, koniec, caly_dzien: calyD,
+      tytul, data_czas: dataCzas, koniec, caly_dzien: calyD, strefa: strefaWyd,
       opis: overlay.querySelector("#w-opis").value.trim() || null,
       lokalizacja: overlay.querySelector("#w-lok").value.trim() || null,
     };
@@ -1316,7 +1463,9 @@ function renderZadaniaAktywne(zad) {
     if (z.data_czas) {
       const t = fmtData(z.data_czas, { day: "numeric", month: "short" })
         + " · " + fmtGodz(z.data_czas);
-      terminHtml = `<div class="m-zad-d__termin${zalegle ? " m-zad-d__termin--zalegly" : ""}">${zalegle ? "zaległe — " : ""}${esc(t)}</div>`;
+      const obca = obcaStrefaLinia(z);
+      terminHtml = `<div class="m-zad-d__termin${zalegle ? " m-zad-d__termin--zalegly" : ""}">${zalegle ? "zaległe — " : ""}${esc(t)}</div>`
+        + (obca ? `<div class="m-zad-d__obca">${esc(obca)}</div>` : "");
     }
     const w = el(`<div class="m-zad-d${zalegle ? " m-zad-d--zalegle" : ""}" data-id="${esc(z.id)}" data-poz="${z.pozycja ?? ""}">
       <span class="m-uchwyt" title="Przeciągnij">&#8942;&#8942;</span>
