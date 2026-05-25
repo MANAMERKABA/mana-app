@@ -856,8 +856,16 @@ async function wczytajDzien() {
     .gte("data_czas", s.toISOString()).lt("data_czas", oknoRocznic.toISOString())
     .order("data_czas", { ascending: true }).limit(1);
 
-  renderBrief((wydarzenia || []).length, (zadania || []).length);
-  renderKalendarzDzis(wydarzenia || []);
+  // ekran startowy pokazuje tylko to, co jeszcze przed podróżnikiem —
+  // wydarzenia minione (koniec/godzina już za nami) znikają z listy „Dziś".
+  const teraz = new Date();
+  const wszystkieWyd = wydarzenia || [];
+  const nadchodzace = wszystkieWyd.filter((e) =>
+    e.caly_dzien || new Date(e.koniec || e.data_czas) >= teraz);
+  const minione = wszystkieWyd.length - nadchodzace.length;
+
+  renderBrief(nadchodzace.length, (zadania || []).length);
+  renderKalendarzDzis(nadchodzace, minione);
   renderZadaniaEkran(zadania || []);
   renderRocznica((caloDniowe || [])[0] || null, s);
 }
@@ -878,12 +886,17 @@ function renderBrief(ileWyd, ileZad) {
   stream.appendChild(el(`<div class="m-msg m-msg--asystent">${esc(tekst)}</div>`));
 }
 
-function renderKalendarzDzis(wyd) {
+function renderKalendarzDzis(wyd, minione) {
   $("m-kal-naglowek").textContent = "Dziś · " +
     new Date().toLocaleDateString("pl-PL", { day: "numeric", month: "long", timeZone: TZ });
   const lista = $("m-kal-lista");
   lista.innerHTML = "";
-  if (!wyd.length) { lista.appendChild(el(`<div class="m-pusto">Dziś w kalendarzu pusto.</div>`)); return; }
+  if (!wyd.length) {
+    lista.appendChild(el(`<div class="m-pusto">${minione
+      ? "Na dziś nie ma już nic w kalendarzu."
+      : "Dziś w kalendarzu pusto."}</div>`));
+    return;
+  }
   for (const e of wyd) {
     const czas = e.caly_dzien ? "cały dzień" : fmtGodz(e.data_czas);
     const obca = obcaStrefaLinia(e);
