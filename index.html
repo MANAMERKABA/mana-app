@@ -117,6 +117,10 @@
     font-size: 13px; color: var(--ink-soft); margin-bottom: 10px;
   }
   .m-sekcja__head svg { width: 15px; height: 15px; }
+  .m-sekcja__head--klik { cursor: pointer; user-select: none; }
+  .m-sekcja__head--klik:hover { color: var(--turkus); }
+  .m-sekcja__chev { margin-left: auto; font-size: 18px; line-height: 1; color: var(--ink-soft); }
+  .m-sekcja__head--klik:hover .m-sekcja__chev { color: var(--turkus); }
   .m-poz { display: flex; gap: 12px; align-items: baseline; padding: 7px 0; }
   .m-poz + .m-poz { border-top: 1px solid #f0ece0; }
   .m-poz__czas { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--turkus); flex: 0 0 46px; }
@@ -193,7 +197,7 @@
   .m-tg__hdr { text-align: center; font-size: 11px; color: var(--ink-soft); padding: 4px 2px 6px; cursor: pointer; }
   .m-tg__hdr b { display: block; font-size: 15px; color: var(--ink); font-weight: 600; }
   .m-tg__hdr--dzis b { color: #fff; background: var(--turkus); border-radius: 50%; width: 26px; height: 26px; line-height: 26px; margin: 2px auto 0; }
-  .m-tg__scroll { max-height: 54vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .m-tg__scroll { max-height: 54vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); touch-action: pan-y; }
   .m-tg__plansza { display: grid; grid-template-columns: 38px 1fr; }
   .m-tg__godz { font-size: 10px; color: var(--ink-soft); text-align: right; padding-right: 5px; box-sizing: border-box; }
   .m-tg__kolumny { display: grid; }
@@ -301,10 +305,53 @@
   .m-strefa-poz__reg { font-size: 11px; color: var(--ink-soft); flex: 0 0 auto; }
   .m-strefa-pusto { padding: 16px 6px; font-size: 13px; color: var(--ink-soft); }
 
+  /* ---- KATEGORIE ---- */
+  .m-kat-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .m-kat-chip {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 7px 11px; border-radius: 16px; border: 1px solid var(--line);
+    background: #faf8f2; font-size: 13px; font-family: var(--font-body);
+    color: var(--ink); cursor: pointer;
+  }
+  .m-kat-chip__dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+  .m-kat-chip--wybr { background: var(--turkus-bg); border-color: var(--turkus); color: var(--turkus); font-weight: 600; }
+  .m-kat-kropka { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; margin-right: 6px; }
+
   /* czas obcej strefy — druga linijka */
   .m-tg__event-obca { display: block; font-size: 9px; color: var(--ink-soft); margin-top: 1px; }
   .m-poz__obca { font-size: 11px; color: var(--ink-soft); }
   .m-zad-d__obca { font-size: 11px; color: var(--ink-soft); margin-top: 1px; }
+
+  /* ---- WYSZUKIWARKA ---- */
+  .m-szukaj {
+    flex: 0 1 220px; min-width: 0; margin-left: auto;
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 7px 11px; font-size: 13px; font-family: var(--font-body);
+    background: #faf8f2; color: var(--ink);
+  }
+  .m-szukaj:focus { outline: none; border-color: var(--turkus); }
+
+  /* ---- DESKTOP — szerszy ekran ---- */
+  @media (min-width: 900px) {
+    body { padding: 0 20px; }
+    #m-app, #m-login { max-width: 1100px; }
+    #m-widok-ekran { max-width: 540px; margin: 0 auto; }
+    #m-widok-horyzont {
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 28px;
+      align-items: start;
+      padding: 0 4px;
+    }
+    #m-widok-horyzont > .m-hyz-bar { grid-column: 1 / -1; padding: 18px 4px 8px; }
+    #m-widok-horyzont > .m-stopka { grid-column: 1 / -1; }
+    .m-tg__scroll { max-height: 72vh; }
+    .m-tg__godz { font-size: 11px; }
+    .m-tg__event { font-size: 12px; padding: 3px 7px; }
+    .m-poz__tytul, .m-zad-d__tytul, .m-zad__tytul { font-size: 15px; }
+    .m-modal { max-width: 520px; border-radius: 18px; margin-bottom: 24px; }
+    .m-overlay { align-items: center; }
+  }
 </style>
 </head>
 <body>
@@ -345,17 +392,19 @@
     </section>
 
     <section class="m-sekcja">
-      <div class="m-sekcja__head">
+      <div class="m-sekcja__head m-sekcja__head--klik" id="m-glowa-wyd" role="button" tabindex="0">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
         <span id="m-kal-naglowek">Najbliższe wydarzenia</span>
+        <span class="m-sekcja__chev">›</span>
       </div>
       <div id="m-kal-lista"></div>
     </section>
 
     <section class="m-sekcja">
-      <div class="m-sekcja__head">
+      <div class="m-sekcja__head m-sekcja__head--klik" id="m-glowa-zad" role="button" tabindex="0">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         <span>Zadania</span>
+        <span class="m-sekcja__chev">›</span>
       </div>
       <div id="m-zad-lista"></div>
     </section>
@@ -368,6 +417,7 @@
     <div class="m-hyz-bar">
       <button class="m-back" id="m-back">&#8592; Ekran startowy</button>
       <span class="m-hyz-tytul">Horyzont</span>
+      <input type="search" id="hyz-szukaj" class="m-szukaj" placeholder="Szukaj… (/)" aria-label="Szukaj">
     </div>
     <div class="m-warstwa">
       <div class="m-warstwa__head">
@@ -416,6 +466,12 @@ const POKOJE = [
     ikona: '<path d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 21l2.2-5.4A8.4 8.4 0 1 1 21 11.5z"/>' },
 ];
 const KOLOR_PRIO = { niski: "#9aa0a6", normalny: "#e0a020", wysoki: "#e07a20", pilny: "#d23b3b" };
+const KATEGORIE = ["praca", "rodzina", "prywatne", "zdrowie", "inne"];
+const KOLOR_KAT = { praca: "#2e5a7a", rodzina: "#1a7158", prywatne: "#7a4ea0", zdrowie: "#c44a3a", inne: "#8c887e" };
+const ETYK_KAT = { praca: "Praca", rodzina: "Rodzina", prywatne: "Prywatne", zdrowie: "Zdrowie", inne: "Inne" };
+const ukryteKat = new Set();
+const kategoriaZE = (e) => (e && KATEGORIE.includes(e.kategoria)) ? e.kategoria : "inne";
+const kolorKategorii = (e) => KOLOR_KAT[kategoriaZE(e)];
 
 const $ = (id) => document.getElementById(id);
 const el = (h) => { const t = document.createElement("template"); t.innerHTML = h.trim(); return t.content.firstChild; };
@@ -829,6 +885,42 @@ function pokazWidok(nazwa) {
 }
 $("m-back").addEventListener("click", () => pokazWidok("ekran"));
 
+/* klikalne nagłówki sekcji na ekranie startowym — wchodzą w Horyzont */
+function wpinajKlik(elem, fn) {
+  elem.addEventListener("click", fn);
+  elem.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); fn(); }
+  });
+}
+wpinajKlik($("m-glowa-wyd"), () => otworzHoryzont());
+wpinajKlik($("m-glowa-zad"), () => otworzHoryzont({ skok: "zadania" }));
+
+/* wyszukiwarka w Horyzoncie — filtruje wydarzenia i zadania na żywo */
+$("hyz-szukaj").addEventListener("input", (ev) => {
+  zapytanieSzukaj = ev.target.value;
+  if ($("m-widok-horyzont").style.display === "block") {
+    renderKalendarz();
+    wczytajZadaniaHoryzont();
+  }
+});
+
+/* skróty klawiszowe w Horyzoncie: N = nowe, T = dziś, ←/→ = okres, / = szukaj */
+document.addEventListener("keydown", (ev) => {
+  if ($("m-widok-horyzont").style.display !== "block") return;
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  const wInpucie = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  if (ev.key === "/" && !wInpucie) { ev.preventDefault(); $("hyz-szukaj").focus(); return; }
+  if (ev.key === "Escape" && document.activeElement === $("hyz-szukaj")) {
+    $("hyz-szukaj").value = ""; zapytanieSzukaj = "";
+    renderKalendarz(); wczytajZadaniaHoryzont(); $("hyz-szukaj").blur(); return;
+  }
+  if (wInpucie) return;
+  if (ev.key === "n" || ev.key === "N") { ev.preventDefault(); oknoWydarzenia({ data: kotwica }); }
+  else if (ev.key === "t" || ev.key === "T") { ev.preventDefault(); kotwica = dzisWarszawa(); renderKalendarz(); }
+  else if (ev.key === "ArrowLeft") { ev.preventDefault(); przesunOkres(-1); }
+  else if (ev.key === "ArrowRight") { ev.preventDefault(); przesunOkres(1); }
+});
+
 function renderPokoje() {
   const wrap = $("m-rooms");
   wrap.innerHTML = "";
@@ -871,7 +963,8 @@ async function wczytajDzien() {
 
   const teraz = new Date();
   const nadchodzace = (wydOkno || []).filter((w) =>
-    w.caly_dzien || new Date(w.koniec || w.data_czas) >= teraz);
+    (w.caly_dzien || new Date(w.koniec || w.data_czas) >= teraz)
+    && !ukryteKat.has(kategoriaZE(w)));
   const dzisISO = czesciWarszawy(teraz).dataISO;
   const dzisNadch = nadchodzace.filter((w) => czesciWarszawy(w.data_czas).dataISO === dzisISO);
 
@@ -912,7 +1005,7 @@ function renderNajblizsze(wyd, jestWiecej) {
   const lista = $("m-kal-lista");
   lista.innerHTML = "";
   if (!wyd.length) {
-    lista.appendChild(el(`<div class="m-pusto">Brak wydarzeń na dziś i jutro.</div>`));
+    lista.appendChild(el(`<div class="m-pusto">Dziś i jutro w kalendarzu pusto — wolny czas. Zaplanuj coś w Horyzoncie.</div>`));
     return;
   }
   let ostatniDzien = "";
@@ -925,20 +1018,24 @@ function renderNajblizsze(wyd, jestWiecej) {
     const czas = e.caly_dzien ? "cały dzień" : fmtGodz(e.data_czas);
     const obca = obcaStrefaLinia(e);
     lista.appendChild(el(`<div class="m-poz"><span class="m-poz__czas">${esc(czas)}</span>`
-      + `<span class="m-poz__tytul">${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`));
+      + `<span class="m-poz__tytul"><span class="m-kat-kropka" style="background:${kolorKategorii(e)}"></span>${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`));
   }
   if (jestWiecej) {
     const link = el(`<button class="m-wiecej">więcej w Horyzoncie →</button>`);
-    link.addEventListener("click", otworzHoryzont);
+    link.addEventListener("click", () => otworzHoryzont());
     lista.appendChild(link);
   }
 }
 
+/* Ekran startowy: lista zadań jest INFORMACYJNA — bez checkboxów.
+   Operacje (oznacz zrobione, usuń, dodaj) idą przez asystenta albo pokój Horyzont. */
 function renderZadaniaEkran(zad) {
   const lista = $("m-zad-lista");
   lista.innerHTML = "";
-  if (!zad.length) { lista.appendChild(el(`<div class="m-pusto">Brak otwartych zadań.</div>`)); return; }
-  // zaległe na wierzch, reszta zachowuje ręczną kolejność (sort jest stabilny)
+  if (!zad.length) {
+    lista.appendChild(el(`<div class="m-pusto">Lista zadań pusta — powiedz asystentowi co dodać, albo zrób to w Horyzoncie.</div>`));
+    return;
+  }
   const teraz = new Date();
   const posortowane = [...zad].sort((a, b) => {
     const za = (a.data_czas && new Date(a.data_czas) < teraz) ? 0 : 1;
@@ -946,23 +1043,13 @@ function renderZadaniaEkran(zad) {
     return za - zb;
   });
   for (const z of posortowane.slice(0, 3)) {
-    const w = el(`<div class="m-zad">
-      <button class="m-zad__box" aria-label="Oznacz zrobione">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12l5 5L20 6"/></svg>
-      </button>
+    lista.appendChild(el(`<div class="m-zad">
       <span class="m-zad__kropka" style="background:${KOLOR_PRIO[z.priorytet] || "#e0a020"}"></span>
-      <span class="m-zad__tytul">${esc(z.tytul)}</span></div>`);
-    w.querySelector(".m-zad__box").addEventListener("click", async () => {
-      w.querySelector(".m-zad__box").classList.add("m-zad__box--zrobione");
-      w.querySelector(".m-zad__tytul").classList.add("m-zad__tytul--zrobione");
-      const ok = await ustawStatus(z.id, "zrobione");
-      if (ok) setTimeout(() => { w.remove(); wczytajDzien(); }, 420);
-    });
-    lista.appendChild(w);
+      <span class="m-zad__tytul">${esc(z.tytul)}</span></div>`));
   }
   if (zad.length > 3) {
     const link = el(`<button class="m-wiecej">więcej w Horyzoncie →</button>`);
-    link.addEventListener("click", otworzHoryzont);
+    link.addEventListener("click", () => otworzHoryzont({ skok: "zadania" }));
     lista.appendChild(link);
   }
 }
@@ -1074,12 +1161,27 @@ if (Rozpoznanie) {
 let widokKal = "3dni";
 let kotwica = dzisWarszawa();
 let pokazRocznice = true;
+let zapytanieSzukaj = "";
 
-async function otworzHoryzont() {
+function pasujeDoSzukania(e, q) {
+  if (!q) return true;
+  const t = q.toLowerCase();
+  return (e.tytul && e.tytul.toLowerCase().includes(t))
+      || (e.opis && e.opis.toLowerCase().includes(t))
+      || (e.lokalizacja && e.lokalizacja.toLowerCase().includes(t));
+}
+
+async function otworzHoryzont(opcje) {
   pokazWidok("horyzont");
   kotwica = dzisWarszawa();
   widokKal = "3dni";
   await Promise.all([renderKalendarz(), wczytajZadaniaHoryzont()]);
+  if (opcje && opcje.skok === "zadania") {
+    setTimeout(() => {
+      const el = document.getElementById("hyz-zad-aktywne");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  }
 }
 
 /* --- okres bieżącego widoku --- */
@@ -1139,6 +1241,9 @@ async function renderKalendarz() {
 function otworzMenuKal() {
   const istn = document.getElementById("kal-menu-panel");
   if (istn) { istn.remove(); return; }
+  const chipyKat = KATEGORIE.map((k) =>
+    `<button data-kat="${k}"><span class="m-kat-kropka" style="background:${KOLOR_KAT[k]}"></span>${!ukryteKat.has(k) ? "✓ " : ""}${esc(ETYK_KAT[k])}</button>`
+  ).join("");
   const panel = el(`<div class="m-kalmenu-panel" id="kal-menu-panel">
     <button data-w="dzis">Dziś</button>
     <button data-w="3dni">3 dni</button>
@@ -1146,6 +1251,8 @@ function otworzMenuKal() {
     <button data-w="miesiac">Miesiąc</button>
     <div class="m-kalmenu-sep"></div>
     <button data-toggle="rocznice">${pokazRocznice ? "✓ " : ""}Rocznice i urodziny</button>
+    <div class="m-kalmenu-sep"></div>
+    ${chipyKat}
   </div>`);
   panel.querySelectorAll("button[data-w]").forEach((b) => {
     if (b.dataset.w === widokKal) b.classList.add("m-kalmenu--on");
@@ -1153,6 +1260,15 @@ function otworzMenuKal() {
   });
   panel.querySelector("button[data-toggle]").addEventListener("click", () => {
     pokazRocznice = !pokazRocznice; panel.remove(); renderKalendarz();
+  });
+  panel.querySelectorAll("button[data-kat]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const k = b.dataset.kat;
+      if (ukryteKat.has(k)) ukryteKat.delete(k); else ukryteKat.add(k);
+      panel.remove();
+      renderKalendarz();
+      wczytajDzien();
+    });
   });
   $("hyz-kalendarz").querySelector(".m-kalbar").appendChild(panel);
   setTimeout(() => {
@@ -1185,6 +1301,8 @@ async function wczytajWydarzeniaZakres(od, doData) {
     .order("data_czas", { ascending: true });
   let lista = data || [];
   if (!pokazRocznice) lista = lista.filter((e) => !e.caly_dzien);
+  if (ukryteKat.size) lista = lista.filter((e) => !ukryteKat.has(kategoriaZE(e)));
+  if (zapytanieSzukaj) lista = lista.filter((e) => pasujeDoSzukania(e, zapytanieSzukaj));
   return lista;
 }
 
@@ -1229,7 +1347,7 @@ async function renderMiesiacGrid(box, od) {
         + (e.caly_dzien ? "" : " · " + fmtGodz(e.data_czas));
       const obca = obcaStrefaLinia(e);
       const wier = el(`<div class="m-poz"><span class="m-poz__czas">${esc(kiedy)}</span>`
-        + `<span class="m-poz__tytul">${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`);
+        + `<span class="m-poz__tytul"><span class="m-kat-kropka" style="background:${kolorKategorii(e)}"></span>${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`);
       wier.style.cursor = "pointer";
       wier.addEventListener("click", () => oknoWydarzenia({ event: e }));
       lista.appendChild(wier);
@@ -1286,8 +1404,10 @@ async function renderSiatka(box, od, dni) {
     const wys = Math.max(trwanie / 60 * H, 22);
     const klasaZad = e.typ === "zadanie" ? " m-tg__event--zad" : "";
     const obca = obcaStrefaLinia(e);
-    const blok = el(`<div class="m-tg__event${klasaZad}" style="top:${top}px;height:${wys}px">`
-      + `<span class="m-tg__event-czas">${fmtGodz(e.data_czas)}</span> `
+    const kKol = kolorKategorii(e);
+    const styl = `top:${top}px;height:${wys}px;border-left-color:${kKol};background:${kKol}1a`;
+    const blok = el(`<div class="m-tg__event${klasaZad}" style="${styl}">`
+      + `<span class="m-tg__event-czas" style="color:${kKol}">${fmtGodz(e.data_czas)}</span> `
       + `<span>${esc(e.tytul)}</span>`
       + (obca ? `<span class="m-tg__event-obca">${esc(obca)}</span>` : "")
       + `</div>`);
@@ -1376,6 +1496,7 @@ function oknoWydarzenia(opcje) {
   opcje = opcje || {};
   const ev = opcje.event || null;
   let wybranaStrefa = (ev && ev.strefa) ? ev.strefa : TZ;
+  let wybranaKat = (ev && KATEGORIE.includes(ev.kategoria)) ? ev.kategoria : "inne";
   let dataVal, godzVal;
   if (ev) {
     const cz = czesciWStrefie(ev.data_czas ? ev.data_czas : new Date(), wybranaStrefa);
@@ -1401,6 +1522,8 @@ function oknoWydarzenia(opcje) {
     <div class="m-form">
       <label>Tytuł</label>
       <input type="text" id="w-tytul" maxlength="200" value="${ev ? esc(ev.tytul) : ""}">
+      <label>Kategoria</label>
+      <div class="m-kat-chips" id="w-kat-chips"></div>
       <div class="m-form__check"><input type="checkbox" id="w-caly"${calyDzien ? " checked" : ""}><span>Wydarzenie całodzienne</span></div>
       <div class="m-form__row">
         <div><label>Data</label><input type="date" id="w-data" value="${dataVal}"></div>
@@ -1438,6 +1561,19 @@ function oknoWydarzenia(opcje) {
   };
   caly.addEventListener("change", aktualizujCaly);
   aktualizujCaly();
+
+  /* kategoria — chipy z kolorami */
+  const rysujChipy = () => {
+    const wrap = overlay.querySelector("#w-kat-chips");
+    wrap.innerHTML = "";
+    for (const k of KATEGORIE) {
+      const chip = el(`<button type="button" class="m-kat-chip${k===wybranaKat?" m-kat-chip--wybr":""}">`
+        + `<span class="m-kat-chip__dot" style="background:${KOLOR_KAT[k]}"></span>${esc(ETYK_KAT[k])}</button>`);
+      chip.addEventListener("click", () => { wybranaKat = k; rysujChipy(); });
+      wrap.appendChild(chip);
+    }
+  };
+  rysujChipy();
 
   /* strefa czasowa wydarzenia — przycisk, podpowiedź „u Ciebie" */
   function aktualizujStrefe() {
@@ -1480,6 +1616,7 @@ function oknoWydarzenia(opcje) {
     }
     const rekord = {
       tytul, data_czas: dataCzas, koniec, caly_dzien: calyD, strefa: strefaWyd,
+      kategoria: wybranaKat,
       opis: overlay.querySelector("#w-opis").value.trim() || null,
       lokalizacja: overlay.querySelector("#w-lok").value.trim() || null,
     };
@@ -1517,8 +1654,14 @@ async function wczytajZadaniaHoryzont() {
     .eq("status", "zrobione")
     .order("updated_at", { ascending: false }).limit(30);
 
-  renderZadaniaAktywne(aktywne || []);
-  renderZadaniaZrobione(zrobione || []);
+  const fAkt = zapytanieSzukaj
+    ? (aktywne || []).filter((z) => pasujeDoSzukania(z, zapytanieSzukaj))
+    : (aktywne || []);
+  const fZrob = zapytanieSzukaj
+    ? (zrobione || []).filter((z) => pasujeDoSzukania(z, zapytanieSzukaj))
+    : (zrobione || []);
+  renderZadaniaAktywne(fAkt);
+  renderZadaniaZrobione(fZrob);
 }
 
 function renderZadaniaAktywne(zad) {
