@@ -346,6 +346,14 @@
 
     <section class="m-sekcja">
       <div class="m-sekcja__head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span id="m-kal-naglowek">Najbliższe wydarzenia</span>
+      </div>
+      <div id="m-kal-lista"></div>
+    </section>
+
+    <section class="m-sekcja">
+      <div class="m-sekcja__head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         <span>Zadania</span>
       </div>
@@ -838,21 +846,22 @@ function renderPokoje() {
    EKRAN STARTOWY — dane dnia
    ==================================================================== */
 async function wczytajDzien() {
-  const { s, e } = granceDnia(0);
+  const { s } = granceDnia(0);
+  const koniecJutra = granceDnia(1).e;
   const oknoDo = new Date(s.getTime() + 8 * 86400000);
+
+  // wydarzenia dziś + jutro
+  const { data: wydOkno = [] } = await supabase
+    .from("events").select("*")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
+    .gte("data_czas", s.toISOString()).lte("data_czas", koniecJutra.toISOString())
+    .order("data_czas", { ascending: true });
 
   const { data: zadania = [] } = await supabase
     .from("events").select("*")
     .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
     .neq("status", "zrobione")
     .order("pozycja", { ascending: true, nullsFirst: false });
-
-  // dzisiejsze wydarzenia — tylko do policzenia w powitaniu;
-  // pełna lista wydarzeń żyje w pokoju Horyzont, ekran startowy jej nie dubluje.
-  const { data: wydDzis = [] } = await supabase
-    .from("events").select("data_czas, koniec, caly_dzien")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
-    .gte("data_czas", s.toISOString()).lte("data_czas", e.toISOString());
 
   const { data: caloDniowe = [] } = await supabase
     .from("events").select("tytul, data_czas")
@@ -861,10 +870,13 @@ async function wczytajDzien() {
     .order("data_czas", { ascending: true }).limit(1);
 
   const teraz = new Date();
-  const dzisNadch = (wydDzis || []).filter((w) =>
+  const nadchodzace = (wydOkno || []).filter((w) =>
     w.caly_dzien || new Date(w.koniec || w.data_czas) >= teraz);
+  const dzisISO = czesciWarszawy(teraz).dataISO;
+  const dzisNadch = nadchodzace.filter((w) => czesciWarszawy(w.data_czas).dataISO === dzisISO);
 
   renderBrief(dzisNadch.length, (zadania || []).length);
+  renderNajblizsze(nadchodzace.slice(0, 6), nadchodzace.length > 6);
   renderZadaniaEkran(zadania || []);
   renderRocznica((caloDniowe || [])[0] || null, s);
 }
@@ -885,8 +897,42 @@ function renderBrief(ileWyd, ileZad) {
   stream.appendChild(el(`<div class="m-msg m-msg--asystent">${esc(tekst)}</div>`));
 }
 
-/* Wydarzenia nie mają sekcji na ekranie startowym — ich lista i widoki
-   żyją w pokoju Horyzont; ekran startowy jest asystent-first. */
+/* etykieta dnia: Dziś / Jutro / „środa 27 maja" */
+function etykietaDnia(iso) {
+  const d = czesciWarszawy(iso).dataISO;
+  const dzis = czesciWarszawy(new Date()).dataISO;
+  const jutro = czesciWarszawy(new Date(Date.now() + 86400000)).dataISO;
+  if (d === dzis) return "Dziś";
+  if (d === jutro) return "Jutro";
+  return fmtData(iso, { weekday: "long", day: "numeric", month: "long" });
+}
+/* najbliższe wydarzenia — dziś + jutro, pogrupowane nagłówkami dni */
+function renderNajblizsze(wyd, jestWiecej) {
+  $("m-kal-naglowek").textContent = "Najbliższe wydarzenia";
+  const lista = $("m-kal-lista");
+  lista.innerHTML = "";
+  if (!wyd.length) {
+    lista.appendChild(el(`<div class="m-pusto">Brak wydarzeń na dziś i jutro.</div>`));
+    return;
+  }
+  let ostatniDzien = "";
+  for (const e of wyd) {
+    const dzienKl = czesciWarszawy(e.data_czas).dataISO;
+    if (dzienKl !== ostatniDzien) {
+      ostatniDzien = dzienKl;
+      lista.appendChild(el(`<div class="m-dzien-naglowek">${esc(etykietaDnia(e.data_czas))}</div>`));
+    }
+    const czas = e.caly_dzien ? "cały dzień" : fmtGodz(e.data_czas);
+    const obca = obcaStrefaLinia(e);
+    lista.appendChild(el(`<div class="m-poz"><span class="m-poz__czas">${esc(czas)}</span>`
+      + `<span class="m-poz__tytul">${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`));
+  }
+  if (jestWiecej) {
+    const link = el(`<button class="m-wiecej">więcej w Horyzoncie →</button>`);
+    link.addEventListener("click", otworzHoryzont);
+    lista.appendChild(link);
+  }
+}
 
 function renderZadaniaEkran(zad) {
   const lista = $("m-zad-lista");
