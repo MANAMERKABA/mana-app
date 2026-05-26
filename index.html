@@ -106,6 +106,22 @@
   }
   .m-mik--slucha { background: var(--turkus); color: #fff; }
   .m-mik svg { width: 18px; height: 18px; }
+  .m-wyslij {
+    flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--turkus); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .m-wyslij:hover { background: #155843; }
+  .m-wyslij:disabled { opacity: 0.5; cursor: default; }
+  .m-wyslij svg { width: 18px; height: 18px; }
+  .m-glos {
+    margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 50%;
+    cursor: pointer; color: var(--ink-soft); padding: 6px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .m-glos svg { width: 16px; height: 16px; }
+  .m-glos:hover { color: var(--turkus); border-color: var(--turkus); }
+  .m-glos--on { color: var(--turkus); border-color: var(--turkus); background: var(--turkus-bg); }
 
   /* ---- SEKCJE EKRANU STARTOWEGO ---- */
   .m-sekcja {
@@ -208,6 +224,17 @@
   .m-tg__event-czas { color: var(--turkus); font-weight: 600; }
   .m-tg__event--zad .m-tg__event-czas { color: #b97e10; }
   .m-tg__teraz { position: absolute; left: 0; right: 0; border-top: 2px solid #d23b3b; z-index: 3; }
+
+  /* strip całodzienny u góry siatki (wyjazdy, wakacje, konferencje) */
+  .m-tg__caly-dzien-strip {
+    display: grid; gap: 2px; padding: 4px 2px;
+    background: #faf8f2; border-bottom: 1px solid var(--line);
+  }
+  .m-tg__caly-dzien-kol { display: flex; flex-direction: column; gap: 2px; min-height: 22px; padding: 0 2px; }
+  .m-tg__caly-dzien-bar {
+    color: #fff; border-radius: 4px; padding: 3px 7px; font-size: 11px; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+  }
 
   /* okno / modal */
   .m-overlay { position: fixed; inset: 0; background: rgba(24,22,16,0.45); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
@@ -432,6 +459,12 @@
       <div class="m-ea__head">
         <span class="m-ea__spark">&#10022;</span>
         <span class="m-ea__title">Asystent osobisty</span>
+        <button class="m-glos" id="m-glos" title="Czytaj odpowiedzi na głos" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+          </svg>
+        </button>
       </div>
       <div class="m-ea__stream" id="m-stream"></div>
       <div class="m-wejscie">
@@ -441,6 +474,11 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
             <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+        </button>
+        <button class="m-wyslij" id="m-wyslij" title="Wyślij" aria-label="Wyślij">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14M13 5l7 7-7 7"/>
+          </svg>
         </button>
       </div>
     </section>
@@ -627,6 +665,49 @@ function obcaStrefaLinia(e) {
   if (!e || !e.strefa || e.strefa === TZ || !e.data_czas || e.caly_dzien) return "";
   const cz = czesciWStrefie(e.data_czas, e.strefa);
   return `${cz.godzISO} ${miastoZeStrefy(e.strefa)}`;
+}
+
+/* ── wydarzenia całodzienne wielodniowe (wyjazdy, wakacje) ──
+   Konwencja: data_czas = początek pierwszego dnia 00:00 Warszawy,
+   koniec = początek dnia PO ostatnim dniu (eksluzywny). Single-day całodzienne
+   stare (koniec=null) traktujemy jak jeden dzień. */
+function nastepnyDzienISO(dataStr) {
+  const [Y, M, D] = String(dataStr).split("-").map(Number);
+  const d = new Date(Date.UTC(Y, M - 1, D + 1));
+  return `${d.getUTCFullYear()}-${dwa(d.getUTCMonth() + 1)}-${dwa(d.getUTCDate())}`;
+}
+function poprzedniDzienISO(dataStr) {
+  const [Y, M, D] = String(dataStr).split("-").map(Number);
+  const d = new Date(Date.UTC(Y, M - 1, D - 1));
+  return `${d.getUTCFullYear()}-${dwa(d.getUTCMonth() + 1)}-${dwa(d.getUTCDate())}`;
+}
+function dniCalodzienne(e) {
+  if (!e || !e.caly_dzien || !e.data_czas) return [];
+  const startISO = czesciWarszawy(e.data_czas).dataISO;
+  if (!e.koniec) return [startISO];
+  const koniecISO = czesciWarszawy(e.koniec).dataISO;  // start dnia eksluzywnego
+  const dni = [];
+  let curr = startISO;
+  while (curr < koniecISO) {
+    dni.push(curr);
+    curr = nastepnyDzienISO(curr);
+    if (dni.length > 366) break; // bezpiecznik
+  }
+  return dni.length ? dni : [startISO];
+}
+function zakresCalodzienny(e) {
+  const dni = dniCalodzienne(e);
+  if (dni.length <= 1) return null;
+  return { start: dni[0], last: dni[dni.length - 1] };
+}
+function etykietaZakresuCalodziennego(e) {
+  const z = zakresCalodzienny(e);
+  if (!z) return "";
+  const isoStart = isoZWarszawy(z.start, "00:00");
+  const isoLast = isoZWarszawy(z.last, "00:00");
+  const a = fmtData(isoStart, { day: "numeric", month: "short" });
+  const b = fmtData(isoLast, { day: "numeric", month: "short" });
+  return `${a} – ${b}`;
 }
 
 let TRAVELER = null;
@@ -1196,8 +1277,12 @@ async function wyslij() {
     });
     const dane = await res.json().catch(() => ({}));
     mysl.remove();
-    if (res.ok && dane.response) dodajWiadomosc("asystent", dane.response);
-    else dodajWiadomosc("asystent", "Asystent chwilowo nie odpowiada (" + (dane.error || `HTTP ${res.status}`) + ").");
+    if (res.ok && dane.response) {
+      dodajWiadomosc("asystent", dane.response);
+      powiedz(dane.response);
+    } else {
+      dodajWiadomosc("asystent", "Asystent chwilowo nie odpowiada (" + (dane.error || `HTTP ${res.status}`) + ").");
+    }
   } catch (err) {
     mysl.remove();
     dodajWiadomosc("asystent", "Brak połączenia z asystentem: " + err.message);
@@ -1211,6 +1296,28 @@ pole.addEventListener("input", () => {
 });
 pole.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); wyslij(); }
+});
+/* przycisk wyślij — strzałka obok mikrofonu */
+$("m-wyslij").addEventListener("click", () => wyslij());
+
+/* czytanie odpowiedzi asystenta na głos (TTS) */
+let czytajGlosno = false;
+function powiedz(tekst) {
+  if (!czytajGlosno || !window.speechSynthesis) return;
+  try {
+    window.speechSynthesis.cancel();
+    // wycinamy markdown żeby asystent nie czytał gwiazdek i myślników
+    const czyste = String(tekst).replace(/\*\*/g, "").replace(/^\s*[-*•]\s+/gm, "");
+    const u = new SpeechSynthesisUtterance(czyste);
+    u.lang = "pl-PL"; u.rate = 1.0; u.pitch = 1.0;
+    window.speechSynthesis.speak(u);
+  } catch (err) { console.warn("TTS:", err); }
+}
+$("m-glos").addEventListener("click", () => {
+  czytajGlosno = !czytajGlosno;
+  $("m-glos").classList.toggle("m-glos--on", czytajGlosno);
+  $("m-glos").setAttribute("aria-pressed", czytajGlosno ? "true" : "false");
+  if (!czytajGlosno && window.speechSynthesis) window.speechSynthesis.cancel();
 });
 const Rozpoznanie = window.SpeechRecognition || window.webkitSpeechRecognition;
 const mik = $("m-mik");
@@ -1479,12 +1586,16 @@ function aktualizujSidebar() {
 
 /* --- pobranie wydarzeń (i zadań z terminem) dla zakresu --- */
 async function wczytajWydarzeniaZakres(od, doData) {
+  const odISO = isoZWarszawy(dataKalISO(od), "00:00");
+  const doISO = isoZWarszawy(dataKalISO(doData), "00:00");
+  // overlap: data_czas < koniec_widoku  I  (koniec > poczatek_widoku  ALBO  brak koniec i data_czas >= poczatek_widoku)
+  // dzięki temu wielodniowe wakacje zaczynające się przed widokiem dalej są widoczne
   const { data } = await supabase
     .from("events").select("*")
     .eq("traveler_id", TRAVELER.id)
     .in("typ", ["wydarzenie", "zadanie"])
-    .gte("data_czas", isoZWarszawy(dataKalISO(od), "00:00"))
-    .lt("data_czas", isoZWarszawy(dataKalISO(doData), "00:00"))
+    .lt("data_czas", doISO)
+    .or(`koniec.gt.${odISO},and(koniec.is.null,data_czas.gte.${odISO})`)
     .order("data_czas", { ascending: true });
   let lista = data || [];
   if (!pokazRocznice) lista = lista.filter((e) => !e.caly_dzien);
@@ -1503,7 +1614,19 @@ async function renderMiesiacGrid(box, od) {
 
   const wyd = await wczytajWydarzeniaZakres(
     new Date(rok, mies, 1), new Date(rok, mies + 1, 1));
-  const dniZWyd = new Set(wyd.map((e) => czesciWarszawy(e.data_czas).dzien));
+  // dniZWyd: dla wielodniowych całodziennych (wyjazdy) — wszystkie pokryte dni
+  const dniZWyd = new Set();
+  for (const e of wyd) {
+    if (e.caly_dzien) {
+      for (const dISO of dniCalodzienne(e)) {
+        const [Y, M, D] = dISO.split("-").map(Number);
+        if (Y === rok && M - 1 === mies) dniZWyd.add(D);
+      }
+    } else {
+      const cz = czesciWarszawy(e.data_czas);
+      if (cz.rok === rok && cz.mies - 1 === mies) dniZWyd.add(cz.dzien);
+    }
+  }
 
   let html = `<div class="m-mc"><div class="m-mc__siatka">`;
   for (const d of ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"])
@@ -1530,8 +1653,11 @@ async function renderMiesiacGrid(box, od) {
     lista.appendChild(el(`<div class="m-pusto" style="padding:8px 4px">Brak wydarzeń w tym miesiącu.</div>`));
   } else {
     for (const e of wyd) {
-      const kiedy = fmtData(e.data_czas, { day: "numeric", month: "short" })
-        + (e.caly_dzien ? "" : " · " + fmtGodz(e.data_czas));
+      const zakres = etykietaZakresuCalodziennego(e);
+      const kiedy = zakres
+        ? zakres
+        : fmtData(e.data_czas, { day: "numeric", month: "short" })
+          + (e.caly_dzien ? "" : " · " + fmtGodz(e.data_czas));
       const obca = obcaStrefaLinia(e);
       const wier = el(`<div class="m-poz"><span class="m-poz__czas">${esc(kiedy)}</span>`
         + `<span class="m-poz__tytul"><span class="m-kat-kropka" style="background:${kolorKategorii(e)}"></span>${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`);
@@ -1550,15 +1676,39 @@ async function renderSiatka(box, od, dni) {
   const dzisISO = dataKalISO(dzisWarszawa());
   const koniec = new Date(od.getTime() + dni * 86400000);
   const wyd = await wczytajWydarzeniaZakres(od, koniec);
+  const calodzienne = wyd.filter((e) => e.caly_dzien);
+  const godzinowe = wyd.filter((e) => !e.caly_dzien);
 
   let naglowki = `<div></div>`;
+  const dniISO = [];
   for (let i = 0; i < dni; i++) {
     const dz = new Date(od.getTime() + i * 86400000);
+    dniISO.push(dataKalISO(dz));
     const on = dataKalISO(dz) === dzisISO ? " m-tg__hdr--dzis" : "";
     naglowki += `<div class="m-tg__hdr${on}" data-iso="${dz.toISOString()}">`
       + esc(dz.toLocaleDateString("pl-PL", { weekday: "short" }))
       + `<b>${dz.getDate()}</b></div>`;
   }
+
+  // strip całodzienny — wyjazdy, wakacje, konferencje (bary po dniach, w których wpis trwa)
+  let stripHtml = "";
+  if (calodzienne.length) {
+    let kolumnyStrip = `<div></div>`;
+    for (let i = 0; i < dni; i++) {
+      const dayISO = dniISO[i];
+      const pasujace = calodzienne.filter((e) => dniCalodzienne(e).includes(dayISO));
+      let bary = "";
+      for (const e of pasujace) {
+        const kKol = kolorKategorii(e);
+        bary += `<div class="m-tg__caly-dzien-bar" data-id="${esc(e.id || "")}" `
+          + `style="background:${kKol};border-left:3px solid ${kKol}" `
+          + `title="${esc(e.tytul)}">${esc(e.tytul)}</div>`;
+      }
+      kolumnyStrip += `<div class="m-tg__caly-dzien-kol">${bary}</div>`;
+    }
+    stripHtml = `<div class="m-tg__caly-dzien-strip" style="grid-template-columns:38px repeat(${dni},1fr)">${kolumnyStrip}</div>`;
+  }
+
   let godziny = "";
   for (let h = 0; h < 24; h++)
     godziny += `<div class="m-tg__godz" style="height:${H}px">${dwa(h)}</div>`;
@@ -1570,14 +1720,22 @@ async function renderSiatka(box, od, dni) {
   }
   box.innerHTML = `<div class="m-tg">
     <div class="m-tg__naglowki" style="grid-template-columns:38px repeat(${dni},1fr)">${naglowki}</div>
+    ${stripHtml}
     <div class="m-tg__scroll"><div class="m-tg__plansza">
       <div class="m-tg__godziny">${godziny}</div>
       <div class="m-tg__kolumny" style="grid-template-columns:repeat(${dni},1fr)">${kolumny}</div>
     </div></div>
   </div>`;
 
+  // kliknięcia na bary całodzienne — otwórz edycję
+  box.querySelectorAll(".m-tg__caly-dzien-bar").forEach((b) => {
+    const id = b.dataset.id;
+    const e = calodzienne.find((x) => x.id === id);
+    if (e) b.addEventListener("click", (ev) => { ev.stopPropagation(); oknoWydarzenia({ event: e }); });
+  });
+
   const kolEls = box.querySelectorAll(".m-tg__kol");
-  for (const e of wyd) {
+  for (const e of godzinowe) {
     const cz = czesciWarszawy(e.data_czas);
     let idx = -1;
     for (let i = 0; i < dni; i++) {
@@ -1684,15 +1842,19 @@ function oknoWydarzenia(opcje) {
   const ev = opcje.event || null;
   let wybranaStrefa = (ev && ev.strefa) ? ev.strefa : TZ;
   let wybranaKat = (ev && KATEGORIE.includes(ev.kategoria)) ? ev.kategoria : "inne";
-  let dataVal, godzVal;
+  let dataVal, godzVal, endDateVal;
   if (ev) {
     const cz = czesciWStrefie(ev.data_czas ? ev.data_czas : new Date(), wybranaStrefa);
     dataVal = cz.dataISO; godzVal = cz.godzISO;
+    endDateVal = (ev.caly_dzien && ev.koniec)
+      ? poprzedniDzienISO(czesciWarszawy(ev.koniec).dataISO)
+      : dataVal;
   } else {
     dataVal = opcje.data ? dataKalISO(opcje.data) : czesciWarszawy(new Date()).dataISO;
     godzVal = (opcje.godzina != null)
       ? `${dwa(opcje.godzina)}:00`
       : czesciWarszawy(new Date()).godzISO;
+    endDateVal = dataVal;
   }
   let trwanie = 60;
   if (ev && ev.koniec && ev.data_czas) {
@@ -1715,6 +1877,10 @@ function oknoWydarzenia(opcje) {
       <div class="m-form__row">
         <div><label>Data</label><input type="date" id="w-data" value="${dataVal}"></div>
         <div id="w-godz-box"><label>Godzina</label><input type="time" id="w-godz" value="${godzVal}"></div>
+      </div>
+      <div id="w-zakres-box" style="display:none">
+        <label>Do dnia (włącznie)</label>
+        <input type="date" id="w-do-dnia" value="${endDateVal}">
       </div>
       <div id="w-strefa-box">
         <label>Strefa czasowa</label>
@@ -1745,6 +1911,7 @@ function oknoWydarzenia(opcje) {
     overlay.querySelector("#w-godz-box").style.display = ukryj ? "none" : "";
     overlay.querySelector("#w-trw-box").style.display = ukryj ? "none" : "";
     overlay.querySelector("#w-strefa-box").style.display = ukryj ? "none" : "";
+    overlay.querySelector("#w-zakres-box").style.display = ukryj ? "" : "none";
   };
   caly.addEventListener("change", aktualizujCaly);
   aktualizujCaly();
@@ -1795,6 +1962,10 @@ function oknoWydarzenia(opcje) {
     const strefaWyd = calyD ? TZ : wybranaStrefa;
     if (calyD) {
       dataCzas = isoZeStrefy(dataStr, "00:00", TZ);
+      let endStr = overlay.querySelector("#w-do-dnia").value || dataStr;
+      if (endStr < dataStr) endStr = dataStr;
+      // koniec = początek dnia PO ostatnim dniu (eksluzywnie)
+      koniec = isoZeStrefy(nastepnyDzienISO(endStr), "00:00", TZ);
     } else {
       const g = overlay.querySelector("#w-godz").value || "12:00";
       dataCzas = isoZeStrefy(dataStr, g, wybranaStrefa);
