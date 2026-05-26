@@ -942,8 +942,9 @@ $("m-logout").addEventListener("click", async () => {
    PRZEŁĄCZANIE WIDOKÓW
    ==================================================================== */
 function pokazWidok(nazwa) {
-  $("m-widok-ekran").style.display = nazwa === "ekran" ? "block" : "none";
-  $("m-widok-horyzont").style.display = nazwa === "horyzont" ? "block" : "none";
+  // "" zamiast "block" — inaczej inline style nadpisuje desktopowe display: grid
+  $("m-widok-ekran").style.display = nazwa === "ekran" ? "" : "none";
+  $("m-widok-horyzont").style.display = nazwa === "horyzont" ? "" : "none";
   window.scrollTo(0, 0);
 }
 $("m-back").addEventListener("click", () => pokazWidok("ekran"));
@@ -971,7 +972,7 @@ $("m-hyz-tabs").addEventListener("click", (ev) => {
 /* wyszukiwarka w Horyzoncie — filtruje wydarzenia i zadania na żywo */
 $("hyz-szukaj").addEventListener("input", (ev) => {
   zapytanieSzukaj = ev.target.value;
-  if ($("m-widok-horyzont").style.display === "block") {
+  if ($("m-widok-horyzont").style.display !== "none") {
     renderKalendarz();
     wczytajZadaniaHoryzont();
   }
@@ -979,7 +980,7 @@ $("hyz-szukaj").addEventListener("input", (ev) => {
 
 /* skróty klawiszowe w Horyzoncie: N = nowe, T = dziś, ←/→ = okres, / = szukaj */
 document.addEventListener("keydown", (ev) => {
-  if ($("m-widok-horyzont").style.display !== "block") return;
+  if ($("m-widok-horyzont").style.display === "none") return;
   const tag = (document.activeElement && document.activeElement.tagName) || "";
   const wInpucie = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
   if (ev.key === "/" && !wInpucie) { ev.preventDefault(); $("hyz-szukaj").focus(); return; }
