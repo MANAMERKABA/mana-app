@@ -331,20 +331,74 @@
   }
   .m-szukaj:focus { outline: none; border-color: var(--turkus); }
 
+  /* ---- HORYZONT: sidebar i taby (domyślnie ukryte na mobile) ---- */
+  .m-hyz-side { display: none; }
+  .m-hyz-tabs { display: none; }
+  .m-tab {
+    background: none; border: none; padding: 11px 18px;
+    font-family: var(--font-body); font-size: 14px; color: var(--ink-soft);
+    cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .m-tab:hover { color: var(--turkus); }
+  .m-tab--on { color: var(--turkus); font-weight: 600; border-bottom-color: var(--turkus); }
+  .m-mini-mies__bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 2px 4px 8px; font-size: 13px; font-weight: 600; color: var(--ink);
+  }
+  .m-mini-mies__bar button {
+    background: none; border: none; cursor: pointer; font-size: 18px; color: var(--ink-soft); padding: 2px 8px; line-height: 1;
+  }
+  .m-mini-mies__bar button:hover { color: var(--turkus); }
+  .m-mini-mies__siatka { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+  .m-mini-mies__dow { font-size: 10px; color: var(--ink-soft); text-align: center; padding: 4px 0 2px; }
+  .m-mini-mies__dzien { font-size: 12px; text-align: center; padding: 5px 0; border-radius: 5px; cursor: pointer; color: var(--ink); }
+  .m-mini-mies__dzien:hover { background: var(--turkus-bg); }
+  .m-mini-mies__dzien--dzis { background: var(--turkus); color: #fff; }
+  .m-mini-mies__dzien--dzis:hover { background: var(--turkus); color: #fff; }
+  .m-mini-mies__dzien--akt { outline: 1.5px solid var(--turkus); }
+  .m-mini-naglowek { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); padding: 14px 2px 6px; }
+  .m-mini-pusto { font-size: 12.5px; color: var(--ink-soft); padding: 4px 2px; }
+  .m-mini-agenda__dzien { font-size: 11px; font-weight: 600; color: var(--ink-soft); padding: 8px 2px 2px; }
+  .m-mini-agenda__poz { font-size: 12.5px; padding: 4px 2px; display: flex; gap: 6px; align-items: baseline; line-height: 1.3; }
+  .m-mini-agenda__poz-czas { font-weight: 600; flex: 0 0 46px; font-variant-numeric: tabular-nums; }
+  .m-mini-filtr {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    background: none; border: none; padding: 6px 4px; font-family: var(--font-body);
+    font-size: 13px; color: var(--ink); cursor: pointer; border-radius: 6px;
+  }
+  .m-mini-filtr:hover { background: var(--turkus-bg); }
+  .m-mini-filtr__dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+  .m-mini-filtr__check { font-size: 13px; color: var(--ink-soft); flex: 0 0 auto; }
+  .m-mini-filtr--off .m-mini-filtr__check { color: var(--line); }
+
   /* ---- DESKTOP — szerszy ekran ---- */
   @media (min-width: 900px) {
     body { padding: 0 20px; }
-    #m-app, #m-login { max-width: 1100px; }
+    #m-app, #m-login { max-width: 1200px; }
     #m-widok-ekran { max-width: 540px; margin: 0 auto; }
     #m-widok-horyzont {
       display: grid;
-      grid-template-columns: 1fr 340px;
-      gap: 28px;
+      grid-template-columns: 280px 1fr;
+      gap: 24px;
       align-items: start;
       padding: 0 4px;
     }
     #m-widok-horyzont > .m-hyz-bar { grid-column: 1 / -1; padding: 18px 4px 8px; }
     #m-widok-horyzont > .m-stopka { grid-column: 1 / -1; }
+    .m-hyz-side {
+      display: block; grid-column: 1; grid-row: 2 / span 5;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+      padding: 12px 14px 16px; align-self: start; position: sticky; top: 12px;
+    }
+    .m-hyz-tabs {
+      display: flex; gap: 4px; grid-column: 2;
+      border-bottom: 1px solid var(--line); margin-bottom: 8px; padding-left: 4px;
+    }
+    #m-widok-horyzont > .m-warstwa { grid-column: 2; }
+    #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="zadania"] { display: none; }
+    #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="kalendarz"] { display: none; }
+    /* taby zastępują nagłówki warstw na desktopie */
+    #m-widok-horyzont > .m-warstwa > .m-warstwa__head { display: none; }
     .m-tg__scroll { max-height: 72vh; }
     .m-tg__godz { font-size: 11px; }
     .m-tg__event { font-size: 12px; padding: 3px 7px; }
@@ -413,13 +467,22 @@
   </div>
 
   <!-- ===== WIDOK: POKÓJ HORYZONT ===== -->
-  <div id="m-widok-horyzont" style="display:none">
+  <div id="m-widok-horyzont" style="display:none" data-tab="kalendarz">
     <div class="m-hyz-bar">
       <button class="m-back" id="m-back">&#8592; Ekran startowy</button>
       <span class="m-hyz-tytul">Horyzont</span>
       <input type="search" id="hyz-szukaj" class="m-szukaj" placeholder="Szukaj… (/)" aria-label="Szukaj">
     </div>
-    <div class="m-warstwa">
+    <aside class="m-hyz-side" id="m-hyz-side" aria-label="Boczny panel">
+      <div id="m-mini-mies" class="m-mini-mies"></div>
+      <div id="m-mini-agenda" class="m-mini-agenda"></div>
+      <div id="m-mini-filtry" class="m-mini-filtry"></div>
+    </aside>
+    <div class="m-hyz-tabs" id="m-hyz-tabs" role="tablist">
+      <button class="m-tab m-tab--on" data-tab="kalendarz" role="tab">Kalendarz</button>
+      <button class="m-tab" data-tab="zadania" role="tab">Zadania</button>
+    </div>
+    <div class="m-warstwa" data-typ="kalendarz">
       <div class="m-warstwa__head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
         <span>Kalendarz</span>
@@ -427,7 +490,7 @@
       <div id="hyz-kalendarz"></div>
     </div>
 
-    <div class="m-warstwa">
+    <div class="m-warstwa" data-typ="zadania">
       <div class="m-warstwa__head">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         <span>Zadania</span>
@@ -895,6 +958,16 @@ function wpinajKlik(elem, fn) {
 wpinajKlik($("m-glowa-wyd"), () => otworzHoryzont());
 wpinajKlik($("m-glowa-zad"), () => otworzHoryzont({ skok: "zadania" }));
 
+/* taby Kalendarz / Zadania na desktopie */
+$("m-hyz-tabs").addEventListener("click", (ev) => {
+  const btn = ev.target.closest(".m-tab");
+  if (!btn) return;
+  const t = btn.dataset.tab;
+  $("m-widok-horyzont").dataset.tab = t;
+  $("m-hyz-tabs").querySelectorAll(".m-tab").forEach((b) =>
+    b.classList.toggle("m-tab--on", b.dataset.tab === t));
+});
+
 /* wyszukiwarka w Horyzoncie — filtruje wydarzenia i zadania na żywo */
 $("hyz-szukaj").addEventListener("input", (ev) => {
   zapytanieSzukaj = ev.target.value;
@@ -1236,6 +1309,7 @@ async function renderKalendarz() {
   podepnijSwipe(box);
   if (z.miesiac) await renderMiesiacGrid(box, z.od);
   else await renderSiatka(box, z.od, z.dni);
+  aktualizujSidebar();
 }
 
 function otworzMenuKal() {
@@ -1288,6 +1362,118 @@ function podepnijSwipe(box) {
     if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.4)
       przesunOkres(dx < 0 ? 1 : -1);
   });
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   HORYZONT — boczny panel (desktop): mini-miesiąc, harmonogram, filtry
+   ════════════════════════════════════════════════════════════════════ */
+function renderMiniMiesiac() {
+  const wrap = $("m-mini-mies");
+  if (!wrap) return;
+  const dzis = czesciWarszawy(new Date());
+  const k = kotwica;
+  const rok = k.getFullYear(), mies = k.getMonth();
+  const dniWMies = new Date(rok, mies + 1, 0).getDate();
+  const pierwszyDow = (new Date(rok, mies, 1).getDay() + 6) % 7;
+  const nazwa = new Date(rok, mies, 1).toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+  const stolicaNazwy = nazwa.charAt(0).toUpperCase() + nazwa.slice(1);
+  let html = `<div class="m-mini-mies__bar">
+    <button data-mini="prev" aria-label="Poprzedni miesiąc">&#8249;</button>
+    <span>${esc(stolicaNazwy)}</span>
+    <button data-mini="next" aria-label="Następny miesiąc">&#8250;</button>
+  </div>
+  <div class="m-mini-mies__siatka">`;
+  for (const d of ["Pn","Wt","Śr","Cz","Pt","So","Nd"]) html += `<div class="m-mini-mies__dow">${d}</div>`;
+  for (let i = 0; i < pierwszyDow; i++) html += `<div></div>`;
+  for (let d = 1; d <= dniWMies; d++) {
+    const jestDzis = d === dzis.dzien && mies === dzis.mies - 1 && rok === dzis.rok;
+    const jestAkt = !jestDzis && d === k.getDate() && mies === k.getMonth() && rok === k.getFullYear();
+    const kl = jestDzis ? " m-mini-mies__dzien--dzis" : (jestAkt ? " m-mini-mies__dzien--akt" : "");
+    html += `<div class="m-mini-mies__dzien${kl}" data-d="${d}">${d}</div>`;
+  }
+  html += `</div>`;
+  wrap.innerHTML = html;
+  wrap.querySelector('[data-mini="prev"]').addEventListener("click", () => {
+    kotwica = new Date(rok, mies - 1, 1); renderKalendarz();
+  });
+  wrap.querySelector('[data-mini="next"]').addEventListener("click", () => {
+    kotwica = new Date(rok, mies + 1, 1); renderKalendarz();
+  });
+  wrap.querySelectorAll(".m-mini-mies__dzien").forEach((c) =>
+    c.addEventListener("click", () => {
+      kotwica = new Date(rok, mies, Number(c.dataset.d));
+      widokKal = "dzis";
+      renderKalendarz();
+    })
+  );
+}
+
+async function renderMiniAgenda() {
+  const wrap = $("m-mini-agenda");
+  if (!wrap) return;
+  const { s } = granceDnia(0);
+  const oknoDo = new Date(s.getTime() + 14 * 86400000);
+  const { data = [] } = await supabase
+    .from("events").select("tytul, data_czas, koniec, caly_dzien, kategoria, strefa")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
+    .gte("data_czas", s.toISOString()).lt("data_czas", oknoDo.toISOString())
+    .order("data_czas", { ascending: true });
+  const teraz = new Date();
+  const lista = (data || []).filter((e) =>
+    (e.caly_dzien || new Date(e.koniec || e.data_czas) >= teraz)
+    && !ukryteKat.has(kategoriaZE(e))
+  ).slice(0, 5);
+  let html = `<div class="m-mini-naglowek">Harmonogram</div>`;
+  if (!lista.length) {
+    html += `<div class="m-mini-pusto">Brak najbliższych wydarzeń.</div>`;
+  } else {
+    let ostatni = "";
+    for (const e of lista) {
+      const d = czesciWarszawy(e.data_czas).dataISO;
+      if (d !== ostatni) {
+        ostatni = d;
+        html += `<div class="m-mini-agenda__dzien">${esc(etykietaDnia(e.data_czas))}</div>`;
+      }
+      const czas = e.caly_dzien ? "—" : fmtGodz(e.data_czas);
+      html += `<div class="m-mini-agenda__poz"><span class="m-mini-agenda__poz-czas" style="color:${kolorKategorii(e)}">${esc(czas)}</span><span>${esc(e.tytul)}</span></div>`;
+    }
+  }
+  wrap.innerHTML = html;
+}
+
+function renderMiniFiltry() {
+  const wrap = $("m-mini-filtry");
+  if (!wrap) return;
+  let html = `<div class="m-mini-naglowek">Pokaż / ukryj</div>`;
+  html += `<button class="m-mini-filtr${pokazRocznice ? "" : " m-mini-filtr--off"}" data-tog="rocznice">`
+    + `<span class="m-mini-filtr__check">${pokazRocznice ? "☑" : "☐"}</span>`
+    + `<span class="m-mini-filtr__dot" style="background:#e6eef4"></span>`
+    + `<span>Rocznice i urodziny</span></button>`;
+  for (const k of KATEGORIE) {
+    const off = ukryteKat.has(k);
+    html += `<button class="m-mini-filtr${off ? " m-mini-filtr--off" : ""}" data-tog="kat" data-kat="${k}">`
+      + `<span class="m-mini-filtr__check">${off ? "☐" : "☑"}</span>`
+      + `<span class="m-mini-filtr__dot" style="background:${KOLOR_KAT[k]}"></span>`
+      + `<span>${esc(ETYK_KAT[k])}</span></button>`;
+  }
+  wrap.innerHTML = html;
+  wrap.querySelector('[data-tog="rocznice"]').addEventListener("click", () => {
+    pokazRocznice = !pokazRocznice; renderKalendarz();
+  });
+  wrap.querySelectorAll('[data-tog="kat"]').forEach((b) =>
+    b.addEventListener("click", () => {
+      const k = b.dataset.kat;
+      if (ukryteKat.has(k)) ukryteKat.delete(k); else ukryteKat.add(k);
+      renderKalendarz();
+      wczytajDzien();
+    })
+  );
+}
+
+function aktualizujSidebar() {
+  renderMiniMiesiac();
+  renderMiniAgenda();
+  renderMiniFiltry();
 }
 
 /* --- pobranie wydarzeń (i zadań z terminem) dla zakresu --- */
