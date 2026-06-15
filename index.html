@@ -491,6 +491,11 @@
       <div class="m-wejscie">
         <div class="m-fala" id="m-fala"><span></span><span></span><span></span><span></span><span></span></div>
         <textarea class="m-pole" id="m-pole" rows="1" placeholder="Napisz albo powiedz…"></textarea>
+        <input id="m-foto-plik" type="file" accept="image/*,application/pdf" capture="environment" style="display:none">
+        <button class="m-mik" id="m-foto" type="button" title="Zdjęcie paragonu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        </button>
         <button class="m-mik" id="m-mik" title="Mów">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
             <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/>
@@ -1866,6 +1871,56 @@ pole.addEventListener("keydown", (e) => {
 });
 /* przycisk wyślij — strzałka obok mikrofonu */
 $("m-wyslij").addEventListener("click", () => wyslij());
+
+/* ZDJĘCIE PARAGONU W ASYSTENCIE — zdjęcie → OCR → podsumowanie → zapis do Trzosu */
+$("m-foto").addEventListener("click", () => $("m-foto-plik").click());
+$("m-foto-plik").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) asystentParagon(f); });
+async function asystentParagon(file) {
+  if (!file || trwaRozmowa) return;
+  trwaRozmowa = true;
+  $("m-ea").classList.add("m-ea--rozmowa");
+  dodajWiadomosc("ja", "📷 Paragon");
+  const mysl = dodajWiadomosc("mysli", "Czytam paragon…");
+  try {
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
+    const up = await supabase.storage.from("dokumenty").upload(sciezka, file, { contentType: file.type || undefined, upsert: false });
+    if (up.error) throw up.error;
+    const dok = await supabase.from("dokumenty").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "paragon", kontekst: "finanse", plik_url: sciezka, mime: file.type || null, zrodlo: "zdjecie", ocr_status: "oczekuje" }).select("id").single();
+    if (dok.error) throw dok.error;
+    const { data, error } = await supabase.functions.invoke("ocr-dokument", { body: { dokument_id: dok.data.id } });
+    mysl.remove();
+    if (error || !data || !data.ok) { dodajWiadomosc("asystent", "Nie udało się odczytać paragonu" + (error ? ": " + error.message : "") + "."); trwaRozmowa = false; return; }
+    const d = data.dane || {};
+    const poz = Array.isArray(d.pozycje) ? d.pozycje.filter((p) => p && p.nazwa) : [];
+    const kwota = d.kwota_brutto != null ? d.kwota_brutto : null;
+    let podsum = `<div><strong>Paragon odczytany</strong></div>`;
+    if (d.sprzedawca) podsum += `<div>Sprzedawca: ${esc(d.sprzedawca)}</div>`;
+    if (d.data) podsum += `<div>Data: ${esc(d.data)}</div>`;
+    if (kwota != null) podsum += `<div>Razem: ${fmtZl(kwota)}</div>`;
+    if (poz.length) podsum += `<div style="margin-top:4px;">Pozycje:</div><ul>${poz.map((p) => `<li>${esc(p.nazwa)}${p.kwota != null ? " — " + fmtZl(p.kwota) : ""}${p.kategoria ? ` <span style="color:#8c887e;">(${esc(p.kategoria)})</span>` : ""}</li>`).join("")}</ul>`;
+    const bubel = el(`<div class="m-msg m-msg--asystent">${podsum}<div style="display:flex;gap:8px;margin-top:8px;"><button class="par-zapisz" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">Zapisz do Trzosu</button><button class="par-anuluj" style="background:#efece3;color:#26241f;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">Anuluj</button></div></div>`);
+    $("m-stream").appendChild(bubel); $("m-stream").scrollTop = $("m-stream").scrollHeight;
+    bubel.querySelector(".par-anuluj").addEventListener("click", () => { bubel.querySelector("div:last-child").remove(); dodajWiadomosc("asystent", "Anulowane — nie zapisałem. Paragon został w dokumentach."); });
+    bubel.querySelector(".par-zapisz").addEventListener("click", async () => {
+      const btn = bubel.querySelector(".par-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
+      try {
+        const dzis = czesciWarszawy(new Date()).dataISO;
+        const tx = await supabase.from("transakcje").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "koszt", kwota: kwota != null ? kwota : 0, data: d.data || dzis, kategoria: d.kategoria || null, metoda_platnosci: d.metoda_platnosci || null, opis: d.sprzedawca || null, paragon_url: sciezka }).select("id").single();
+        if (tx.error) throw tx.error;
+        await supabase.from("dokumenty").update({ transakcja_id: tx.data.id }).eq("id", dok.data.id);
+        if (poz.length) {
+          const rows = poz.map((p) => ({ transakcja_id: tx.data.id, typ: "zakup", nazwa: String(p.nazwa), ilosc: p.ilosc != null ? p.ilosc : 1, cena_jedn: p.cena_jedn != null ? p.cena_jedn : null, kwota: p.kwota != null ? p.kwota : null, kategoria: p.kategoria || null }));
+          await supabase.from("transakcja_pozycje").insert(rows);
+        }
+        bubel.querySelector("div:last-child").remove();
+        dodajWiadomosc("asystent", "Zapisałem w Trzosie ✓" + (kwota != null ? " (" + fmtZl(kwota) + ")" : "") + (poz.length ? `, pozycji: ${poz.length}` : ""));
+        if (typeof renderTrzos === "function" && $("m-widok-trzos") && $("m-widok-trzos").style.display !== "none") renderTrzos();
+      } catch (e) { btn.disabled = false; btn.textContent = "Zapisz do Trzosu"; dodajWiadomosc("asystent", "Nie zapisałem: " + (e.message || e)); }
+    });
+  } catch (err) { mysl.remove(); dodajWiadomosc("asystent", "Błąd: " + (err.message || err)); }
+  trwaRozmowa = false;
+}
 
 /* czytanie odpowiedzi asystenta na głos (TTS) */
 let czytajGlosno = false;
