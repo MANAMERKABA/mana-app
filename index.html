@@ -1916,16 +1916,23 @@ async function asystentParagon(file) {
     const poz = Array.isArray(d.pozycje) ? d.pozycje.filter((p) => p && p.nazwa) : [];
     const kwota = d.kwota_brutto != null ? d.kwota_brutto : null;
     const sprz = (d.sprzedawca || "").trim();
-    if (kwota != null && sprz) {
-      const dataDup = d.data || czesciWarszawy(new Date()).dataISO;
+    const nrDok = (d.numer_dokumentu || "").trim();
+    const dataDup = d.data || czesciWarszawy(new Date()).dataISO;
+    let dup = null;
+    if (nrDok) {
+      const nipN = (d.nip || "").replace(/\D/g, "");
+      const { data: byNr } = await supabase.from("transakcje").select("id, opis, nip_sprzedawcy").eq("traveler_id", TRAVELER.id).eq("typ", "koszt").eq("numer_dokumentu", nrDok);
+      dup = (byNr || []).find((r) => !nipN || !r.nip_sprzedawcy || nipN === (r.nip_sprzedawcy || "").replace(/\D/g, "")) || (byNr || [])[0] || null;
+    }
+    if (!dup && kwota != null) {
       const { data: ist } = await supabase.from("transakcje").select("id, opis").eq("traveler_id", TRAVELER.id).eq("typ", "koszt").eq("data", dataDup).eq("kwota", kwota);
-      const dup = (ist || []).find((r) => (r.opis || "").trim().toLowerCase() === sprz.toLowerCase());
-      if (dup) {
-        await supabase.from("dokumenty").delete().eq("id", dok.data.id);
-        await supabase.storage.from("dokumenty").remove([sciezka]);
-        dodajWiadomosc("asystent", `To już masz zapisane (duplikat): ${esc(sprz)}, ${fmtZl(kwota)}, ${esc(dataDup)}. Nie dodaję drugi raz.`);
-        trwaRozmowa = false; return;
-      }
+      dup = (ist || [])[0] || null;
+    }
+    if (dup) {
+      await supabase.from("dokumenty").delete().eq("id", dok.data.id);
+      await supabase.storage.from("dokumenty").remove([sciezka]);
+      dodajWiadomosc("asystent", `To już masz zapisane (duplikat): ${esc(sprz || dup.opis || "paragon")}, ${fmtZl(kwota != null ? kwota : 0)}, ${esc(dataDup)}. Nie dodaję drugi raz.`);
+      trwaRozmowa = false; return;
     }
     let podsum = `<div><strong>Paragon odczytany</strong></div>`;
     if (d.sprzedawca) podsum += `<div>Sprzedawca: ${esc(d.sprzedawca)}</div>`;
@@ -1939,7 +1946,7 @@ async function asystentParagon(file) {
       const btn = bubel.querySelector(".par-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
       try {
         const dzis = czesciWarszawy(new Date()).dataISO;
-        const tx = await supabase.from("transakcje").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "koszt", kwota: kwota != null ? kwota : 0, data: d.data || dzis, kategoria: d.kategoria || null, metoda_platnosci: d.metoda_platnosci || null, opis: d.sprzedawca || null, paragon_url: sciezka }).select("id").single();
+        const tx = await supabase.from("transakcje").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "koszt", kwota: kwota != null ? kwota : 0, data: d.data || dzis, kategoria: d.kategoria || null, metoda_platnosci: d.metoda_platnosci || null, opis: d.sprzedawca || null, nip_sprzedawcy: d.nip || null, numer_dokumentu: nrDok || null, dokument_typ: d.dokument_typ || "paragon", kwota_netto: d.kwota_netto != null ? d.kwota_netto : null, kwota_vat: d.kwota_vat != null ? d.kwota_vat : null, paragon_url: sciezka }).select("id").single();
         if (tx.error) throw tx.error;
         await supabase.from("dokumenty").update({ transakcja_id: tx.data.id }).eq("id", dok.data.id);
         if (poz.length) {
