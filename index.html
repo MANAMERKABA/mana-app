@@ -1110,6 +1110,7 @@ $("m-back-trzos").addEventListener("click", () => pokazWidok("ekran"));
    tą samą tabelą przez plemie_id — kolejny krok.
    ════════════════════════════════════════════════════════════════════ */
 const KAT_TRZOS = ["dom", "jedzenie", "transport", "zdrowie", "rozrywka", "rachunki", "oszczędności", "inne"];
+const KAT_POZ_TRZOS = ["", "spożywka", "higiena", "kosmetyki", "suplementy", "leki", "zdrowie", "inne"];
 const METODY_TRZOS = ["", "gotówka", "karta", "przelew", "BLIK"];
 const fmtZl = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " zł";
 
@@ -1127,7 +1128,7 @@ async function renderTrzos() {
   lista.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję Trzos…</div>`;
   const { data: txy = [], error } = await supabase
     .from("transakcje")
-    .select("*, dokumenty(id, plik_url, mime, ocr_status)")
+    .select("*, dokumenty(id, plik_url, mime, ocr_status), transakcja_pozycje(id, nazwa, ilosc, cena_jedn, kwota, kategoria)")
     .eq("traveler_id", TRAVELER.id)
     .order("data", { ascending: false })
     .order("data_utworzenia", { ascending: false });
@@ -1147,28 +1148,48 @@ async function renderTrzos() {
   txy.forEach((t) => lista.appendChild(wierszTrzos(t)));
 }
 
+function wierszPozTrzos(p) {
+  const katOpts = KAT_POZ_TRZOS.map((k) => `<option value="${k}"${(p.kategoria || "") === k ? " selected" : ""}>${k || "— kategoria —"}</option>`).join("");
+  const r = el(`<div style="display:flex;gap:6px;align-items:center;margin:5px 0;flex-wrap:wrap;">
+    <input class="pz-nazwa" value="${esc(p.nazwa || "")}" style="flex:2;min-width:120px;padding:6px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:#fff;">
+    <select class="pz-kat" style="padding:6px;border:1px solid var(--line);border-radius:7px;font-size:12px;background:#fff;">${katOpts}</select>
+    <span style="font-size:12px;color:var(--ink-soft);white-space:nowrap;">${p.kwota != null ? fmtZl(p.kwota) : ""}</span>
+  </div>`);
+  const zapisz = async (patch) => { const { error } = await supabase.from("transakcja_pozycje").update(patch).eq("id", p.id); trzosToast(error ? "Błąd zapisu" : "Zapisano ✓"); };
+  r.querySelector(".pz-kat").addEventListener("change", (e) => zapisz({ kategoria: e.target.value || null }));
+  const nz = r.querySelector(".pz-nazwa");
+  nz.addEventListener("change", () => { const v = nz.value.trim(); if (v && v !== (p.nazwa || "")) zapisz({ nazwa: v }); });
+  return r;
+}
 function wierszTrzos(t) {
   const dok = (t.dokumenty && t.dokumenty[0]) || null;
+  const poz = t.transakcja_pozycje || [];
   const dodatnia = t.typ === "przychod";
   const kolor = dodatnia ? "#1a7158" : "#c4513a";
   const znak = dodatnia ? "+" : "−";
-  const row = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;flex-wrap:wrap;">
+  const wrap = el(`<div style="margin-bottom:8px;"></div>`);
+  const row = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;flex-wrap:wrap;">
     <div style="flex:1;min-width:150px;">
       <div style="font-size:14px;">${esc(t.opis || t.kategoria || (dodatnia ? "Przychód" : "Koszt"))}</div>
-      <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}</div>
+      <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}${poz.length ? " · " + poz.length + " poz." : ""}</div>
     </div>
     <div style="font-size:15px;font-weight:600;color:${kolor};white-space:nowrap;">${znak} ${fmtZl(t.kwota)}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;justify-content:flex-end;"></div>
   </div>`);
   const akcje = row.lastElementChild;
+  const pozBox = el(`<div style="display:none;background:#faf8f2;border:1px solid var(--line);border-top:none;border-radius:0 0 12px 12px;padding:6px 12px 10px;"></div>`);
+  poz.forEach((p) => pozBox.appendChild(wierszPozTrzos(p)));
   const mkBtn = (txt, bg, fn) => { const b = el(`<button style="background:${bg};color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">${txt}</button>`); b.addEventListener("click", fn); return b; };
+  if (poz.length) akcje.appendChild(mkBtn("Pozycje", "#1f9e8f", () => { pozBox.style.display = pozBox.style.display === "none" ? "block" : "none"; }));
   if (dok) {
     if (dok.ocr_status !== "gotowe") akcje.appendChild(mkBtn("OCR", "#5b8def", () => wykonajOcrTrzos(t)));
     akcje.appendChild(mkBtn("📎 Podgląd", "#8c887e", () => otworzDokTrzos(dok.plik_url)));
   }
   akcje.appendChild(mkBtn("Edytuj", "#8c887e", () => kartaTrzos(t.typ, t)));
   akcje.appendChild(mkBtn("Usuń", "#c4513a", () => usunTrzos(t)));
-  return row;
+  wrap.appendChild(row);
+  wrap.appendChild(pozBox);
+  return wrap;
 }
 
 function kartaTrzos(typ, t) {
@@ -1894,6 +1915,18 @@ async function asystentParagon(file) {
     const d = data.dane || {};
     const poz = Array.isArray(d.pozycje) ? d.pozycje.filter((p) => p && p.nazwa) : [];
     const kwota = d.kwota_brutto != null ? d.kwota_brutto : null;
+    const sprz = (d.sprzedawca || "").trim();
+    if (kwota != null && sprz) {
+      const dataDup = d.data || czesciWarszawy(new Date()).dataISO;
+      const { data: ist } = await supabase.from("transakcje").select("id, opis").eq("traveler_id", TRAVELER.id).eq("typ", "koszt").eq("data", dataDup).eq("kwota", kwota);
+      const dup = (ist || []).find((r) => (r.opis || "").trim().toLowerCase() === sprz.toLowerCase());
+      if (dup) {
+        await supabase.from("dokumenty").delete().eq("id", dok.data.id);
+        await supabase.storage.from("dokumenty").remove([sciezka]);
+        dodajWiadomosc("asystent", `To już masz zapisane (duplikat): ${esc(sprz)}, ${fmtZl(kwota)}, ${esc(dataDup)}. Nie dodaję drugi raz.`);
+        trwaRozmowa = false; return;
+      }
+    }
     let podsum = `<div><strong>Paragon odczytany</strong></div>`;
     if (d.sprzedawca) podsum += `<div>Sprzedawca: ${esc(d.sprzedawca)}</div>`;
     if (d.data) podsum += `<div>Data: ${esc(d.data)}</div>`;
