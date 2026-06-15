@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>MANA — ekran startowy + Horyzont</title>
 <meta name="description" content="MANA — ekran startowy z żywym EA oraz pokój Horyzont (kalendarz + zadania).">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1f9e8f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="MANA">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
@@ -360,14 +369,22 @@
 
   /* ---- HORYZONT: sidebar i taby (domyślnie ukryte na mobile) ---- */
   .m-hyz-side { display: none; }
-  .m-hyz-tabs { display: none; }
+  .m-hyz-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 0 12px 8px; overflow-x: auto; }
   .m-tab {
-    background: none; border: none; padding: 11px 18px;
+    background: none; border: none; padding: 11px 14px;
     font-family: var(--font-body); font-size: 14px; color: var(--ink-soft);
-    cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap;
   }
   .m-tab:hover { color: var(--turkus); }
   .m-tab--on { color: var(--turkus); font-weight: 600; border-bottom-color: var(--turkus); }
+  /* przełączanie warstw zakładkami — także na mobile */
+  #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="zadania"],
+  #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="plemie"],
+  #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="kalendarz"],
+  #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="plemie"],
+  #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="kalendarz"],
+  #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="zadania"] { display: none; }
+  #m-widok-horyzont > .m-warstwa > .m-warstwa__head { display: none; }
   .m-mini-mies__bar {
     display: flex; align-items: center; justify-content: space-between;
     padding: 2px 4px 8px; font-size: 13px; font-weight: 600; color: var(--ink);
@@ -422,8 +439,12 @@
       border-bottom: 1px solid var(--line); margin-bottom: 8px; padding-left: 4px;
     }
     #m-widok-horyzont > .m-warstwa { grid-column: 2; }
-    #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="zadania"] { display: none; }
-    #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="kalendarz"] { display: none; }
+    #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="zadania"],
+    #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="plemie"],
+    #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="kalendarz"],
+    #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="plemie"],
+    #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="kalendarz"],
+    #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="zadania"] { display: none; }
     /* taby zastępują nagłówki warstw na desktopie */
     #m-widok-horyzont > .m-warstwa > .m-warstwa__head { display: none; }
     .m-tg__scroll { max-height: 72vh; }
@@ -519,6 +540,7 @@
     <div class="m-hyz-tabs" id="m-hyz-tabs" role="tablist">
       <button class="m-tab m-tab--on" data-tab="kalendarz" role="tab">Kalendarz</button>
       <button class="m-tab" data-tab="zadania" role="tab">Zadania</button>
+      <button class="m-tab" data-tab="plemie" role="tab">Plemię</button>
     </div>
     <div class="m-warstwa" data-typ="kalendarz">
       <div class="m-warstwa__head">
@@ -541,6 +563,28 @@
       <button class="m-zrob-naglowek" id="hyz-zrob-toggle"></button>
       <div id="hyz-zad-zrobione" style="display:none"></div>
     </div>
+
+    <div class="m-warstwa" data-typ="plemie">
+      <div class="m-warstwa__head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Plemię</span>
+      </div>
+      <div id="hyz-plemie"></div>
+    </div>
+    <div class="m-stopka"></div>
+  </div>
+
+  <div id="m-widok-trzos" style="display:none">
+    <div class="m-hyz-bar">
+      <button class="m-back" id="m-back-trzos">&#8592; Ekran startowy</button>
+      <span class="m-hyz-tytul">Trzos</span>
+    </div>
+    <div id="trzos-podsum" style="padding:8px 16px 0;"></div>
+    <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;">
+      <button id="trzos-dodaj-przychod" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Przychód</button>
+      <button id="trzos-dodaj-koszt" style="background:#c4513a;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Koszt (paragon)</button>
+    </div>
+    <div id="trzos-lista" style="padding:6px 16px 30px;"></div>
     <div class="m-stopka"></div>
   </div>
 
@@ -559,7 +603,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const POKOJE = [
   { nazwa: "Horyzont", zywy: true, akcja: "horyzont",
     ikona: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
-  { nazwa: "Trzos", zywy: false,
+  { nazwa: "Trzos", zywy: true, akcja: "trzos",
     ikona: '<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M16 14h2"/>' },
   { nazwa: "Puls", zywy: false,
     ikona: '<path d="M20.8 5.6a5.5 5.5 0 0 0-8.8-1.4L12 4l-.1-.1A5.5 5.5 0 0 0 3.2 11c1.6 4.3 8.8 9 8.8 9s7.2-4.7 8.8-9z"/>' },
@@ -571,6 +615,7 @@ const KATEGORIE = ["praca", "rodzina", "prywatne", "zdrowie", "inne"];
 const KOLOR_KAT = { praca: "#2e5a7a", rodzina: "#1a7158", prywatne: "#7a4ea0", zdrowie: "#c44a3a", inne: "#8c887e" };
 const ETYK_KAT = { praca: "Praca", rodzina: "Rodzina", prywatne: "Prywatne", zdrowie: "Zdrowie", inne: "Inne" };
 const ukryteKat = new Set();
+const widocznePlemiona = new Set();
 const kategoriaZE = (e) => (e && KATEGORIE.includes(e.kategoria)) ? e.kategoria : "inne";
 const kolorKategorii = (e) => KOLOR_KAT[kategoriaZE(e)];
 
@@ -1008,7 +1053,28 @@ async function wejdz() {
   $("m-app").style.display = "flex";
   renderHeader();
   renderPokoje();
+  subskrybujRealtime();
   await wczytajDzien();
+}
+
+let _kanalRealtime = null, _odswiezTimer = null;
+function odswiezKalendarzeLive() {
+  clearTimeout(_odswiezTimer);
+  _odswiezTimer = setTimeout(() => {
+    const w = $("m-widok-horyzont");
+    if (!w || w.style.display === "none") return;
+    const tab = w.dataset.tab;
+    if (tab === "plemie") { if (typeof PLEMIE_KAL !== "undefined" && PLEMIE_KAL) renderPlemieKalendarz(); }
+    else if (typeof renderKalendarz === "function") renderKalendarz();
+  }, 300);
+}
+function subskrybujRealtime() {
+  if (_kanalRealtime) return;
+  _kanalRealtime = supabase
+    .channel("mana-live")
+    .on("postgres_changes", { event: "*", schema: "public", table: "events" }, odswiezKalendarzeLive)
+    .on("postgres_changes", { event: "*", schema: "public", table: "plemie_czlonkowie" }, odswiezKalendarzeLive)
+    .subscribe();
 }
 
 function renderHeader() {
@@ -1026,9 +1092,197 @@ function pokazWidok(nazwa) {
   // "" zamiast "block" — inaczej inline style nadpisuje desktopowe display: grid
   $("m-widok-ekran").style.display = nazwa === "ekran" ? "" : "none";
   $("m-widok-horyzont").style.display = nazwa === "horyzont" ? "" : "none";
+  $("m-widok-trzos").style.display = nazwa === "trzos" ? "" : "none";
   window.scrollTo(0, 0);
 }
 $("m-back").addEventListener("click", () => pokazWidok("ekran"));
+$("m-back-trzos").addEventListener("click", () => pokazWidok("ekran"));
+
+/* ════════════════════════════════════════════════════════════════════
+   TRZOS — osobiste finanse: przychody + koszty + paragony/OCR.
+   Reużywa kafla `dokumenty` i edge `ocr-dokument` (te same co gospodarz).
+   Oś: transakcje.traveler_id (org_id puste). Wspólny budżet rodziny pójdzie
+   tą samą tabelą przez plemie_id — kolejny krok.
+   ════════════════════════════════════════════════════════════════════ */
+const KAT_TRZOS = ["dom", "jedzenie", "transport", "zdrowie", "rozrywka", "rachunki", "oszczędności", "inne"];
+const METODY_TRZOS = ["", "gotówka", "karta", "przelew", "BLIK"];
+const fmtZl = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " zł";
+
+function trzosToast(t) {
+  let b = $("trzos-toast");
+  if (!b) { b = el(`<div id="trzos-toast" style="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2421;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.25);max-width:88%;text-align:center;"></div>`); document.body.appendChild(b); }
+  b.textContent = t; b.style.display = "block";
+  clearTimeout(b._t); b._t = setTimeout(() => { b.style.display = "none"; }, 2800);
+}
+
+function otworzTrzos() { pokazWidok("trzos"); renderTrzos(); }
+
+async function renderTrzos() {
+  const lista = $("trzos-lista"), pod = $("trzos-podsum");
+  lista.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję Trzos…</div>`;
+  const { data: txy = [], error } = await supabase
+    .from("transakcje")
+    .select("*, dokumenty(id, plik_url, mime, ocr_status)")
+    .eq("traveler_id", TRAVELER.id)
+    .order("data", { ascending: false })
+    .order("data_utworzenia", { ascending: false });
+  if (error) { lista.innerHTML = `<div style="color:#c4513a;font-size:14px;">Błąd: ${esc(error.message)}</div>`; return; }
+
+  const przychod = txy.filter((t) => t.typ === "przychod").reduce((s, t) => s + Number(t.kwota || 0), 0);
+  const koszt = txy.filter((t) => t.typ === "koszt").reduce((s, t) => s + Number(t.kwota || 0), 0);
+  const bilans = przychod - koszt;
+  pod.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:90px;background:#eef7f3;border:1px solid #cfe7df;border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:#1a7158;">Przychód</div><div style="font-size:16px;font-weight:600;color:#1a7158;">${fmtZl(przychod)}</div></div>
+    <div style="flex:1;min-width:90px;background:#fbeeea;border:1px solid #f0d3ca;border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:#c4513a;">Koszt</div><div style="font-size:16px;font-weight:600;color:#c4513a;">${fmtZl(koszt)}</div></div>
+    <div style="flex:1;min-width:90px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:var(--ink-soft);">Bilans</div><div style="font-size:16px;font-weight:600;color:${bilans >= 0 ? "#1a7158" : "#c4513a"};">${fmtZl(bilans)}</div></div>
+  </div>`;
+
+  if (!txy.length) { lista.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:14px 0;">Pusto. Dodaj pierwszy przychód lub koszt — paragon zrobisz zdjęciem (na telefonie) albo wybierzesz plik.</div>`; return; }
+  lista.innerHTML = "";
+  txy.forEach((t) => lista.appendChild(wierszTrzos(t)));
+}
+
+function wierszTrzos(t) {
+  const dok = (t.dokumenty && t.dokumenty[0]) || null;
+  const dodatnia = t.typ === "przychod";
+  const kolor = dodatnia ? "#1a7158" : "#c4513a";
+  const znak = dodatnia ? "+" : "−";
+  const row = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:150px;">
+      <div style="font-size:14px;">${esc(t.opis || t.kategoria || (dodatnia ? "Przychód" : "Koszt"))}</div>
+      <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}</div>
+    </div>
+    <div style="font-size:15px;font-weight:600;color:${kolor};white-space:nowrap;">${znak} ${fmtZl(t.kwota)}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;justify-content:flex-end;"></div>
+  </div>`);
+  const akcje = row.lastElementChild;
+  const mkBtn = (txt, bg, fn) => { const b = el(`<button style="background:${bg};color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">${txt}</button>`); b.addEventListener("click", fn); return b; };
+  if (dok) {
+    if (dok.ocr_status !== "gotowe") akcje.appendChild(mkBtn("OCR", "#5b8def", () => wykonajOcrTrzos(t)));
+    akcje.appendChild(mkBtn("📎 Podgląd", "#8c887e", () => otworzDokTrzos(dok.plik_url)));
+  }
+  akcje.appendChild(mkBtn("Edytuj", "#8c887e", () => kartaTrzos(t.typ, t)));
+  akcje.appendChild(mkBtn("Usuń", "#c4513a", () => usunTrzos(t)));
+  return row;
+}
+
+function kartaTrzos(typ, t) {
+  const edycja = !!t;
+  const dziś = czesciWarszawy(new Date()).dataISO;
+  const katOpts = KAT_TRZOS.map((k) => `<option value="${k}"${t && t.kategoria === k ? " selected" : ""}>${k}</option>`).join("");
+  const metOpts = METODY_TRZOS.map((m) => `<option value="${m}"${t && (t.metoda_platnosci || "") === m ? " selected" : ""}>${m || "— metoda —"}</option>`).join("");
+  const ov = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head">
+      <span class="m-modal__tytul">${edycja ? "Edytuj" : (typ === "przychod" ? "Nowy przychód" : "Nowy koszt")}</span>
+      <button class="m-modal__x" aria-label="Zamknij">&#10005;</button>
+    </div>
+    <div class="m-form">
+      <label>Kwota (zł)</label>
+      <input type="number" id="tx-kwota" min="0" step="0.01" inputmode="decimal" value="${t ? esc(t.kwota) : ""}">
+      <label>Data</label>
+      <input type="date" id="tx-data" value="${t ? esc(t.data) : dziś}">
+      <label>Kategoria</label>
+      <select id="tx-kat">${katOpts}</select>
+      <label>Metoda płatności</label>
+      <select id="tx-metoda">${metOpts}</select>
+      <label>Opis</label>
+      <input type="text" id="tx-opis" maxlength="200" value="${t ? esc(t.opis || "") : ""}">
+      <label>📷 Paragon / faktura — na telefonie „Zrób zdjęcie", na komputerze wybierz plik / PDF</label>
+      <input id="tx-plik" type="file" accept="image/*,application/pdf" style="font-size:13px;">
+      ${t && t.paragon_url ? `<div style="font-size:11px;color:#1a7158;">Załączono dokument ✓ — po zapisie kliknij OCR, by odczytać.</div>` : ""}
+    </div>
+    <div class="m-modal__akcje">
+      <button class="m-btn m-btn--zapisz" id="tx-zapisz">Zapisz</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zamknij = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
+
+  ov.querySelector("#tx-zapisz").addEventListener("click", async () => {
+    const kwota = Number(ov.querySelector("#tx-kwota").value);
+    if (!(kwota > 0)) { trzosToast("Podaj kwotę większą od zera."); return; }
+    const dataVal = ov.querySelector("#tx-data").value || dziś;
+    const kategoria = ov.querySelector("#tx-kat").value || null;
+    const metoda = ov.querySelector("#tx-metoda").value || null;
+    const opis = ov.querySelector("#tx-opis").value.trim() || null;
+    const plik = ov.querySelector("#tx-plik").files[0] || null;
+    const btn = ov.querySelector("#tx-zapisz");
+    btn.disabled = true; btn.textContent = "Zapisuję…";
+
+    const payload = { typ, kwota, data: dataVal, kategoria, metoda_platnosci: metoda, opis, traveler_id: TRAVELER.id, org_id: null };
+    let txId = t && t.id;
+    try {
+      if (edycja) {
+        const { error } = await supabase.from("transakcje").update(payload).eq("id", txId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase.from("transakcje").insert(payload).select("id").single();
+        if (error) throw error;
+        txId = data.id;
+      }
+      if (plik) {
+        const ext = (plik.name.split(".").pop() || "bin").toLowerCase();
+        const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, plik, { contentType: plik.type || undefined, upsert: false });
+        if (upErr) throw upErr;
+        await supabase.from("transakcje").update({ paragon_url: sciezka }).eq("id", txId);
+        const { error: dErr } = await supabase.from("dokumenty").insert({
+          traveler_id: TRAVELER.id, org_id: null, typ: "paragon", kontekst: "trzos",
+          plik_url: sciezka, mime: plik.type || null, zrodlo: "plik", ocr_status: "oczekuje",
+          transakcja_id: txId, data_dokumentu: dataVal,
+        });
+        if (dErr) throw dErr;
+      }
+      zamknij();
+      trzosToast(plik ? "Zapisano. Kliknij OCR, by odczytać paragon." : "Zapisano.");
+      renderTrzos();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "Zapisz";
+      trzosToast("Błąd: " + (e.message || e));
+    }
+  });
+}
+
+async function wykonajOcrTrzos(t) {
+  trzosToast("Czytam paragon…");
+  const { data, error } = await supabase.functions.invoke("ocr-dokument", { body: { transakcja_id: t.id } });
+  if (error) { trzosToast("OCR błąd: " + error.message); return; }
+  const d = (data && data.dane) || {};
+  const kwota = d.kwota_brutto ?? d.kwota ?? null;
+  const dataDok = d.data || null;
+  const sprzedawca = d.sprzedawca || d.nazwa || "";
+  const podsum = [sprzedawca, kwota != null ? fmtZl(kwota) : "", dataDok].filter(Boolean).join(" · ");
+  if (!confirm(`Odczytano: ${podsum || "(brak danych)"}\n\nUzupełnić tę transakcję tymi danymi?`)) { renderTrzos(); return; }
+  const upd = {};
+  if (kwota != null && kwota > 0) upd.kwota = kwota;
+  if (dataDok) upd.data = dataDok;
+  if (d.metoda_platnosci) upd.metoda_platnosci = d.metoda_platnosci;
+  if (d.kategoria) upd.kategoria = d.kategoria;
+  if (sprzedawca && !t.opis) upd.opis = sprzedawca;
+  if (Object.keys(upd).length) { await supabase.from("transakcje").update(upd).eq("id", t.id); }
+  trzosToast("Uzupełniono z paragonu.");
+  renderTrzos();
+}
+
+async function otworzDokTrzos(sciezka) {
+  if (!sciezka) return;
+  const { data, error } = await supabase.storage.from("dokumenty").createSignedUrl(sciezka, 300);
+  if (error || !data) { trzosToast("Nie udało się otworzyć dokumentu."); return; }
+  window.open(data.signedUrl, "_blank");
+}
+
+async function usunTrzos(t) {
+  if (!confirm("Usunąć tę pozycję z Trzosu?")) return;
+  const { error } = await supabase.from("transakcje").delete().eq("id", t.id);
+  if (error) { trzosToast("Błąd: " + error.message); return; }
+  trzosToast("Usunięto.");
+  renderTrzos();
+}
+
+$("trzos-dodaj-przychod").addEventListener("click", () => kartaTrzos("przychod", null));
+$("trzos-dodaj-koszt").addEventListener("click", () => kartaTrzos("koszt", null));
 
 /* klikalne nagłówki sekcji na ekranie startowym — wchodzą w Horyzont */
 function wpinajKlik(elem, fn) {
@@ -1048,7 +1302,319 @@ $("m-hyz-tabs").addEventListener("click", (ev) => {
   $("m-widok-horyzont").dataset.tab = t;
   $("m-hyz-tabs").querySelectorAll(".m-tab").forEach((b) =>
     b.classList.toggle("m-tab--on", b.dataset.tab === t));
+  if (t === "plemie") renderPlemie();
 });
+
+/* ===== PLEMIĘ (Horyzont) ===== */
+const PLEMIE_KOLORY = ["#1f9e8f", "#e0a020", "#5b8def", "#c4519a", "#e0654a", "#7a9e3a"];
+const POLITYKA_OPIS = { wlasciciel: "każdy edytuje tylko swoje wpisy", rowni: "każdy członek edytuje wspólne wpisy", zalozyciele: "założyciele zarządzają, członkowie tylko swoje" };
+const escP = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const BT = "background:var(--turkus,#1f9e8f);color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;";
+const BG = "background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;";
+let plemieKolorWybrany = PLEMIE_KOLORY[0];
+
+async function renderPlemie() {
+  const box = $("hyz-plemie"); if (!box) return;
+  box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:12px 16px;">Wczytuję plemiona…</div>`;
+  const [rp, rz] = await Promise.all([supabase.rpc("moje_plemiona_full"), supabase.rpc("moje_zaproszenia")]);
+  const plemiona = rp.data || [], zapro = rz.data || [];
+  box.innerHTML = "";
+  const wrap = el(`<div style="padding:4px 16px 24px;"></div>`);
+
+  zapro.forEach((z) => {
+    const c = el(`<div style="display:flex;align-items:center;gap:10px;background:#eef7f5;border:1px solid #cfe7e2;border-radius:12px;padding:10px 12px;margin-bottom:8px;flex-wrap:wrap;">
+      <span style="width:10px;height:10px;border-radius:50%;background:${z.kolor || "#1f9e8f"};flex:none;"></span>
+      <div style="flex:1;font-size:14px;min-width:160px;">${z.zapraszajacy ? escP(z.zapraszajacy) + " zaprasza Cię do plemienia " : "Zaproszenie do plemienia "}<b>${escP(z.nazwa)}</b></div>
+      <button class="pl-prz" style="${BT}">Przyjmij</button><button class="pl-odrz" style="${BG}">Odrzuć</button></div>`);
+    c.querySelector(".pl-prz").addEventListener("click", () => odpowiedzZapro(z.id, true));
+    c.querySelector(".pl-odrz").addEventListener("click", () => odpowiedzZapro(z.id, false));
+    wrap.appendChild(c);
+  });
+
+  const noweBtn = el(`<button style="${BT}margin:4px 0 12px;">+ Nowe plemię</button>`);
+  noweBtn.addEventListener("click", () => formNowePlemie(wrap, noweBtn));
+  wrap.appendChild(noweBtn);
+
+  if (!plemiona.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Nie masz jeszcze plemion. Załóż pierwsze — np. „Rodzina".</div>`));
+  plemiona.forEach((p) => wrap.appendChild(kartaPlemienia(p)));
+  box.appendChild(wrap);
+}
+
+function kartaPlemienia(p) {
+  const mojeId = TRAVELER && TRAVELER.id;
+  const owner = p.owner_traveler_id === mojeId;
+  const jaZalozyciel = p.moja_rola === "zalozyciel";
+  const czl = p.czlonkowie || [];
+  const card = el(`<div style="background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span style="width:12px;height:12px;border-radius:50%;background:${p.kolor || "#1f9e8f"};flex:none;"></span>
+      <b style="font-size:15px;">${escP(p.nazwa)}</b>
+      <span style="font-size:11px;color:var(--ink-soft);">· ${escP(POLITYKA_OPIS[p.polityka_edycji] || p.polityka_edycji)}</span>
+    </div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">Członkowie (${czl.length}):</div>
+    <div class="pl-czl" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;"></div>
+    <div class="pl-akcje" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"></div>
+  </div>`);
+  const czlBox = card.querySelector(".pl-czl");
+  czl.forEach((c) => {
+    const dziecko = !!c.zarzadzany;
+    const chip = el(`<span style="font-size:12px;background:#efece3;border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;">${escP(c.nick || "uczestnik")}${c.rola === "zalozyciel" ? " · zał." : ""}${dziecko ? " · dziecko" : ""}</span>`);
+    if (dziecko && c.opiekun === mojeId) {
+      const x = el(`<button title="Usuń profil dziecka" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:14px;line-height:1;padding:0;">×</button>`);
+      x.addEventListener("click", () => usunDziecko(c.traveler_id, c.nick));
+      chip.appendChild(x);
+    }
+    czlBox.appendChild(chip);
+  });
+  const akcje = card.querySelector(".pl-akcje");
+  const kalBtn = el(`<button style="${BT}">Kalendarz</button>`);
+  kalBtn.addEventListener("click", () => otworzKalendarzPlemienia(p));
+  akcje.appendChild(kalBtn);
+  if (jaZalozyciel) {
+    const inv = el(`<div style="display:flex;gap:6px;flex:1;min-width:200px;"><input class="pl-mail" type="email" placeholder="e-mail osoby z MANY" style="flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;"><button class="pl-zapros" style="${BT}">Zaproś</button></div>`);
+    inv.querySelector(".pl-zapros").addEventListener("click", () => { const m = inv.querySelector(".pl-mail").value.trim(); if (m) zaprosDoPlemienia(p.id, m); });
+    akcje.appendChild(inv);
+    const dz = el(`<button style="${BG}">+ Dodaj dziecko</button>`);
+    dz.addEventListener("click", () => formDodajDziecko(p, card));
+    akcje.appendChild(dz);
+  }
+  if (owner) {
+    const edit = el(`<button style="${BG}">Edytuj</button>`);
+    edit.addEventListener("click", () => edytujPlemie(p, card));
+    akcje.appendChild(edit);
+    const del = el(`<button style="${BG}color:#c0392b;">Rozwiąż</button>`);
+    del.addEventListener("click", () => rozwiazPlemie(p.id, p.nazwa));
+    akcje.appendChild(del);
+  } else {
+    const leave = el(`<button style="${BG}">Opuść</button>`);
+    leave.addEventListener("click", () => opuscPlemie(p.id, p.nazwa));
+    akcje.appendChild(leave);
+  }
+  return card;
+}
+
+function formNowePlemie(wrap, btn) {
+  const ist = wrap.querySelector(".pl-form"); if (ist) { ist.remove(); return; }
+  plemieKolorWybrany = PLEMIE_KOLORY[0];
+  const f = el(`<div class="pl-form" style="background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px;">
+    <input class="pl-n" type="text" placeholder="Nazwa plemienia (np. Rodzina)" maxlength="60" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+    <label style="font-size:12px;color:var(--ink-soft);">Kto może edytować wspólne wpisy</label>
+    <select class="pl-pol" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin:4px 0 8px;">
+      <option value="zalozyciele">Założyciele zarządzają, członkowie tylko swoje (np. Rodzina)</option>
+      <option value="rowni">Każdy członek edytuje wspólne (np. para, wspólnicy)</option>
+      <option value="wlasciciel">Każdy tylko swoje wpisy (luźna grupa)</option>
+    </select>
+    <label style="font-size:12px;color:var(--ink-soft);">Kolor</label>
+    <div class="pl-kolory" style="display:flex;gap:8px;margin:5px 0 10px;"></div>
+    <div style="display:flex;gap:8px;"><button class="pl-utworz" style="${BT}">Utwórz</button><button class="pl-anuluj" style="${BG}">Anuluj</button></div>
+  </div>`);
+  const kbox = f.querySelector(".pl-kolory");
+  PLEMIE_KOLORY.forEach((k, i) => {
+    const sw = el(`<button data-k="${k}" style="width:24px;height:24px;border-radius:50%;background:${k};border:2px solid ${i === 0 ? "#222" : "transparent"};cursor:pointer;"></button>`);
+    sw.addEventListener("click", () => { plemieKolorWybrany = k; kbox.querySelectorAll("button").forEach((b) => (b.style.border = "2px solid transparent")); sw.style.border = "2px solid #222"; });
+    kbox.appendChild(sw);
+  });
+  f.querySelector(".pl-anuluj").addEventListener("click", () => f.remove());
+  f.querySelector(".pl-utworz").addEventListener("click", () => { const n = f.querySelector(".pl-n").value.trim(); const pol = f.querySelector(".pl-pol").value; if (!n) { alert("Podaj nazwę plemienia."); return; } utworzPlemie(n, pol, plemieKolorWybrany); });
+  btn.after(f);
+}
+
+function edytujPlemie(p, card) {
+  const ist = card.querySelector(".pl-form"); if (ist) { ist.remove(); return; }
+  let kol = p.kolor || PLEMIE_KOLORY[0];
+  const opcje = [["zalozyciele", "Założyciele zarządzają, członkowie tylko swoje (np. Rodzina)"], ["rowni", "Każdy członek edytuje wspólne (np. para, wspólnicy)"], ["wlasciciel", "Każdy tylko swoje wpisy (luźna grupa)"]];
+  const selHtml = opcje.map(([v, l]) => `<option value="${v}" ${p.polityka_edycji === v ? "selected" : ""}>${l}</option>`).join("");
+  const f = el(`<div class="pl-form" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;">
+    <input class="pl-n" type="text" maxlength="60" value="${escP(p.nazwa)}" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+    <label style="font-size:12px;color:var(--ink-soft);">Kto może edytować wspólne wpisy</label>
+    <select class="pl-pol" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin:4px 0 8px;">${selHtml}</select>
+    <label style="font-size:12px;color:var(--ink-soft);">Kolor</label>
+    <div class="pl-kolory" style="display:flex;gap:8px;margin:5px 0 10px;"></div>
+    <div style="display:flex;gap:8px;"><button class="pl-zap" style="${BT}">Zapisz</button><button class="pl-anu" style="${BG}">Anuluj</button></div>
+  </div>`);
+  const kbox = f.querySelector(".pl-kolory");
+  PLEMIE_KOLORY.forEach((k) => {
+    const sw = el(`<button data-k="${k}" style="width:24px;height:24px;border-radius:50%;background:${k};border:2px solid ${k === kol ? "#222" : "transparent"};cursor:pointer;"></button>`);
+    sw.addEventListener("click", () => { kol = k; kbox.querySelectorAll("button").forEach((b) => (b.style.border = "2px solid transparent")); sw.style.border = "2px solid #222"; });
+    kbox.appendChild(sw);
+  });
+  f.querySelector(".pl-anu").addEventListener("click", () => f.remove());
+  f.querySelector(".pl-zap").addEventListener("click", async () => {
+    const n = f.querySelector(".pl-n").value.trim(); const pol = f.querySelector(".pl-pol").value;
+    if (!n) { alert("Podaj nazwę plemienia."); return; }
+    const { error } = await supabase.from("plemiona").update({ nazwa: n, polityka_edycji: pol, kolor: kol }).eq("id", p.id);
+    if (error) { alert("Nie zapisano: " + error.message); return; }
+    renderPlemie();
+  });
+  card.appendChild(f);
+}
+
+async function utworzPlemie(nazwa, polityka, kolor) {
+  const { error } = await supabase.from("plemiona").insert({ nazwa, owner_traveler_id: TRAVELER.id, polityka_edycji: polityka, kolor });
+  if (error) { alert("Nie utworzono: " + error.message); return; }
+  renderPlemie();
+}
+async function zaprosDoPlemienia(plemie, email) {
+  const { data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: plemie, p_email: email });
+  if (error) { alert("Błąd: " + error.message); return; }
+  if (!data || !data.ok) { alert((data && data.error) || "Nie wysłano."); return; }
+  alert("Zaproszenie wysłane ✓"); renderPlemie();
+}
+async function odpowiedzZapro(id, przyjmij) {
+  const { data, error } = await supabase.rpc("odpowiedz_na_zaproszenie", { p_zapro: id, p_przyjmij: przyjmij });
+  if (error) { alert("Błąd: " + error.message); return; }
+  if (!data || !data.ok) { alert((data && data.error) || "Błąd."); return; }
+  renderPlemie();
+  if (typeof renderKalendarz === "function") renderKalendarz();
+}
+async function opuscPlemie(plemie, nazwa) {
+  if (!confirm(`Opuścić plemię „${nazwa}"?`)) return;
+  const { error } = await supabase.from("plemie_czlonkowie").delete().eq("plemie_id", plemie).eq("traveler_id", TRAVELER.id);
+  if (error) { alert("Błąd: " + error.message); return; }
+  renderPlemie();
+}
+async function rozwiazPlemie(plemie, nazwa) {
+  if (!confirm(`Rozwiązać plemię „${nazwa}"? Wspólne wydarzenia staną się prywatne u właścicieli.`)) return;
+  const { error } = await supabase.from("plemiona").delete().eq("id", plemie);
+  if (error) { alert("Błąd: " + error.message); return; }
+  renderPlemie();
+}
+function formDodajDziecko(p, card) {
+  const ist = card.querySelector(".pl-dziecko-form"); if (ist) { ist.remove(); return; }
+  const f = el(`<div class="pl-dziecko-form" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;">
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Profil dziecka bez własnego konta — prowadzisz go Ty jako opiekun. Gdy dziecko skończy 16 lat, profil będzie można usamodzielnić.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <input class="pd-imie" type="text" placeholder="Imię dziecka" maxlength="60" style="flex:2;min-width:140px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+      <input class="pd-rok" type="number" placeholder="Rok ur." min="2008" max="2026" style="flex:1;min-width:90px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+    </div>
+    <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;color:var(--ink-soft);margin:10px 0;cursor:pointer;">
+      <input class="pd-zgoda" type="checkbox" style="margin-top:2px;flex:none;">
+      <span>Oświadczam, że jestem rodzicem lub opiekunem prawnym tego dziecka i wyrażam zgodę na przetwarzanie jego danych w MANIE (RODO — dla osób poniżej 16 lat wymagana zgoda opiekuna).</span>
+    </label>
+    <div style="display:flex;gap:8px;"><button class="pd-dodaj" style="${BT}">Dodaj dziecko</button><button class="pd-anu" style="${BG}">Anuluj</button></div>
+  </div>`);
+  f.querySelector(".pd-anu").addEventListener("click", () => f.remove());
+  f.querySelector(".pd-dodaj").addEventListener("click", () => {
+    const im = f.querySelector(".pd-imie").value.trim();
+    const rok = parseInt(f.querySelector(".pd-rok").value, 10) || null;
+    const zg = f.querySelector(".pd-zgoda").checked;
+    if (!im) { alert("Podaj imię dziecka."); return; }
+    if (!zg) { alert("Zaznacz zgodę opiekuna — bez niej nie możemy założyć profilu dziecka."); return; }
+    dodajDziecko(p.id, im, rok, zg);
+  });
+  card.appendChild(f);
+}
+async function dodajDziecko(plemie, imie, rok, zgoda) {
+  const { data, error } = await supabase.rpc("dodaj_dziecko", { p_plemie: plemie, p_imie: imie, p_rok: rok, p_zgoda: zgoda });
+  if (error) { alert("Błąd: " + error.message); return; }
+  if (!data || !data.ok) { alert((data && data.error) || "Nie dodano."); return; }
+  renderPlemie();
+}
+async function usunDziecko(id, imie) {
+  if (!confirm(`Usunąć profil dziecka „${imie}"? Skasuje to też jego wpisy.`)) return;
+  const { data, error } = await supabase.rpc("usun_dziecko", { p_dziecko: id });
+  if (error) { alert("Błąd: " + error.message); return; }
+  if (!data || !data.ok) { alert((data && data.error) || "Nie usunięto."); return; }
+  renderPlemie();
+}
+
+/* ===== KALENDARZ PLEMIENIA (kolumny = członkowie) ===== */
+let PLEMIE_KAL = null;
+const inicjalyPl = (n) => { const cz = String(n || "").trim().split(/\s+/).filter(Boolean); return (((cz[0] || "")[0] || "") + ((cz[1] || "")[0] || "")).toUpperCase() || "?"; };
+function otworzKalendarzPlemienia(p) { PLEMIE_KAL = { p, dzien: new Date(), dni: 1 }; renderPlemieKalendarz(); }
+async function renderPlemieKalendarz() {
+  const box = $("hyz-plemie"); if (!box || !PLEMIE_KAL) return;
+  const p = PLEMIE_KAL.p, mojeId = TRAVELER && TRAVELER.id, dni = PLEMIE_KAL.dni || 1;
+  const czl = (p.czlonkowie || []).slice().sort((a, b) => (a.traveler_id === mojeId ? -1 : b.traveler_id === mojeId ? 1 : 0));
+  const mogeDlaInnych = p.polityka_edycji === "rowni" || (p.polityka_edycji === "zalozyciele" && p.moja_rola === "zalozyciel");
+  let baza = new Date(PLEMIE_KAL.dzien); baza.setHours(0, 0, 0, 0);
+  if (dni === 7) baza = new Date(baza.getTime() - ((baza.getDay() + 6) % 7) * 86400000);
+  const daty = []; for (let i = 0; i < dni; i++) daty.push(new Date(baza.getTime() + i * 86400000));
+  const ostatni = daty[daty.length - 1];
+  const etk = dni === 1
+    ? PLEMIE_KAL.dzien.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" })
+    : `${daty[0].toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} – ${ostatni.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })}`;
+  box.innerHTML = "";
+  const wrap = el(`<div style="padding:4px 12px 24px;"></div>`);
+  const head = el(`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+    <button class="pk-back" style="${BG}">‹ Plemiona</button>
+    <span style="display:inline-flex;align-items:center;gap:6px;font-weight:600;"><span style="width:10px;height:10px;border-radius:50%;background:${p.kolor || "#1f9e8f"};"></span>${escP(p.nazwa)}</span>
+    <span class="pk-tog" style="display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;"></span>
+    <span style="flex:1;"></span>
+    <button class="pk-prev" style="${BG}">‹</button>
+    <button class="pk-dzis" style="${BG}">${etk}</button>
+    <button class="pk-next" style="${BG}">›</button>
+  </div>`);
+  const tg = head.querySelector(".pk-tog");
+  [["1 dzień", 1], ["3 dni", 3], ["Tydzień", 7]].forEach(([lab, n]) => {
+    const b = el(`<button style="border:none;border-radius:0;padding:7px 10px;font-size:13px;cursor:pointer;${dni === n ? "background:var(--turkus,#1f9e8f);color:#fff;" : "background:#efece3;color:var(--ink);"}">${lab}</button>`);
+    b.addEventListener("click", () => { PLEMIE_KAL.dni = n; renderPlemieKalendarz(); });
+    tg.appendChild(b);
+  });
+  head.querySelector(".pk-back").addEventListener("click", () => { PLEMIE_KAL = null; renderPlemie(); });
+  head.querySelector(".pk-prev").addEventListener("click", () => { PLEMIE_KAL.dzien = new Date(PLEMIE_KAL.dzien.getTime() - dni * 86400000); renderPlemieKalendarz(); });
+  head.querySelector(".pk-next").addEventListener("click", () => { PLEMIE_KAL.dzien = new Date(PLEMIE_KAL.dzien.getTime() + dni * 86400000); renderPlemieKalendarz(); });
+  head.querySelector(".pk-dzis").addEventListener("click", () => { PLEMIE_KAL.dzien = new Date(); renderPlemieKalendarz(); });
+  wrap.appendChild(head);
+
+  const START = 7, END = 22, PX = 0.7, H = (END - START) * 60 * PX;
+  const wielo = dni > 1, dayRowH = wielo ? 18 : 0, memRowH = 30, headH = dayRowH + memRowH;
+  const grid = el(`<div style="display:flex;border:1px solid var(--line);border-radius:12px;overflow:auto;background:var(--surface);"></div>`);
+  const axis = el(`<div style="width:36px;flex:none;border-right:1px solid var(--line);"></div>`);
+  axis.appendChild(el(`<div style="height:${headH}px;border-bottom:1px solid var(--line);"></div>`));
+  const axB = el(`<div style="position:relative;height:${H}px;"></div>`);
+  for (let h = START; h <= END; h++) axB.appendChild(el(`<div style="position:absolute;top:${(h - START) * 60 * PX}px;right:3px;font-size:10px;color:var(--ink-soft);transform:translateY(-50%);">${String(h).padStart(2, "0")}</div>`));
+  axis.appendChild(axB); grid.appendChild(axis); wrap.appendChild(grid); box.appendChild(wrap);
+
+  const d0 = isoZWarszawy(dataKalISO(daty[0]), "00:00");
+  const koniecZakr = new Date(ostatni.getTime() + 86400000), d1 = isoZWarszawy(dataKalISO(koniecZakr), "00:00");
+  const { data } = await supabase.from("events").select("*").gte("data_czas", d0).lt("data_czas", d1).eq("typ", "wydarzenie");
+  const evs = data || [];
+  let zajete = [];
+  try { const rz = await supabase.rpc("zajetosc_plemienia", { p_plemie: p.id, p_od: d0, p_do: d1 }); zajete = rz.data || []; } catch (e) { zajete = []; }
+  const dzisISO = dataKalISO(new Date());
+
+  for (const d of daty) {
+    const dISO = dataKalISO(d), isToday = dISO === dzisISO;
+    let pierwszy = true;
+    czl.forEach((c) => {
+      const ja = c.traveler_id === mojeId;
+      const col = el(`<div style="flex:1;min-width:${wielo ? 96 : 130}px;border-right:1px solid var(--line);${pierwszy && wielo ? "border-left:2px solid var(--line);" : ""}"></div>`);
+      if (wielo) col.appendChild(el(`<div style="height:${dayRowH}px;text-align:center;font-size:10px;font-weight:600;color:${isToday ? "var(--turkus,#1f9e8f)" : "var(--ink-soft)"};border-bottom:1px solid var(--line);overflow:hidden;">${d.toLocaleDateString("pl-PL", { weekday: "short", day: "numeric" })}</div>`));
+      col.appendChild(el(`<div style="height:${memRowH}px;display:flex;align-items:center;justify-content:center;gap:4px;border-bottom:1px solid var(--line);font-size:11px;font-weight:600;overflow:hidden;"><span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:${p.kolor || "#1f9e8f"};color:#fff;font-size:8px;flex:none;">${escP(inicjalyPl(c.nick))}</span>${escP(c.nick || "uczestnik")}</div>`));
+      const body = el(`<div style="position:relative;height:${H}px;cursor:${(ja || mogeDlaInnych) ? "pointer" : "default"};"></div>`);
+      for (let h = START + 1; h < END; h++) body.appendChild(el(`<div style="position:absolute;left:0;right:0;top:${(h - START) * 60 * PX}px;border-top:1px solid #f0ece0;pointer-events:none;"></div>`));
+      if (!ja) zajete.filter((z) => z.traveler_id === c.traveler_id && czesciWarszawy(z.data_czas).dataISO === dISO).forEach((z) => {
+        const cz = czesciWarszawy(z.data_czas), a = cz.godz * 60 + cz.min;
+        let dur = 60; if (z.koniec) { const dd = (new Date(z.koniec) - new Date(z.data_czas)) / 60000; if (dd > 0) dur = dd; }
+        body.appendChild(el(`<div title="Zajęte" style="position:absolute;left:2px;right:2px;top:${(a - START * 60) * PX}px;height:${Math.max(14, dur * PX)}px;background:repeating-linear-gradient(45deg,#e8e4da,#e8e4da 5px,#f1eee7 5px,#f1eee7 10px);border-radius:4px;font-size:9px;color:#9a958a;padding:1px 3px;overflow:hidden;pointer-events:none;">Zajęte</div>`));
+      });
+      const mine = evs.filter((e) => { if (e.caly_dzien) return false; const cz = czesciWarszawy(e.data_czas); if (cz.dataISO !== dISO) return false; return ja ? e.traveler_id === mojeId : (e.traveler_id === c.traveler_id && e.plemie_id === p.id); });
+      mine.forEach((e) => {
+        const cz = czesciWarszawy(e.data_czas), a = cz.godz * 60 + cz.min;
+        let dur = 60; if (e.koniec) { const dd = (new Date(e.koniec) - new Date(e.data_czas)) / 60000; if (dd > 0) dur = dd; }
+        const kol = kolorKategorii(e);
+        const pryw = ja && !e.plemie_id;
+        const blk = el(`<div title="${escP(e.tytul)}${pryw ? " (prywatne — ↗ udostępnij plemieniu)" : ""}" style="position:absolute;left:2px;right:2px;top:${(a - START * 60) * PX}px;height:${Math.max(16, dur * PX)}px;background:${kol}22;border-left:3px ${pryw ? "dashed" : "solid"} ${kol};border-radius:5px;font-size:9px;padding:1px ${pryw ? 14 : 3}px 1px 3px;overflow:hidden;cursor:pointer;">${fmtGodz(e.data_czas)} ${escP(e.tytul)}</div>`);
+        blk.addEventListener("click", (ev) => { ev.stopPropagation(); oknoWydarzenia({ event: e }); });
+        if (pryw) {
+          const sh = el(`<button title="Udostępnij temu plemieniu" style="position:absolute;top:0;right:1px;border:none;background:none;color:${p.kolor || "#1f9e8f"};cursor:pointer;font-size:12px;line-height:1.1;padding:0 1px;">↗</button>`);
+          sh.addEventListener("click", async (sev) => { sev.stopPropagation(); const { error } = await supabase.from("events").update({ plemie_id: p.id }).eq("id", e.id); if (error) { alert("Nie udostępniono: " + error.message); return; } renderPlemieKalendarz(); });
+          blk.appendChild(sh);
+        }
+        body.appendChild(blk);
+      });
+      if (ja || mogeDlaInnych) body.addEventListener("click", (ev) => { if (ev.target !== body) return; const r = body.getBoundingClientRect(); const min = Math.max(0, (ev.clientY - r.top) / PX); oknoWydarzenia({ data: d, godzina: START + Math.floor(min / 60), plemie_id: p.id, dla_traveler: ja ? null : c.traveler_id }); });
+      if (isToday) { const tn = czesciWarszawy(new Date()), tMin = tn.godz * 60 + tn.min; body.appendChild(el(`<div title="Teraz" class="pk-now" style="position:absolute;left:0;right:0;top:${(tMin - START * 60) * PX}px;height:0;border-top:2px solid #e0395a;pointer-events:none;z-index:6;display:${tMin >= START * 60 && tMin <= END * 60 ? "" : "none"};"><span style="position:absolute;left:-3px;top:-4px;width:7px;height:7px;border-radius:50%;background:#e0395a;"></span></div>`)); }
+      col.appendChild(body); grid.appendChild(col); pierwszy = false;
+    });
+  }
+  wrap.appendChild(el(`<div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Twoja kolumna = Twój pełny dzień. Kolumny innych = wspólne wpisy tego plemienia. Klik w swoją kolumnę = nowy wspólny wpis. Przełącznik 1 dzień / 3 dni / Tydzień u góry; całodzienne pominięte.</div>`));
+}
+setInterval(() => {
+  const tn = czesciWarszawy(new Date()), tMin = tn.godz * 60 + tn.min, vis = tMin >= 7 * 60 && tMin <= 22 * 60;
+  document.querySelectorAll(".pk-now").forEach((l) => { l.style.display = vis ? "" : "none"; l.style.top = ((tMin - 7 * 60) * 0.7) + "px"; });
+}, 30000);
 
 /* wyszukiwarka w Horyzoncie — filtruje wydarzenia i zadania na żywo */
 $("hyz-szukaj").addEventListener("input", (ev) => {
@@ -1085,6 +1651,7 @@ function renderPokoje() {
         <svg viewBox="0 0 24 24" fill="none" stroke="${p.zywy ? "#1a7158" : "#8c887e"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p.ikona}</svg>
       </span><span class="m-room__name">${esc(p.nazwa)}</span></button>`);
     if (p.akcja === "horyzont") btn.addEventListener("click", otworzHoryzont);
+    if (p.akcja === "trzos") btn.addEventListener("click", otworzTrzos);
     wrap.appendChild(btn);
   }
 }
@@ -1426,6 +1993,9 @@ function otworzMenuKal() {
   const chipyKat = KATEGORIE.map((k) =>
     `<button data-kat="${k}"><span class="m-kat-kropka" style="background:${KOLOR_KAT[k]}"></span>${!ukryteKat.has(k) ? "✓ " : ""}${esc(ETYK_KAT[k])}</button>`
   ).join("");
+  const chipyPlem = Object.keys(PLEMIE_MAP || {}).map((id) =>
+    `<button data-plemie="${id}"><span class="m-kat-kropka" style="background:${PLEMIE_MAP[id].kolor || "#1f9e8f"}"></span>${widocznePlemiona.has(id) ? "✓ " : ""}${esc(PLEMIE_MAP[id].nazwa)}</button>`
+  ).join("");
   const panel = el(`<div class="m-kalmenu-panel" id="kal-menu-panel">
     <button data-w="dzis">Dziś</button>
     <button data-w="3dni">3 dni</button>
@@ -1435,6 +2005,7 @@ function otworzMenuKal() {
     <button data-toggle="rocznice">${pokazRocznice ? "✓ " : ""}Rocznice i urodziny</button>
     <div class="m-kalmenu-sep"></div>
     ${chipyKat}
+    ${chipyPlem ? `<div class="m-kalmenu-sep"></div>${chipyPlem}` : ""}
   </div>`);
   panel.querySelectorAll("button[data-w]").forEach((b) => {
     if (b.dataset.w === widokKal) b.classList.add("m-kalmenu--on");
@@ -1447,6 +2018,15 @@ function otworzMenuKal() {
     b.addEventListener("click", () => {
       const k = b.dataset.kat;
       if (ukryteKat.has(k)) ukryteKat.delete(k); else ukryteKat.add(k);
+      panel.remove();
+      renderKalendarz();
+      wczytajDzien();
+    });
+  });
+  panel.querySelectorAll("button[data-plemie]").forEach((b) => {
+    b.addEventListener("click", () => {
+      const id = b.dataset.plemie;
+      if (widocznePlemiona.has(id)) widocznePlemiona.delete(id); else widocznePlemiona.add(id);
       panel.remove();
       renderKalendarz();
       wczytajDzien();
@@ -1564,6 +2144,17 @@ function renderMiniFiltry() {
       + `<span class="m-mini-filtr__dot" style="background:${KOLOR_KAT[k]}"></span>`
       + `<span>${esc(ETYK_KAT[k])}</span></button>`;
   }
+  const plemList = Object.keys(PLEMIE_MAP || {});
+  if (plemList.length) {
+    html += `<div class="m-mini-naglowek">Plemiona (cudze wpisy)</div>`;
+    for (const id of plemList) {
+      const on = widocznePlemiona.has(id);
+      html += `<button class="m-mini-filtr${on ? "" : " m-mini-filtr--off"}" data-tog="plemie" data-plemie="${id}">`
+        + `<span class="m-mini-filtr__check">${on ? "☑" : "☐"}</span>`
+        + `<span class="m-mini-filtr__dot" style="background:${PLEMIE_MAP[id].kolor || "#1f9e8f"}"></span>`
+        + `<span>${esc(PLEMIE_MAP[id].nazwa)}</span></button>`;
+    }
+  }
   wrap.innerHTML = html;
   wrap.querySelector('[data-tog="rocznice"]').addEventListener("click", () => {
     pokazRocznice = !pokazRocznice; renderKalendarz();
@@ -1572,6 +2163,14 @@ function renderMiniFiltry() {
     b.addEventListener("click", () => {
       const k = b.dataset.kat;
       if (ukryteKat.has(k)) ukryteKat.delete(k); else ukryteKat.add(k);
+      renderKalendarz();
+      wczytajDzien();
+    })
+  );
+  wrap.querySelectorAll('[data-tog="plemie"]').forEach((b) =>
+    b.addEventListener("click", () => {
+      const id = b.dataset.plemie;
+      if (widocznePlemiona.has(id)) widocznePlemiona.delete(id); else widocznePlemiona.add(id);
       renderKalendarz();
       wczytajDzien();
     })
@@ -1585,19 +2184,38 @@ function aktualizujSidebar() {
 }
 
 /* --- pobranie wydarzeń (i zadań z terminem) dla zakresu --- */
+let PLEMIE_MAP = {}, OSOBA_MAP = {};
+async function zaladujPlemionaCache() {
+  const { data } = await supabase.rpc("moje_plemiona_full");
+  PLEMIE_MAP = {}; OSOBA_MAP = {};
+  (data || []).forEach((p) => {
+    PLEMIE_MAP[p.id] = { nazwa: p.nazwa, kolor: p.kolor };
+    (p.czlonkowie || []).forEach((c) => { if (c.nick) OSOBA_MAP[c.traveler_id] = c.nick; });
+  });
+}
+function liniaPlemie(e) {
+  if (!e.plemie_id) return "";
+  const p = PLEMIE_MAP[e.plemie_id];
+  const nazwa = p ? p.nazwa : "Plemię";
+  const obcy = e.traveler_id !== (TRAVELER && TRAVELER.id);
+  return (obcy ? (OSOBA_MAP[e.traveler_id] || "ktoś") + " · " : "") + nazwa;
+}
 async function wczytajWydarzeniaZakres(od, doData) {
   const odISO = isoZWarszawy(dataKalISO(od), "00:00");
   const doISO = isoZWarszawy(dataKalISO(doData), "00:00");
+  await zaladujPlemionaCache();
   // overlap: data_czas < koniec_widoku  I  (koniec > poczatek_widoku  ALBO  brak koniec i data_czas >= poczatek_widoku)
-  // dzięki temu wielodniowe wakacje zaczynające się przed widokiem dalej są widoczne
+  // bez filtra traveler_id — RLS zwraca własne + wydarzenia plemion, w których jestem
   const { data } = await supabase
     .from("events").select("*")
-    .eq("traveler_id", TRAVELER.id)
     .in("typ", ["wydarzenie", "zadanie"])
     .lt("data_czas", doISO)
     .or(`koniec.gt.${odISO},and(koniec.is.null,data_czas.gte.${odISO})`)
     .order("data_czas", { ascending: true });
   let lista = data || [];
+  const _me = TRAVELER && TRAVELER.id;
+  // własne wpisy zawsze; cudze wpisy plemienia tylko, gdy dane plemię jest włączone jako nakładka
+  lista = lista.filter((e) => e.traveler_id === _me || (e.plemie_id && widocznePlemiona.has(e.plemie_id)));
   if (!pokazRocznice) lista = lista.filter((e) => !e.caly_dzien);
   if (ukryteKat.size) lista = lista.filter((e) => !ukryteKat.has(kategoriaZE(e)));
   if (zapytanieSzukaj) lista = lista.filter((e) => pasujeDoSzukania(e, zapytanieSzukaj));
@@ -1748,13 +2366,15 @@ async function renderSiatka(box, od, dni) {
     const top = (cz.godz * 60 + cz.min) / 60 * H;
     const wys = Math.max(trwanie / 60 * H, 22);
     const klasaZad = e.typ === "zadanie" ? " m-tg__event--zad" : "";
-    const obca = obcaStrefaLinia(e);
+    const sub = liniaPlemie(e) || obcaStrefaLinia(e);
+    const plKol = e.plemie_id && PLEMIE_MAP[e.plemie_id] ? PLEMIE_MAP[e.plemie_id].kolor : null;
     const kKol = kolorKategorii(e);
     const styl = `top:${top}px;height:${wys}px;border-left-color:${kKol};background:${kKol}1a`;
     const blok = el(`<div class="m-tg__event${klasaZad}" style="${styl}">`
       + `<span class="m-tg__event-czas" style="color:${kKol}">${fmtGodz(e.data_czas)}</span> `
+      + (plKol ? `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${plKol};margin-right:3px;"></span>` : "")
       + `<span>${esc(e.tytul)}</span>`
-      + (obca ? `<span class="m-tg__event-obca">${esc(obca)}</span>` : "")
+      + (sub ? `<span class="m-tg__event-obca">${esc(sub)}</span>` : "")
       + `</div>`);
     blok.addEventListener("click", (ev) => { ev.stopPropagation(); oknoWydarzenia({ event: e }); });
     kolEls[idx].appendChild(blok);
@@ -1873,6 +2493,12 @@ function oknoWydarzenia(opcje) {
       <input type="text" id="w-tytul" maxlength="200" value="${ev ? esc(ev.tytul) : ""}">
       <label>Kategoria</label>
       <div class="m-kat-chips" id="w-kat-chips"></div>
+      <label>Kto widzi</label>
+      <select id="w-kto" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;"><option value="">Tylko ja</option></select>
+      <div id="w-dla-box" style="display:none">
+        <label>Dla kogo (czyj to czas)</label>
+        <select id="w-dla" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;"></select>
+      </div>
       <div class="m-form__check"><input type="checkbox" id="w-caly"${calyDzien ? " checked" : ""}><span>Wydarzenie całodzienne</span></div>
       <div class="m-form__row">
         <div><label>Data</label><input type="date" id="w-data" value="${dataVal}"></div>
@@ -1904,6 +2530,33 @@ function oknoWydarzenia(opcje) {
   const zamknij = () => overlay.remove();
   overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
   overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+
+  const ktoSel = overlay.querySelector("#w-kto");
+  const dlaBox = overlay.querySelector("#w-dla-box");
+  const dlaSel = overlay.querySelector("#w-dla");
+  let plemionaData = [];
+  function aktualizujDla() {
+    const pl = plemionaData.find((x) => x.id === ktoSel.value);
+    if (!pl) { dlaBox.style.display = "none"; dlaSel.innerHTML = ""; return; }
+    const jaZal = pl.moja_rola === "zalozyciel";
+    const moge = pl.polityka_edycji === "rowni" || (pl.polityka_edycji === "zalozyciele" && jaZal);
+    if (!moge) { dlaBox.style.display = "none"; dlaSel.innerHTML = ""; return; }
+    let opts = `<option value="${TRAVELER.id}">Ja</option>`;
+    (pl.czlonkowie || []).filter((c) => c.traveler_id !== TRAVELER.id).forEach((c) => { opts += `<option value="${c.traveler_id}">${esc(c.nick || "uczestnik")}</option>`; });
+    dlaSel.innerHTML = opts;
+    if (ev && ev.traveler_id) dlaSel.value = String(ev.traveler_id);
+    dlaBox.style.display = "";
+  }
+  ktoSel.addEventListener("change", aktualizujDla);
+  (async () => {
+    const { data } = await supabase.rpc("moje_plemiona_full");
+    plemionaData = data || [];
+    plemionaData.forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = p.nazwa; ktoSel.appendChild(o); });
+    if (ev && ev.plemie_id) ktoSel.value = ev.plemie_id;
+    else if (opcje.plemie_id) ktoSel.value = opcje.plemie_id;
+    aktualizujDla();
+    if (opcje.dla_traveler) dlaSel.value = String(opcje.dla_traveler);
+  })();
 
   const caly = overlay.querySelector("#w-caly");
   const aktualizujCaly = () => {
@@ -1975,17 +2628,20 @@ function oknoWydarzenia(opcje) {
     const rekord = {
       tytul, data_czas: dataCzas, koniec, caly_dzien: calyD, strefa: strefaWyd,
       kategoria: wybranaKat,
+      plemie_id: ktoSel.value || null,
       opis: overlay.querySelector("#w-opis").value.trim() || null,
       lokalizacja: overlay.querySelector("#w-lok").value.trim() || null,
     };
+    const dlaVal = (dlaBox.style.display !== "none" && dlaSel.value) ? Number(dlaSel.value) : TRAVELER.id;
     let error;
     if (ev) ({ error } = await supabase.from("events").update(rekord).eq("id", ev.id));
     else ({ error } = await supabase.from("events").insert({
-      ...rekord, traveler_id: TRAVELER.id, typ: "wydarzenie", status: "planowane",
+      ...rekord, traveler_id: dlaVal, typ: "wydarzenie", status: "planowane",
     }));
     if (error) { alert("Nie udało się zapisać: " + error.message); return; }
     zamknij();
     renderKalendarz();
+    if (PLEMIE_KAL) renderPlemieKalendarz();
   });
   if (ev) overlay.querySelector("#w-usun").addEventListener("click", async () => {
     if (!confirm("Usunąć to wydarzenie?")) return;
@@ -1993,6 +2649,7 @@ function oknoWydarzenia(opcje) {
     if (error) { alert("Nie udało się usunąć: " + error.message); return; }
     zamknij();
     renderKalendarz();
+    if (PLEMIE_KAL) renderPlemieKalendarz();
   });
 }
 
