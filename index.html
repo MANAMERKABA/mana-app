@@ -593,6 +593,15 @@
     <div class="m-stopka"></div>
   </div>
 
+  <div id="m-widok-egzamin" style="display:none">
+    <div class="m-hyz-bar">
+      <button class="m-back" id="m-back-egzamin">&#8592; Ekran startowy</button>
+      <span class="m-hyz-tytul">Egzamin</span>
+    </div>
+    <div id="egz-tresc" style="padding:10px 16px 30px;"></div>
+    <div class="m-stopka"></div>
+  </div>
+
 </div>
 
 <div class="m-loader" id="m-loader">Wczytuję MANĘ…</div>
@@ -610,6 +619,8 @@ const POKOJE = [
     ikona: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
   { nazwa: "Trzos", zywy: true, akcja: "trzos",
     ikona: '<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M16 14h2"/>' },
+  { nazwa: "Egzamin", zywy: true, akcja: "egzamin",
+    ikona: '<path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5"/>' },
   { nazwa: "Puls", zywy: false,
     ikona: '<path d="M20.8 5.6a5.5 5.5 0 0 0-8.8-1.4L12 4l-.1-.1A5.5 5.5 0 0 0 3.2 11c1.6 4.3 8.8 9 8.8 9s7.2-4.7 8.8-9z"/>' },
   { nazwa: "Gawęda", zywy: false,
@@ -1098,10 +1109,12 @@ function pokazWidok(nazwa) {
   $("m-widok-ekran").style.display = nazwa === "ekran" ? "" : "none";
   $("m-widok-horyzont").style.display = nazwa === "horyzont" ? "" : "none";
   $("m-widok-trzos").style.display = nazwa === "trzos" ? "" : "none";
+  $("m-widok-egzamin").style.display = nazwa === "egzamin" ? "" : "none";
   window.scrollTo(0, 0);
 }
 $("m-back").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-trzos").addEventListener("click", () => pokazWidok("ekran"));
+$("m-back-egzamin").addEventListener("click", () => pokazWidok("ekran"));
 
 /* ════════════════════════════════════════════════════════════════════
    TRZOS — osobiste finanse: przychody + koszty + paragony/OCR.
@@ -1678,6 +1691,7 @@ function renderPokoje() {
       </span><span class="m-room__name">${esc(p.nazwa)}</span></button>`);
     if (p.akcja === "horyzont") btn.addEventListener("click", otworzHoryzont);
     if (p.akcja === "trzos") btn.addEventListener("click", otworzTrzos);
+    if (p.akcja === "egzamin") btn.addEventListener("click", otworzEgzamin);
     wrap.appendChild(btn);
   }
 }
@@ -1960,6 +1974,168 @@ async function asystentParagon(file) {
     });
   } catch (err) { mysl.remove(); dodajWiadomosc("asystent", "Błąd: " + (err.message || err)); }
   trwaRozmowa = false;
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   EGZAMIN — pokój nauki: skanujesz materiał (OCR), AI rozkłada go na
+   okres (spaced repetition) i daje plan + fiszki. Reużywa kafla
+   dokumenty/OCR. Backend: tabele kuznia_*, edge kuznia-skan/kuznia-plan.
+   ════════════════════════════════════════════════════════════════════ */
+let egzAktywny = null;
+let egzZajety = false;
+const EGZ_BP = "background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;";
+const EGZ_BG = "background:#efece3;color:#26241f;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;";
+const EGZ_IN = "width:100%;box-sizing:border-box;padding:9px;border:1px solid #ddd6c8;border-radius:8px;margin:4px 0 8px;font-size:14px;";
+
+function otworzEgzamin() { egzAktywny = null; pokazWidok("egzamin"); renderEgzaminLista(); }
+
+async function renderEgzaminLista() {
+  egzAktywny = null;
+  const wrap = $("egz-tresc");
+  wrap.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
+  const { data: zs = [], error } = await supabase.from("kuznia_zestawy").select("*").eq("traveler_id", TRAVELER.id).order("created_at", { ascending: false });
+  if (error) { wrap.innerHTML = `<div style="color:#c4513a;">Błąd: ${esc(error.message)}</div>`; return; }
+  let h = `<button id="egz-nowy-btn" style="${EGZ_BP}">+ Nowy zestaw</button>`;
+  if (!zs.length) h += `<div style="color:var(--ink-soft);font-size:14px;padding:14px 0;">Nie masz jeszcze materiału. Dodaj zestaw, zeskanuj książkę i poproś o rozłożenie nauki na okres.</div>`;
+  for (const z of zs) {
+    const term = z.zakres_do || z.data_celu;
+    h += `<div class="egz-karta" data-id="${z.id}" style="background:#fff;border:1px solid #e7e3d8;border-radius:12px;padding:12px;margin-top:10px;cursor:pointer;">
+      <div style="font-weight:600;">${esc(z.tytul)}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:2px;">${esc(z.cel || "")}${term ? " · do " + esc(term) : ""}${z.plan_md ? " · plan gotowy ✓" : ""}</div>
+    </div>`;
+  }
+  wrap.innerHTML = h;
+  $("egz-nowy-btn").addEventListener("click", egzFormNowy);
+  wrap.querySelectorAll(".egz-karta").forEach((k) => k.addEventListener("click", () => otworzZestaw(k.dataset.id)));
+}
+
+function egzFormNowy() {
+  const wrap = $("egz-tresc");
+  const dzis = czesciWarszawy(new Date()).dataISO;
+  wrap.innerHTML = `<div style="background:#fff;border:1px solid #e7e3d8;border-radius:12px;padding:14px;">
+    <div style="font-weight:600;margin-bottom:8px;">Nowy zestaw</div>
+    <input id="egz-tytul" placeholder="Tytuł, np. Angielski – książka 5 klasa" style="${EGZ_IN}"/>
+    <input id="egz-cel" value="utrwalenie i powtórka" style="${EGZ_IN}"/>
+    <label style="font-size:12px;color:var(--ink-soft);">Od</label>
+    <input id="egz-od" type="date" value="${dzis}" style="${EGZ_IN}"/>
+    <label style="font-size:12px;color:var(--ink-soft);">Do (egzamin / sprawdzenie)</label>
+    <input id="egz-do" type="date" style="${EGZ_IN}"/>
+    <div style="display:flex;gap:8px;margin-top:4px;">
+      <button id="egz-utworz" style="${EGZ_BP}">Utwórz</button>
+      <button id="egz-anuluj" style="${EGZ_BG}">Anuluj</button>
+    </div>
+  </div>`;
+  $("egz-anuluj").addEventListener("click", renderEgzaminLista);
+  $("egz-utworz").addEventListener("click", async () => {
+    const tytul = $("egz-tytul").value.trim();
+    if (!tytul) { trzosToast("Podaj tytuł"); return; }
+    const ins = await supabase.from("kuznia_zestawy").insert({ traveler_id: TRAVELER.id, tytul, cel: $("egz-cel").value.trim() || null, zakres_od: $("egz-od").value || null, zakres_do: $("egz-do").value || null, data_celu: $("egz-do").value || null }).select("*").single();
+    if (ins.error) { trzosToast("Błąd: " + ins.error.message); return; }
+    otworzZestaw(ins.data.id);
+  });
+}
+
+async function otworzZestaw(id) {
+  const { data: z, error } = await supabase.from("kuznia_zestawy").select("*").eq("id", id).single();
+  if (error || !z) { trzosToast("Nie znaleziono zestawu"); return; }
+  egzAktywny = z;
+  const { count } = await supabase.from("kuznia_materialy").select("id", { count: "exact", head: true }).eq("zestaw_id", id);
+  const { count: fcount } = await supabase.from("kuznia_fiszki").select("id", { count: "exact", head: true }).eq("zestaw_id", id);
+  const term = z.zakres_do || z.data_celu;
+  const wrap = $("egz-tresc");
+  wrap.innerHTML = `<button id="egz-wstecz" style="${EGZ_BG}padding:6px 10px;font-size:12px;">← Lista</button>
+    <div style="font-weight:700;font-size:17px;margin:8px 0 2px;">${esc(z.tytul)}</div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">${esc(z.cel || "")}${term ? " · do " + esc(term) : ""}</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <button id="egz-skan" style="${EGZ_BP}">📷 Skanuj stronę</button>
+      <button id="egz-rozloz" style="${EGZ_BP}background:#2e5a7a;">Rozłóż materiał</button>
+      ${fcount ? `<button id="egz-fiszki" style="${EGZ_BG}">Fiszki (${fcount})</button>` : ""}
+    </div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Zeskanowane strony: <b>${count || 0}</b></div>
+    <input id="egz-skan-plik" type="file" accept="image/*,application/pdf" capture="environment" style="display:none"/>
+    <div id="egz-plan"></div>`;
+  $("egz-wstecz").addEventListener("click", renderEgzaminLista);
+  $("egz-skan").addEventListener("click", () => $("egz-skan-plik").click());
+  $("egz-skan-plik").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) egzSkanuj(f); });
+  $("egz-rozloz").addEventListener("click", egzRozloz);
+  if (fcount) $("egz-fiszki").addEventListener("click", egzPokazFiszki);
+  egzRenderPlan(z.plan_md);
+}
+
+function egzMd(md) {
+  if (!md) return "";
+  const lines = String(md).split("\n");
+  let out = "", inList = false;
+  for (const ln of lines) {
+    let s = esc(ln).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    if (/^\s*###\s+/.test(ln)) { if (inList) { out += "</ul>"; inList = false; } out += `<h4 style="margin:10px 0 4px;">${s.replace(/^\s*###\s+/, "")}</h4>`; }
+    else if (/^\s*##\s+/.test(ln)) { if (inList) { out += "</ul>"; inList = false; } out += `<h3 style="margin:12px 0 4px;color:#1a7158;font-size:15px;">${s.replace(/^\s*##\s+/, "")}</h3>`; }
+    else if (/^\s*#\s+/.test(ln)) { if (inList) { out += "</ul>"; inList = false; } out += `<h3 style="margin:12px 0 4px;font-size:16px;">${s.replace(/^\s*#\s+/, "")}</h3>`; }
+    else if (/^\s*[-*]\s+/.test(ln)) { if (!inList) { out += "<ul style='margin:4px 0 4px 18px;padding:0;'>"; inList = true; } out += `<li style="margin:2px 0;">${s.replace(/^\s*[-*]\s+/, "")}</li>`; }
+    else if (!ln.trim()) { if (inList) { out += "</ul>"; inList = false; } }
+    else { if (inList) { out += "</ul>"; inList = false; } out += `<div style="margin:3px 0;">${s}</div>`; }
+  }
+  if (inList) out += "</ul>";
+  return out;
+}
+
+function egzRenderPlan(md) {
+  const box = $("egz-plan");
+  if (!box) return;
+  if (!md) { box.innerHTML = `<div style="color:var(--ink-soft);font-size:13px;padding:8px 0;">Brak planu. Zeskanuj materiał i kliknij „Rozłóż materiał".</div>`; return; }
+  box.innerHTML = `<div style="border-top:1px solid #e7e3d8;margin-top:6px;padding-top:8px;font-size:14px;line-height:1.5;">${egzMd(md)}</div>`;
+}
+
+async function egzSkanuj(file) {
+  if (egzZajety || !egzAktywny) return;
+  egzZajety = true; trzosToast("Czytam stronę…");
+  try {
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
+    const up = await supabase.storage.from("dokumenty").upload(sciezka, file, { contentType: file.type || undefined, upsert: false });
+    if (up.error) throw up.error;
+    const dok = await supabase.from("dokumenty").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "material", kontekst: "nauka", plik_url: sciezka, mime: file.type || null, zrodlo: "zdjecie", ocr_status: "oczekuje" }).select("id").single();
+    if (dok.error) throw dok.error;
+    const { data, error } = await supabase.functions.invoke("kuznia-skan", { body: { dokument_id: dok.data.id } });
+    if (error || !data || !data.ok) throw new Error((error && error.message) || (data && data.error) || "OCR nie powiódł się");
+    const tekst = (data.dane && data.dane.tekst) || "";
+    const { count } = await supabase.from("kuznia_materialy").select("id", { count: "exact", head: true }).eq("zestaw_id", egzAktywny.id);
+    const ins = await supabase.from("kuznia_materialy").insert({ zestaw_id: egzAktywny.id, traveler_id: TRAVELER.id, dokument_id: dok.data.id, tekst, kolejnosc: (count || 0) });
+    if (ins.error) throw ins.error;
+    trzosToast("Strona dodana ✓");
+    otworzZestaw(egzAktywny.id);
+  } catch (e) { trzosToast("Błąd: " + (e.message || e)); }
+  egzZajety = false;
+}
+
+async function egzRozloz() {
+  if (egzZajety || !egzAktywny) return;
+  egzZajety = true;
+  const btn = $("egz-rozloz"); if (btn) { btn.disabled = true; btn.textContent = "Układam plan…"; }
+  try {
+    const { data, error } = await supabase.functions.invoke("kuznia-plan", { body: { zestaw_id: egzAktywny.id } });
+    if (error || !data || !data.ok) throw new Error((error && error.message) || (data && data.error) || "Nie udało się ułożyć planu");
+    trzosToast(`Plan gotowy ✓ Fiszek: ${data.fiszki_count || 0}`);
+    otworzZestaw(egzAktywny.id);
+  } catch (e) { trzosToast("Błąd: " + (e.message || e)); if (btn) { btn.disabled = false; btn.textContent = "Rozłóż materiał"; } }
+  egzZajety = false;
+}
+
+async function egzPokazFiszki() {
+  if (!egzAktywny) return;
+  const { data: fs = [] } = await supabase.from("kuznia_fiszki").select("*").eq("zestaw_id", egzAktywny.id).order("created_at", { ascending: true });
+  const box = $("egz-plan");
+  if (!fs.length) { box.innerHTML = `<div style="color:var(--ink-soft);">Brak fiszek.</div>`; return; }
+  let h = `<button id="egz-plan-powrot" style="${EGZ_BG}padding:6px 10px;font-size:12px;margin-bottom:8px;">← Plan</button>`;
+  for (const f of fs) {
+    h += `<div class="egz-fiszka" style="background:#fff;border:1px solid #e7e3d8;border-radius:10px;padding:11px;margin-bottom:8px;cursor:pointer;">
+      <div style="font-weight:600;">${esc(f.pytanie)}</div>
+      <div class="egz-odp" style="display:none;margin-top:6px;color:#1a7158;">${esc(f.odpowiedz || "")}</div>
+    </div>`;
+  }
+  box.innerHTML = h;
+  $("egz-plan-powrot").addEventListener("click", () => egzRenderPlan(egzAktywny.plan_md));
+  box.querySelectorAll(".egz-fiszka").forEach((c) => c.addEventListener("click", () => { const o = c.querySelector(".egz-odp"); o.style.display = o.style.display === "none" ? "" : "none"; }));
 }
 
 /* czytanie odpowiedzi asystenta na głos (TTS) */
