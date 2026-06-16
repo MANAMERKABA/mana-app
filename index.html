@@ -2160,21 +2160,102 @@ async function egzRozloz() {
   egzZajety = false;
 }
 
-async function egzPokazFiszki() {
+let egzKolejka = [], egzFiszkaIdx = 0, egzSesja = { przejrzane: 0, slabe: 0 }, egzTylkoDue = false;
+const EGZ_INT = [0, 1, 3, 7, 14, 30];
+function egzZgadnijJezyk(t) { return /[ąćęłńóśźż]/i.test(t || "") ? "pl-PL" : "en-US"; }
+function egzJezykPrzodu() {
+  const j = egzAktywny && egzAktywny.jezyk ? String(egzAktywny.jezyk).trim() : "";
+  if (!j) return null;
+  if (j.length === 2) return j.toLowerCase() + "-" + j.toUpperCase();
+  return j;
+}
+function egzMow(text, lang) {
+  try {
+    if (!window.speechSynthesis || !text) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(String(text));
+    u.lang = lang || egzZgadnijJezyk(text);
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+async function egzPokazFiszki(tylkoDue) {
   if (!egzAktywny) return;
   const { data: fs = [] } = await supabase.from("kuznia_fiszki").select("*").eq("zestaw_id", egzAktywny.id).order("created_at", { ascending: true });
+  if (!fs.length) { $("egz-plan").innerHTML = `<div style="color:var(--ink-soft);font-size:13px;padding:8px 0;">Brak fiszek — kliknij „Rozłóż materiał".</div>`; return; }
+  const dzis = czesciWarszawy(new Date()).dataISO;
+  const due = fs.filter((f) => !f.next_due || f.next_due <= dzis);
+  egzTylkoDue = (tylkoDue !== false) && due.length > 0;
+  egzKolejka = (egzTylkoDue ? due : fs).slice().sort((a, b) => (a.poziom || 0) - (b.poziom || 0));
+  if (!egzKolejka.length) { egzKolejka = fs.slice(); egzTylkoDue = false; }
+  egzSesja = { przejrzane: 0, slabe: 0 };
+  egzFiszkaIdx = 0;
+  egzRenderFiszka();
+}
+async function egzOcen(f, umiem) {
+  let poziom = f.poziom || 0, lapsy = f.lapsy || 0, powt = f.powtorzenia || 0;
+  if (umiem) poziom = Math.min(5, poziom + 1); else { poziom = 0; lapsy++; egzSesja.slabe++; }
+  powt++;
+  const d = new Date(); d.setDate(d.getDate() + EGZ_INT[Math.min(poziom, EGZ_INT.length - 1)]);
+  const nextDue = `${d.getFullYear()}-${dwa(d.getMonth() + 1)}-${dwa(d.getDate())}`;
+  egzSesja.przejrzane++;
+  try { await supabase.from("kuznia_fiszki").update({ poziom, lapsy, powtorzenia: powt, ostatnia: new Date().toISOString(), next_due: nextDue }).eq("id", f.id); } catch (e) {}
+  egzFiszkaIdx++;
+  if (egzFiszkaIdx >= egzKolejka.length) egzPodsumowanieFiszek(); else egzRenderFiszka();
+}
+function egzPodsumowanieFiszek() {
   const box = $("egz-plan");
-  if (!fs.length) { box.innerHTML = `<div style="color:var(--ink-soft);">Brak fiszek.</div>`; return; }
-  let h = `<button id="egz-plan-powrot" style="${EGZ_BG}padding:6px 10px;font-size:12px;margin-bottom:8px;">← Plan</button>`;
-  for (const f of fs) {
-    h += `<div class="egz-fiszka" style="background:#fff;border:1px solid #e7e3d8;border-radius:10px;padding:11px;margin-bottom:8px;cursor:pointer;">
-      <div style="font-weight:600;">${esc(f.pytanie)}</div>
-      <div class="egz-odp" style="display:none;margin-top:6px;color:#1a7158;">${esc(f.odpowiedz || "")}</div>
+  box.innerHTML = `
+    <div style="background:#fff;border:1px solid #e7e3d8;border-radius:14px;padding:20px 16px;text-align:center;">
+      <div style="font-size:17px;font-weight:600;margin-bottom:6px;">Powtórka skończona ✓</div>
+      <div style="font-size:14px;color:var(--ink-soft);">Przejrzane: ${egzSesja.przejrzane} · do poprawy: ${egzSesja.slabe}</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      ${egzSesja.slabe ? `<button id="egz-jeszcze-slabe" style="${EGZ_BP}flex:1;">↻ Powtórz słabe</button>` : ""}
+      <button id="egz-do-planu" style="${EGZ_BG}flex:1;">← Plan</button>
     </div>`;
-  }
-  box.innerHTML = h;
-  $("egz-plan-powrot").addEventListener("click", () => egzRenderPlan(egzAktywny.plan_md));
-  box.querySelectorAll(".egz-fiszka").forEach((c) => c.addEventListener("click", () => { const o = c.querySelector(".egz-odp"); o.style.display = o.style.display === "none" ? "" : "none"; }));
+  $("egz-do-planu").addEventListener("click", () => egzRenderPlan(egzAktywny.plan_md));
+  const slabe = $("egz-jeszcze-slabe"); if (slabe) slabe.addEventListener("click", () => egzPokazFiszki(true));
+}
+function egzRenderFiszka() {
+  const box = $("egz-plan");
+  const f = egzKolejka[egzFiszkaIdx];
+  const total = egzKolejka.length;
+  const langP = egzJezykPrzodu() || egzZgadnijJezyk(f.pytanie);
+  box.innerHTML = `
+    <button id="egz-fisz-powrot" style="${EGZ_BG}padding:6px 10px;font-size:12px;margin-bottom:8px;">← Plan</button>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">${egzTylkoDue ? "Powtórka" : "Przegląd"} · ${egzFiszkaIdx + 1} / ${total}</div>
+    <div id="egz-karta" style="background:#fff;border:1px solid #e7e3d8;border-radius:14px;padding:22px 16px;text-align:center;cursor:pointer;min-height:96px;display:flex;flex-direction:column;justify-content:center;">
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+        <div style="font-size:20px;font-weight:600;">${esc(f.pytanie)}</div>
+        <button id="egz-mow-p" title="Wymowa" style="background:none;border:none;font-size:19px;cursor:pointer;line-height:1;">🔊</button>
+      </div>
+      <div id="egz-karta-odp" style="display:none;margin-top:12px;border-top:1px solid #f0ece2;padding-top:12px;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:10px;">
+          <div style="font-size:18px;color:#1a7158;">${esc(f.odpowiedz || "")}</div>
+          <button id="egz-mow-o" title="Wymowa" style="background:none;border:none;font-size:18px;cursor:pointer;line-height:1;">🔊</button>
+        </div>
+      </div>
+    </div>
+    <div id="egz-fisz-akcje" style="margin-top:10px;">
+      <button id="egz-fisz-flip" style="${EGZ_BP}width:100%;">Odsłoń odpowiedź</button>
+    </div>`;
+  const odp = $("egz-karta-odp");
+  let odkryte = false;
+  const pokazOcene = () => {
+    odp.style.display = ""; odkryte = true;
+    $("egz-fisz-akcje").innerHTML = `
+      <div style="display:flex;gap:8px;">
+        <button id="egz-nie" style="${EGZ_BG}flex:1;border:1px solid #e0a020;">↻ Jeszcze nie</button>
+        <button id="egz-tak" style="${EGZ_BP}flex:1;">✓ Umiem</button>
+      </div>`;
+    $("egz-tak").addEventListener("click", () => egzOcen(f, true));
+    $("egz-nie").addEventListener("click", () => egzOcen(f, false));
+  };
+  $("egz-karta").addEventListener("click", () => { if (!odkryte) pokazOcene(); });
+  $("egz-fisz-flip").addEventListener("click", pokazOcene);
+  $("egz-mow-p").addEventListener("click", (e) => { e.stopPropagation(); egzMow(f.pytanie, langP); });
+  $("egz-mow-o").addEventListener("click", (e) => { e.stopPropagation(); egzMow(f.odpowiedz, egzZgadnijJezyk(f.odpowiedz)); });
+  $("egz-fisz-powrot").addEventListener("click", () => egzRenderPlan(egzAktywny.plan_md));
 }
 
 /* czytanie odpowiedzi asystenta na głos (TTS) */
