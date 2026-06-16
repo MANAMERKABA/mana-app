@@ -2051,14 +2051,16 @@ async function otworzZestaw(id) {
       <button id="egz-rozloz" style="${EGZ_BP}background:#2e5a7a;">Rozłóż materiał</button>
       ${fcount ? `<button id="egz-fiszki" style="${EGZ_BG}">Fiszki (${fcount})</button>` : ""}
     </div>
-    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">Zeskanowane strony: <b>${count || 0}</b></div>
-    <input id="egz-skan-plik" type="file" accept="image/*,application/pdf" capture="environment" style="display:none"/>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Zeskanowane strony: <b id="egz-licznik">${count || 0}</b> <span>· możesz wybrać wiele zdjęć naraz</span></div>
+    <input id="egz-skan-plik" type="file" accept="image/*,application/pdf" multiple style="display:none"/>
+    <div id="egz-strony"></div>
     <div id="egz-plan"></div>`;
   $("egz-wstecz").addEventListener("click", renderEgzaminLista);
   $("egz-skan").addEventListener("click", () => $("egz-skan-plik").click());
-  $("egz-skan-plik").addEventListener("change", (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) egzSkanuj(f); });
+  $("egz-skan-plik").addEventListener("change", (e) => { const fs = e.target.files; e.target.value = ""; if (fs && fs.length) egzSkanuj(fs); });
   $("egz-rozloz").addEventListener("click", egzRozloz);
   if (fcount) $("egz-fiszki").addEventListener("click", egzPokazFiszki);
+  egzRenderStrony(z.id);
   egzRenderPlan(z.plan_md);
 }
 
@@ -2086,26 +2088,63 @@ function egzRenderPlan(md) {
   box.innerHTML = `<div style="border-top:1px solid #e7e3d8;margin-top:6px;padding-top:8px;font-size:14px;line-height:1.5;">${egzMd(md)}</div>`;
 }
 
-async function egzSkanuj(file) {
+async function egzRenderStrony(zestawId) {
+  const box = $("egz-strony");
+  if (!box) return;
+  const { data: ms = [] } = await supabase.from("kuznia_materialy").select("id, tekst, kolejnosc").eq("zestaw_id", zestawId).order("kolejnosc", { ascending: true });
+  if (!ms.length) { box.innerHTML = ""; return; }
+  let h = `<div style="font-weight:600;font-size:13px;margin:10px 0 4px;">Podgląd stron (${ms.length}) — kliknij, by zobaczyć odczyt</div>`;
+  ms.forEach((m, i) => {
+    const snip = esc((m.tekst || "").replace(/\s+/g, " ").trim().slice(0, 80));
+    h += `<div class="egz-strona" data-id="${m.id}" style="background:#fff;border:1px solid #e7e3d8;border-radius:8px;padding:8px 10px;margin-bottom:6px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <div class="egz-strona-head" style="cursor:pointer;flex:1;min-width:0;"><b style="font-size:12px;">#${i + 1}</b> <span style="font-size:12px;color:var(--ink-soft);">${snip || "⚠ pusto — sprawdź skan"}</span></div>
+        <button class="egz-strona-del" title="Usuń stronę" style="background:none;border:none;color:#c4513a;font-size:15px;cursor:pointer;">🗑</button>
+      </div>
+      <div class="egz-strona-full" style="display:none;margin-top:6px;font-size:13px;white-space:pre-wrap;line-height:1.45;border-top:1px solid #f0ece2;padding-top:6px;">${esc(m.tekst || "")}</div>
+    </div>`;
+  });
+  box.innerHTML = h;
+  box.querySelectorAll(".egz-strona-head").forEach((hd) => hd.addEventListener("click", () => { const full = hd.closest(".egz-strona").querySelector(".egz-strona-full"); full.style.display = full.style.display === "none" ? "" : "none"; }));
+  box.querySelectorAll(".egz-strona-del").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("Usunąć tę stronę?")) return;
+    const id = b.closest(".egz-strona").dataset.id;
+    await supabase.from("kuznia_materialy").delete().eq("id", id);
+    const lic = $("egz-licznik"); if (lic) lic.textContent = Math.max(0, (parseInt(lic.textContent) || 1) - 1);
+    egzRenderStrony(zestawId);
+  }));
+}
+
+async function egzSkanuj(files) {
   if (egzZajety || !egzAktywny) return;
-  egzZajety = true; trzosToast("Czytam stronę…");
-  try {
-    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
-    const up = await supabase.storage.from("dokumenty").upload(sciezka, file, { contentType: file.type || undefined, upsert: false });
-    if (up.error) throw up.error;
-    const dok = await supabase.from("dokumenty").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "material", kontekst: "nauka", plik_url: sciezka, mime: file.type || null, zrodlo: "zdjecie", ocr_status: "oczekuje" }).select("id").single();
-    if (dok.error) throw dok.error;
-    const { data, error } = await supabase.functions.invoke("kuznia-skan", { body: { dokument_id: dok.data.id } });
-    if (error || !data || !data.ok) throw new Error((error && error.message) || (data && data.error) || "OCR nie powiódł się");
-    const tekst = (data.dane && data.dane.tekst) || "";
-    const { count } = await supabase.from("kuznia_materialy").select("id", { count: "exact", head: true }).eq("zestaw_id", egzAktywny.id);
-    const ins = await supabase.from("kuznia_materialy").insert({ zestaw_id: egzAktywny.id, traveler_id: TRAVELER.id, dokument_id: dok.data.id, tekst, kolejnosc: (count || 0) });
-    if (ins.error) throw ins.error;
-    trzosToast("Strona dodana ✓");
-    otworzZestaw(egzAktywny.id);
-  } catch (e) { trzosToast("Błąd: " + (e.message || e)); }
+  const lista = Array.from(files || []);
+  if (!lista.length) return;
+  egzZajety = true;
+  const zestawId = egzAktywny.id;
+  let { count } = await supabase.from("kuznia_materialy").select("id", { count: "exact", head: true }).eq("zestaw_id", zestawId);
+  count = count || 0;
+  let ok = 0, blad = 0;
+  for (let i = 0; i < lista.length; i++) {
+    const file = lista[i];
+    trzosToast(`Czytam ${i + 1}/${lista.length}…`);
+    try {
+      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+      const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
+      const up = await supabase.storage.from("dokumenty").upload(sciezka, file, { contentType: file.type || undefined, upsert: false });
+      if (up.error) throw up.error;
+      const dok = await supabase.from("dokumenty").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "material", kontekst: "nauka", plik_url: sciezka, mime: file.type || null, zrodlo: "zdjecie", ocr_status: "oczekuje" }).select("id").single();
+      if (dok.error) throw dok.error;
+      const { data, error } = await supabase.functions.invoke("kuznia-skan", { body: { dokument_id: dok.data.id } });
+      if (error || !data || !data.ok) throw new Error((error && error.message) || (data && data.error) || "OCR");
+      const tekst = (data.dane && data.dane.tekst) || "";
+      const ins = await supabase.from("kuznia_materialy").insert({ zestaw_id: zestawId, traveler_id: TRAVELER.id, dokument_id: dok.data.id, tekst, kolejnosc: count });
+      if (ins.error) throw ins.error;
+      count++; ok++;
+    } catch (e) { blad++; }
+    if (egzAktywny && egzAktywny.id === zestawId) { const lic = $("egz-licznik"); if (lic) lic.textContent = count; egzRenderStrony(zestawId); }
+  }
   egzZajety = false;
+  trzosToast(`Gotowe: ${ok} stron${blad ? `, błędów: ${blad}` : ""}`);
 }
 
 async function egzRozloz() {
