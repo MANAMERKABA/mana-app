@@ -3025,10 +3025,18 @@ function oknoWydarzenia(opcje) {
       : czesciWarszawy(new Date()).godzISO;
     endDateVal = dataVal;
   }
-  let trwanie = 60;
-  if (ev && ev.koniec && ev.data_czas) {
+  let trwanieVal = 60;
+  if (ev && ev.koniec && ev.data_czas && !ev.caly_dzien) {
     const d = (new Date(ev.koniec) - new Date(ev.data_czas)) / 60000;
-    if (d > 0) trwanie = Math.round(d);
+    if (d > 0) trwanieVal = Math.round(d);
+  }
+  let koniecVal;
+  if (ev && ev.koniec && !ev.caly_dzien) {
+    koniecVal = czesciWStrefie(ev.koniec, wybranaStrefa).godzISO;
+  } else {
+    const [gh, gm] = (godzVal || "12:00").split(":").map(Number);
+    const tt = (gh * 60 + gm + 60) % 1440; // domyślnie start + 60 min
+    koniecVal = `${dwa(Math.floor(tt / 60))}:${dwa(tt % 60)}`;
   }
   const calyDzien = ev ? !!ev.caly_dzien : false;
 
@@ -3064,7 +3072,13 @@ function oknoWydarzenia(opcje) {
         </button>
         <div class="m-strefa-hint" id="w-strefa-hint" style="display:none"></div>
       </div>
-      <div id="w-trw-box"><label>Czas trwania (min)</label><input type="number" id="w-trw" min="5" step="5" value="${trwanie}"></div>
+      <div id="w-trw-box">
+        <div class="m-form__row">
+          <div><label>Czas trwania (min)</label><input type="number" id="w-trw" min="5" step="5" value="${trwanieVal}"></div>
+          <div><label>Godzina zakończenia</label><input type="time" id="w-koniec" value="${koniecVal}"></div>
+        </div>
+        <div class="m-strefa-hint" id="w-dur-hint" style="display:none"></div>
+      </div>
       <label>Opis</label>
       <textarea id="w-opis">${ev ? esc(ev.opis || "") : ""}</textarea>
       <label>Lokalizacja</label>
@@ -3154,6 +3168,34 @@ function oknoWydarzenia(opcje) {
   overlay.querySelector("#w-godz").addEventListener("input", aktualizujStrefe);
   aktualizujStrefe();
 
+  const _g = () => overlay.querySelector("#w-godz");
+  const _k = () => overlay.querySelector("#w-koniec");
+  const _t = () => overlay.querySelector("#w-trw");
+  const minOd = (s) => { const [h, m] = s.split(":").map(Number); return h * 60 + m; };
+  const hhmm = (t) => { t = ((t % 1440) + 1440) % 1440; return `${dwa(Math.floor(t / 60))}:${dwa(t % 60)}`; };
+  function durHint() {
+    const hint = overlay.querySelector("#w-dur-hint");
+    const g = _g().value, e = _k().value;
+    const noc = g && e && (minOd(e) - minOd(g) <= 0);
+    hint.textContent = noc ? "kończy się następnego dnia (przez północ)" : "";
+    hint.style.display = noc ? "" : "none";
+  }
+  function zTrwania() { // start + czas trwania -> godzina zakończenia
+    const g = _g().value; const trw = parseInt(_t().value, 10);
+    if (!g || !trw || trw <= 0) return;
+    _k().value = hhmm(minOd(g) + trw); durHint();
+  }
+  function zKonca() { // godzina zakończenia - start -> czas trwania
+    const g = _g().value, e = _k().value;
+    if (!g || !e) return;
+    let m = minOd(e) - minOd(g); if (m <= 0) m += 1440;
+    _t().value = m; durHint();
+  }
+  _t().addEventListener("input", zTrwania);
+  _k().addEventListener("input", zKonca);
+  _g().addEventListener("input", zTrwania); // zmiana startu trzyma czas trwania, przesuwa koniec
+  durHint();
+
   overlay.querySelector("#w-zapisz").addEventListener("click", async () => {
     const tytul = overlay.querySelector("#w-tytul").value.trim();
     if (!tytul) { overlay.querySelector("#w-tytul").focus(); return; }
@@ -3171,8 +3213,14 @@ function oknoWydarzenia(opcje) {
     } else {
       const g = overlay.querySelector("#w-godz").value || "12:00";
       dataCzas = isoZeStrefy(dataStr, g, wybranaStrefa);
-      const trw = parseInt(overlay.querySelector("#w-trw").value, 10) || 60;
-      koniec = new Date(new Date(dataCzas).getTime() + trw * 60000).toISOString();
+      const gEnd = overlay.querySelector("#w-koniec").value || "";
+      if (gEnd) {
+        let koniecInstant = new Date(isoZeStrefy(dataStr, gEnd, wybranaStrefa));
+        if (koniecInstant <= new Date(dataCzas)) koniecInstant = new Date(koniecInstant.getTime() + 86400000); // przez północ → następny dzień
+        koniec = koniecInstant.toISOString();
+      } else {
+        koniec = new Date(new Date(dataCzas).getTime() + 3600000).toISOString();
+      }
     }
     const rekord = {
       tytul, data_czas: dataCzas, koniec, caly_dzien: calyD, strefa: strefaWyd,
