@@ -213,6 +213,8 @@
   .m-mc__dzien--dzis:hover { background: var(--turkus); }
   .m-mc__kropka { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 50%; background: var(--turkus); }
   .m-mc__dzien--dzis .m-mc__kropka { background: #fff; }
+  .m-mc__kropki { position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; }
+  .m-mc__kropki > span { width: 4px; height: 4px; border-radius: 50%; }
   .m-mlist { margin: 0 16px 8px; }
   .m-mlist .m-poz { padding: 7px 4px; }
   .m-mlist .m-poz__czas { flex: 0 0 96px; }
@@ -1399,6 +1401,9 @@ function kartaPlemienia(p) {
     const dziecko = !!c.zarzadzany;
     const chip = el(`<span style="font-size:12px;background:#efece3;border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;">${escP(c.nick || "uczestnik")}${c.rola === "zalozyciel" ? " · zał." : ""}${dziecko ? " · dziecko" : ""}</span>`);
     if (dziecko && c.opiekun === mojeId) {
+      const key = el(`<button title="Nadaj dziecku login / udostępnij link" style="border:none;background:none;cursor:pointer;font-size:13px;line-height:1;padding:0;">🔑</button>`);
+      key.addEventListener("click", () => panelLoginDziecka(c, card));
+      chip.appendChild(key);
       const x = el(`<button title="Usuń profil dziecka" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:14px;line-height:1;padding:0;">×</button>`);
       x.addEventListener("click", () => usunDziecko(c.traveler_id, c.nick));
       chip.appendChild(x);
@@ -1555,6 +1560,48 @@ async function usunDziecko(id, imie) {
   if (error) { alert("Błąd: " + error.message); return; }
   if (!data || !data.ok) { alert((data && data.error) || "Nie usunięto."); return; }
   renderPlemie();
+}
+function panelLoginDziecka(c, card) {
+  const ist = card.querySelector(".pl-login-form"); if (ist) { ist.remove(); return; }
+  const f = el(`<div class="pl-login-form" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;">
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;">Konto dla <b>${escP(c.nick)}</b> (9–12 lat, pod opieką). Wygeneruj jednorazowy link i otwórz go na urządzeniu dziecka — od razu się zaloguje. Link wygasa po ok. 1 h.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="pl-login-nadaj" style="${BT}">Nadaj / odśwież link</button>
+      <button class="pl-login-cofnij" style="${BG}color:#c0392b;">Cofnij login</button>
+    </div>
+    <div class="pl-login-wynik" style="margin-top:8px;"></div>
+  </div>`);
+  const wynik = f.querySelector(".pl-login-wynik");
+  f.querySelector(".pl-login-nadaj").addEventListener("click", async (e) => {
+    const btn = e.target; btn.disabled = true; const t = btn.textContent; btn.textContent = "Generuję…";
+    const { data, error } = await supabase.functions.invoke("nadaj-login", { body: { traveler_id: c.traveler_id, akcja: "nadaj" } });
+    btn.disabled = false; btn.textContent = t;
+    if (error) { wynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">Błąd: ${escP(error.message)}</span>`; return; }
+    if (!data || !data.ok) { wynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">${escP((data && data.error) || "Nie udało się.")}</span>`; return; }
+    wynik.innerHTML = "";
+    const row = el(`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+      <input class="pl-login-link" type="text" readonly value="${escP(data.link)}" style="flex:1;min-width:200px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:#fafafa;">
+      <button class="pl-login-kopiuj" style="${BT}">Kopiuj</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:5px;">${escP(data.info || "")}</div>`);
+    row.querySelector(".pl-login-link").addEventListener("focus", (ev) => ev.target.select());
+    row.querySelector(".pl-login-kopiuj").addEventListener("click", async (ev) => {
+      try { await navigator.clipboard.writeText(data.link); ev.target.textContent = "Skopiowano ✓"; }
+      catch { const i = row.querySelector(".pl-login-link"); i.select(); document.execCommand("copy"); ev.target.textContent = "Skopiowano ✓"; }
+      setTimeout(() => { ev.target.textContent = "Kopiuj"; }, 1800);
+    });
+    wynik.appendChild(row);
+  });
+  f.querySelector(".pl-login-cofnij").addEventListener("click", async (e) => {
+    if (!confirm(`Cofnąć login dla „${c.nick}"? Wróci do profilu zarządzanego bez konta. Wpisy zostają.`)) return;
+    const btn = e.target; btn.disabled = true;
+    const { data, error } = await supabase.functions.invoke("nadaj-login", { body: { traveler_id: c.traveler_id, akcja: "cofnij" } });
+    btn.disabled = false;
+    if (error) { wynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">Błąd: ${escP(error.message)}</span>`; return; }
+    if (!data || !data.ok) { wynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">${escP((data && data.error) || "Nie udało się.")}</span>`; return; }
+    wynik.innerHTML = `<span style="color:var(--ink-soft);font-size:13px;">Login cofnięty ✓</span>`;
+  });
+  card.appendChild(f);
 }
 
 /* ===== KALENDARZ PLEMIENIA (kolumny = członkowie) ===== */
@@ -2625,15 +2672,20 @@ async function renderMiesiacGrid(box, od) {
     new Date(rok, mies, 1), new Date(rok, mies + 1, 1));
   // dniZWyd: dla wielodniowych całodziennych (wyjazdy) — wszystkie pokryte dni
   const dniZWyd = new Set();
+  const dniPlem = {}; // dzień -> Set kolorów plemion (wydarzenia plemienne tego dnia)
+  const dodajPlem = (d, e) => {
+    if (!e.plemie_id || !PLEMIE_MAP[e.plemie_id]) return;
+    (dniPlem[d] = dniPlem[d] || new Set()).add(PLEMIE_MAP[e.plemie_id].kolor || "#1f9e8f");
+  };
   for (const e of wyd) {
     if (e.caly_dzien) {
       for (const dISO of dniCalodzienne(e)) {
         const [Y, M, D] = dISO.split("-").map(Number);
-        if (Y === rok && M - 1 === mies) dniZWyd.add(D);
+        if (Y === rok && M - 1 === mies) { dniZWyd.add(D); dodajPlem(D, e); }
       }
     } else {
       const cz = czesciWarszawy(e.data_czas);
-      if (cz.rok === rok && cz.mies - 1 === mies) dniZWyd.add(cz.dzien);
+      if (cz.rok === rok && cz.mies - 1 === mies) { dniZWyd.add(cz.dzien); dodajPlem(cz.dzien, e); }
     }
   }
 
@@ -2643,7 +2695,14 @@ async function renderMiesiacGrid(box, od) {
   for (let i = 0; i < pierwszyDow; i++) html += `<div></div>`;
   for (let d = 1; d <= dniWMies; d++) {
     const dzisKl = d === dzisTen ? " m-mc__dzien--dzis" : "";
-    const kropka = dniZWyd.has(d) ? `<span class="m-mc__kropka"></span>` : "";
+    let kropka = "";
+    if (dniPlem[d] && dniPlem[d].size) {
+      kropka = `<span class="m-mc__kropki">`
+        + [...dniPlem[d]].slice(0, 3).map((c) => `<span style="background:${c}"></span>`).join("")
+        + `</span>`;
+    } else if (dniZWyd.has(d)) {
+      kropka = `<span class="m-mc__kropka"></span>`;
+    }
     html += `<div class="m-mc__dzien${dzisKl}" data-d="${d}">${d}${kropka}</div>`;
   }
   html += `</div></div>`;
@@ -2667,9 +2726,12 @@ async function renderMiesiacGrid(box, od) {
         ? zakres
         : fmtData(e.data_czas, { day: "numeric", month: "short" })
           + (e.caly_dzien ? "" : " · " + fmtGodz(e.data_czas));
-      const obca = obcaStrefaLinia(e);
+      const sub = liniaPlemie(e) || obcaStrefaLinia(e);
+      const plKol = e.plemie_id && PLEMIE_MAP[e.plemie_id] ? PLEMIE_MAP[e.plemie_id].kolor : null;
       const wier = el(`<div class="m-poz"><span class="m-poz__czas">${esc(kiedy)}</span>`
-        + `<span class="m-poz__tytul"><span class="m-kat-kropka" style="background:${kolorKategorii(e)}"></span>${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`);
+        + `<span class="m-poz__tytul"><span class="m-kat-kropka" style="background:${kolorKategorii(e)}"></span>`
+        + (plKol ? `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${plKol};margin-right:4px;vertical-align:middle;"></span>` : "")
+        + `${esc(e.tytul)}${sub ? ` <span class="m-poz__obca">${esc(sub)}</span>` : ""}</span></div>`);
       wier.style.cursor = "pointer";
       wier.addEventListener("click", () => oknoWydarzenia({ event: e }));
       lista.appendChild(wier);
