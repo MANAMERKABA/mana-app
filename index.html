@@ -890,6 +890,7 @@ function montujEkranLogowania(kontener, opcje) {
           <input type="password" id="mlog-l-haslo" autocomplete="current-password" required></div>
         <button type="submit" class="mlog-przycisk" id="mlog-l-btn">Zaloguj się</button>
         <button type="button" class="mlog-link" id="mlog-do-reset">Nie pamiętasz hasła?</button>
+        <button type="button" class="mlog-link" id="mlog-do-dziecko" hidden style="margin-left:14px;">Dziecko — zaloguj PIN-em</button>
       </form>
       <form id="mlog-v-rejestracja" class="mlog-v" hidden>
         <div class="mlog-pole"><label>Email</label>
@@ -925,6 +926,12 @@ function montujEkranLogowania(kontener, opcje) {
           <input type="password" id="mlog-nh-h2" autocomplete="new-password" required></div>
         <button type="submit" class="mlog-przycisk" id="mlog-nh-btn">Ustaw hasło</button>
       </form>
+      <div id="mlog-v-dziecko" class="mlog-v" hidden>
+        <div class="mlog-naglowek">Kto się loguje?</div>
+        <div class="mlog-opis">Wybierz siebie i wpisz swój PIN.</div>
+        <div id="mlog-dz-lista"></div>
+        <button type="button" class="mlog-link" id="mlog-dz-powrot">Wróć do logowania</button>
+      </div>
       <div id="mlog-msg"></div>
     </div>`;
   const widoki = {
@@ -932,6 +939,7 @@ function montujEkranLogowania(kontener, opcje) {
     rejestracja: kontener.querySelector("#mlog-v-rejestracja"),
     reset: kontener.querySelector("#mlog-v-reset"),
     nowehaslo: kontener.querySelector("#mlog-v-nowehaslo"),
+    dziecko: kontener.querySelector("#mlog-v-dziecko"),
   };
   const taby = kontener.querySelector("#mlog-taby");
   const msg = kontener.querySelector("#mlog-msg");
@@ -1036,9 +1044,72 @@ function montujEkranLogowania(kontener, opcje) {
     });
     wrap.appendChild(oko);
   });
+  // --- Logowanie dziecka (imię + PIN) na zaufanym urządzeniu ---
+  const linkDziecko = kontener.querySelector("#mlog-do-dziecko");
+  if (linkDziecko) {
+    linkDziecko.hidden = rosterDzieci().length === 0;
+    linkDziecko.addEventListener("click", () => { renderListaDzieci(); pokazWidok("dziecko"); });
+    kontener.querySelector("#mlog-dz-powrot").addEventListener("click", () => pokazWidok("login"));
+  }
+  function renderListaDzieci() {
+    const box = kontener.querySelector("#mlog-dz-lista");
+    const dzieci = rosterDzieci();
+    box.innerHTML = "";
+    if (!dzieci.length) { box.innerHTML = `<div class="mlog-opis">Brak zapamiętanych dzieci na tym urządzeniu.</div>`; return; }
+    dzieci.forEach((d) => {
+      const lock = pinLockStan(d.traveler_id);
+      const row = document.createElement("div");
+      row.style.cssText = "border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px;";
+      let h = `<div style="font-weight:600;margin-bottom:6px;">${esc(d.nick)}</div>`;
+      if (lock.zablokowany) {
+        h += `<div class="mlog-opis" style="color:#8b1a1a;margin:0;">Za dużo prób. Poproś rodzica o nowy PIN.</div>`;
+      } else {
+        h += `<div style="display:flex;gap:6px;">
+          <input type="tel" inputmode="numeric" maxlength="6" placeholder="PIN" class="dz-pin" style="flex:1;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:16px;letter-spacing:4px;">
+          <button type="button" class="mlog-przycisk dz-wejdz" style="width:auto;margin:0;padding:10px 16px;">Wejdź</button></div>
+          <button type="button" class="mlog-link dz-zapom">Nie pamiętam PIN-u</button>`;
+      }
+      row.innerHTML = h;
+      box.appendChild(row);
+      const wejdz = row.querySelector(".dz-wejdz");
+      if (wejdz) {
+        const inp = row.querySelector(".dz-pin");
+        wejdz.addEventListener("click", async () => {
+          const pin = (inp.value || "").trim();
+          if (!/^\d{4,6}$/.test(pin)) { pokazMsg("err", "PIN to 4–6 cyfr."); return; }
+          wejdz.disabled = true; wejdz.textContent = "…";
+          const wynik = await zaloguj({ email: d.email, haslo: "kidpin_" + pin });
+          wejdz.disabled = false; wejdz.textContent = "Wejdź";
+          if (!wynik.ok) {
+            const st = pinLockDodajBlad(d.traveler_id);
+            pokazMsg("err", st.zablokowany ? "Za dużo prób — poproś rodzica o nowy PIN." : `Zły PIN. Prób do blokady: ${st.zostalo}.`);
+            if (st.zablokowany) renderListaDzieci();
+            return;
+          }
+          pinLockReset(d.traveler_id);
+          pokazMsg("ok", "Cześć " + d.nick + "! Wchodzę…");
+          onZalogowano();
+        });
+        row.querySelector(".dz-zapom").addEventListener("click", () =>
+          pokazMsg("info", "Poproś rodzica — ustawi Ci nowy PIN (Plemię → Twój profil → 🔑 Ustaw PIN)."));
+      }
+    });
+  }
   pokazWidok(startowy);
   return { pokazWidok };
 }
+/* Blokada prób PIN (lokalnie, na urządzeniu): 5 prób → 15 min */
+function pinLockStan(id) {
+  let o = null; try { o = JSON.parse(localStorage.getItem("mana_pinlock_" + id) || "null"); } catch { o = null; }
+  if (o && o.until && Date.now() < o.until) return { zablokowany: true };
+  return { zablokowany: false, n: (o && o.n) || 0 };
+}
+function pinLockDodajBlad(id) {
+  const s = pinLockStan(id); const n = (s.n || 0) + 1;
+  if (n >= 5) { localStorage.setItem("mana_pinlock_" + id, JSON.stringify({ n: 0, until: Date.now() + 15 * 60000 })); return { zablokowany: true, zostalo: 0 }; }
+  localStorage.setItem("mana_pinlock_" + id, JSON.stringify({ n })); return { zablokowany: false, zostalo: 5 - n };
+}
+function pinLockReset(id) { localStorage.removeItem("mana_pinlock_" + id); }
 
 async function start() {
   let recovery = false;
@@ -1570,6 +1641,14 @@ function panelLoginDziecka(c, card) {
       <button class="pl-login-cofnij" style="${BG}color:#c0392b;">Cofnij login</button>
     </div>
     <div class="pl-login-wynik" style="margin-top:8px;"></div>
+    <div style="border-top:1px dashed var(--line);margin-top:12px;padding-top:10px;">
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Logowanie PIN-em na <b>tym</b> urządzeniu (komputer/telefon dziecka). Ustaw 4–6 cyfr — potem dziecko loguje się samo: imię + PIN. „Nie pamiętam" = ustawiasz nowy.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <input class="pl-pin" type="tel" inputmode="numeric" maxlength="6" placeholder="PIN 4–6 cyfr" style="width:140px;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;letter-spacing:3px;">
+        <button class="pl-pin-set" style="${BT}">Ustaw PIN</button>
+      </div>
+      <div class="pl-pin-wynik" style="margin-top:6px;"></div>
+    </div>
   </div>`);
   const wynik = f.querySelector(".pl-login-wynik");
   f.querySelector(".pl-login-nadaj").addEventListener("click", async (e) => {
@@ -1601,8 +1680,25 @@ function panelLoginDziecka(c, card) {
     if (!data || !data.ok) { wynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">${escP((data && data.error) || "Nie udało się.")}</span>`; return; }
     wynik.innerHTML = `<span style="color:var(--ink-soft);font-size:13px;">Login cofnięty ✓</span>`;
   });
+  const pinWynik = f.querySelector(".pl-pin-wynik");
+  f.querySelector(".pl-pin-set").addEventListener("click", async (e) => {
+    const pin = (f.querySelector(".pl-pin").value || "").trim();
+    if (!/^\d{4,6}$/.test(pin)) { pinWynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">PIN to 4–6 cyfr.</span>`; return; }
+    const btn = e.target; btn.disabled = true; const t = btn.textContent; btn.textContent = "Ustawiam…";
+    const { data, error } = await supabase.functions.invoke("nadaj-login", { body: { traveler_id: c.traveler_id, akcja: "ustaw_pin", pin } });
+    btn.disabled = false; btn.textContent = t;
+    if (error) { pinWynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">Błąd: ${escP(error.message)}</span>`; return; }
+    if (!data || !data.ok) { pinWynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">${escP((data && data.error) || "Nie ustawiono.")}</span>`; return; }
+    if (data.email) rosterDzieckoDodaj({ traveler_id: c.traveler_id, nick: c.nick, email: data.email });
+    f.querySelector(".pl-pin").value = "";
+    pinWynik.innerHTML = `<span style="color:var(--ink-soft);font-size:13px;">PIN ustawiony ✓ Na tym urządzeniu „${escP(c.nick)}" zaloguje się imieniem + PIN (ekran wejścia → „Dziecko").</span>`;
+  });
   card.appendChild(f);
 }
+/* Rejestr dzieci zapamiętanych NA TYM urządzeniu (do logowania imię+PIN) */
+function rosterDzieci() { try { return JSON.parse(localStorage.getItem("mana_dzieci") || "[]"); } catch { return []; } }
+function rosterDzieckoDodaj(e) { const a = rosterDzieci().filter((x) => x.traveler_id !== e.traveler_id); a.push(e); localStorage.setItem("mana_dzieci", JSON.stringify(a)); }
+function rosterDzieckoUsun(id) { localStorage.setItem("mana_dzieci", JSON.stringify(rosterDzieci().filter((x) => x.traveler_id !== id))); }
 
 /* ===== KALENDARZ PLEMIENIA (kolumny = członkowie) ===== */
 let PLEMIE_KAL = null;
