@@ -3061,6 +3061,7 @@ function oknoWydarzenia(opcje) {
         <div><label>Data</label><input type="date" id="w-data" value="${dataVal}"></div>
         <div id="w-godz-box"><label>Godzina</label><input type="time" id="w-godz" value="${godzVal}"></div>
       </div>
+      <div id="w-przeszlosc" style="display:none;font-size:12px;color:#c0392b;margin:-2px 0 6px;">⚠ Ta data/godzina już minęła.</div>
       <div id="w-zakres-box" style="display:none">
         <label>Do dnia (włącznie)</label>
         <input type="date" id="w-do-dnia" value="${endDateVal}">
@@ -3196,6 +3197,20 @@ function oknoWydarzenia(opcje) {
   _g().addEventListener("input", zTrwania); // zmiana startu trzyma czas trwania, przesuwa koniec
   durHint();
 
+  function sprawdzPrzeszlosc() {
+    const warn = overlay.querySelector("#w-przeszlosc"); if (!warn) return;
+    const dStr = overlay.querySelector("#w-data").value;
+    if (!dStr) { warn.style.display = "none"; return; }
+    let past;
+    if (caly.checked) past = dStr < dataKalISO(new Date());
+    else past = new Date(isoZeStrefy(dStr, overlay.querySelector("#w-godz").value || "00:00", wybranaStrefa)).getTime() < Date.now() - 60000;
+    warn.style.display = past ? "" : "none";
+  }
+  overlay.querySelector("#w-data").addEventListener("input", sprawdzPrzeszlosc);
+  overlay.querySelector("#w-godz").addEventListener("input", sprawdzPrzeszlosc);
+  caly.addEventListener("change", sprawdzPrzeszlosc);
+  sprawdzPrzeszlosc();
+
   overlay.querySelector("#w-zapisz").addEventListener("click", async () => {
     const tytul = overlay.querySelector("#w-tytul").value.trim();
     if (!tytul) { overlay.querySelector("#w-tytul").focus(); return; }
@@ -3221,6 +3236,13 @@ function oknoWydarzenia(opcje) {
       } else {
         koniec = new Date(new Date(dataCzas).getTime() + 3600000).toISOString();
       }
+    }
+    const startMs = new Date(dataCzas).getTime();
+    const przeszly = calyD ? (dataStr < dataKalISO(new Date())) : (startMs < Date.now() - 60000);
+    if (!ev && przeszly) {
+      const kiedyTxt = fmtData(dataCzas, { weekday: "long", day: "numeric", month: "long" })
+        + (calyD ? "" : ", " + (overlay.querySelector("#w-godz").value || ""));
+      if (!confirm(`Uwaga: ${kiedyTxt} to termin w przeszłości. Zapisać mimo to?`)) return;
     }
     const rekord = {
       tytul, data_czas: dataCzas, koniec, caly_dzien: calyD, strefa: strefaWyd,
