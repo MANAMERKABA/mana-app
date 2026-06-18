@@ -1476,14 +1476,17 @@ function kartaPlemienia(p) {
   const czlBox = card.querySelector(".pl-czl");
   czl.forEach((c) => {
     const dziecko = !!c.zarzadzany;
-    const chip = el(`<span style="font-size:12px;background:#efece3;border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;">${escP(c.nick || "uczestnik")}${c.rola === "zalozyciel" ? " · zał." : ""}${dziecko ? " · dziecko" : ""}</span>`);
-    if (dziecko && c.opiekun === mojeId) {
+    const mojWard = c.opiekun === mojeId; // moje dziecko — z loginem lub bez
+    const chip = el(`<span style="font-size:12px;background:#efece3;border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;">${escP(c.nick || "uczestnik")}${c.rola === "zalozyciel" ? " · zał." : ""}${(mojWard || dziecko) ? " · dziecko" : ""}</span>`);
+    if (mojWard) {
       const key = el(`<button title="Nadaj dziecku login / udostępnij link" style="border:none;background:none;cursor:pointer;font-size:13px;line-height:1;padding:0;">🔑</button>`);
       key.addEventListener("click", () => panelLoginDziecka(c, card));
       chip.appendChild(key);
-      const x = el(`<button title="Usuń profil dziecka" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:14px;line-height:1;padding:0;">×</button>`);
-      x.addEventListener("click", () => usunDziecko(c.traveler_id, c.nick));
-      chip.appendChild(x);
+      if (dziecko) {
+        const x = el(`<button title="Usuń profil dziecka" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:14px;line-height:1;padding:0;">×</button>`);
+        x.addEventListener("click", () => usunDziecko(c.traveler_id, c.nick));
+        chip.appendChild(x);
+      }
     }
     czlBox.appendChild(chip);
   });
