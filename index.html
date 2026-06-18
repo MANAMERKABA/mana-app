@@ -713,6 +713,12 @@ function fmtData(iso, opcje) {
 function fmtGodz(iso) {
   return new Date(iso).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
 }
+/* "09:50–14:50" gdy jest koniec; sam start gdy brak/całodzienne */
+function fmtZakresGodz(e) {
+  const start = fmtGodz(e.data_czas);
+  if (e.caly_dzien || !e.koniec) return start;
+  return start + "–" + fmtGodz(e.koniec);
+}
 /* granice dnia warszawskiego (dziś + przesunięcie) jako momenty UTC */
 function granceDnia(przesuniecieDni = 0) {
   const t = czesciWarszawy(new Date());
@@ -1777,7 +1783,7 @@ async function renderPlemieKalendarz() {
         let dur = 60; if (e.koniec) { const dd = (new Date(e.koniec) - new Date(e.data_czas)) / 60000; if (dd > 0) dur = dd; }
         const kol = kolorKategorii(e);
         const pryw = ja && !e.plemie_id;
-        const blk = el(`<div title="${escP(e.tytul)}${pryw ? " (prywatne — ↗ udostępnij plemieniu)" : ""}" style="position:absolute;left:2px;right:2px;top:${(a - START * 60) * PX}px;height:${Math.max(16, dur * PX)}px;background:${kol}22;border-left:3px ${pryw ? "dashed" : "solid"} ${kol};border-radius:5px;font-size:9px;padding:1px ${pryw ? 14 : 3}px 1px 3px;overflow:hidden;cursor:pointer;">${fmtGodz(e.data_czas)} ${escP(e.tytul)}</div>`);
+        const blk = el(`<div title="${escP(e.tytul)}${pryw ? " (prywatne — ↗ udostępnij plemieniu)" : ""}" style="position:absolute;left:2px;right:2px;top:${(a - START * 60) * PX}px;height:${Math.max(16, dur * PX)}px;background:${kol}22;border-left:3px ${pryw ? "dashed" : "solid"} ${kol};border-radius:5px;font-size:9px;padding:1px ${pryw ? 14 : 3}px 1px 3px;overflow:hidden;cursor:pointer;">${fmtZakresGodz(e)} ${escP(e.tytul)}</div>`);
         blk.addEventListener("click", (ev) => { ev.stopPropagation(); oknoWydarzenia({ event: e }); });
         if (pryw) {
           const sh = el(`<button title="Udostępnij temu plemieniu" style="position:absolute;top:0;right:1px;border:none;background:none;color:${p.kolor || "#1f9e8f"};cursor:pointer;font-size:12px;line-height:1.1;padding:0 1px;">↗</button>`);
@@ -2920,7 +2926,7 @@ async function renderSiatka(box, od, dni) {
     const kKol = kolorKategorii(e);
     const styl = `top:${top}px;height:${wys}px;border-left-color:${kKol};background:${kKol}1a`;
     const blok = el(`<div class="m-tg__event${klasaZad}" style="${styl}">`
-      + `<span class="m-tg__event-czas" style="color:${kKol}">${fmtGodz(e.data_czas)}</span> `
+      + `<span class="m-tg__event-czas" style="color:${kKol}">${fmtZakresGodz(e)}</span> `
       + (plKol ? `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${plKol};margin-right:3px;"></span>` : "")
       + `<span>${esc(e.tytul)}</span>`
       + (sub ? `<span class="m-tg__event-obca">${esc(sub)}</span>` : "")
