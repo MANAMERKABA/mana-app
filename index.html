@@ -55,6 +55,9 @@
     padding: 8px 14px; border-radius: 16px; font-family: var(--font-body);
   }
   .m-logout:hover { border-color: var(--turkus); color: var(--turkus); }
+  .m-user { display:inline-flex; align-items:center; gap:6px; margin-left:auto; font-size:13px; color:var(--ink); background:var(--turkus-bg,#eef6f3); border:1px solid var(--line); border-radius:18px; padding:3px 11px 3px 4px; white-space:nowrap; max-width:46vw; overflow:hidden; }
+  .m-user__ini { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; background:var(--turkus,#1f9e8f); color:#fff; font-size:9px; font-weight:700; flex:none; }
+  .m-user__nick { overflow:hidden; text-overflow:ellipsis; }
 
   /* ---- KAFLE POKOI ---- */
   .m-rooms { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 4px 16px 14px; }
@@ -473,7 +476,10 @@
         <div class="m-brand__name">MANA</div>
         <div class="m-brand__date" id="m-data">—</div>
       </div>
-      <button class="m-logout" id="m-logout" title="Wyloguj">Wyloguj</button>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="m-user"></span>
+        <button class="m-logout" id="m-logout" title="Wyloguj">Wyloguj</button>
+      </div>
     </header>
 
     <nav class="m-rooms" id="m-rooms" aria-label="Pokoje"></nav>
@@ -538,6 +544,7 @@
       <button class="m-back" id="m-back">&#8592; Ekran startowy</button>
       <span class="m-hyz-tytul">Horyzont</span>
       <input type="search" id="hyz-szukaj" class="m-szukaj" placeholder="Szukaj… (/)" aria-label="Szukaj">
+      <span class="m-user" style="margin-left:8px;"></span>
     </div>
     <aside class="m-hyz-side" id="m-hyz-side" aria-label="Boczny panel">
       <div id="m-mini-mies" class="m-mini-mies"></div>
@@ -585,6 +592,7 @@
     <div class="m-hyz-bar">
       <button class="m-back" id="m-back-trzos">&#8592; Ekran startowy</button>
       <span class="m-hyz-tytul">Trzos</span>
+      <span class="m-user"></span>
     </div>
     <div id="trzos-podsum" style="padding:8px 16px 0;"></div>
     <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;">
@@ -599,6 +607,7 @@
     <div class="m-hyz-bar">
       <button class="m-back" id="m-back-egzamin">&#8592; Ekran startowy</button>
       <span class="m-hyz-tytul">Egzamin</span>
+      <span class="m-user"></span>
     </div>
     <div id="egz-tresc" style="padding:10px 16px 30px;"></div>
     <div class="m-stopka"></div>
@@ -1175,6 +1184,12 @@ function subskrybujRealtime() {
 function renderHeader() {
   $("m-data").textContent = new Date().toLocaleDateString("pl-PL",
     { weekday: "long", day: "numeric", month: "long", timeZone: TZ });
+  const nick = (TRAVELER && TRAVELER.nick) ? TRAVELER.nick : "podróżnik";
+  const ini = (typeof inicjalyPl === "function") ? inicjalyPl(nick) : (nick[0] || "?").toUpperCase();
+  document.querySelectorAll(".m-user").forEach((s) => {
+    s.innerHTML = `<span class="m-user__ini">${esc(ini)}</span><span class="m-user__nick">${esc(nick)}</span>`;
+    s.title = "Zalogowany: " + nick;
+  });
 }
 $("m-logout").addEventListener("click", async () => {
   await supabase.auth.signOut(); location.reload();
