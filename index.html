@@ -1488,6 +1488,11 @@ function kartaPlemienia(p) {
         chip.appendChild(x);
       }
     }
+    if (owner && c.traveler_id !== p.owner_traveler_id && !mojWard) {
+      const rb = el(`<button title="${c.rola === "zalozyciel" ? "Cofnij do członka" : "Uczyń współzałożycielem"}" style="border:none;background:none;cursor:pointer;font-size:12px;line-height:1;padding:0;">${c.rola === "zalozyciel" ? "⭐" : "☆"}</button>`);
+      rb.addEventListener("click", () => zmienRole(p.id, c.traveler_id, c.rola === "zalozyciel" ? "czlonek" : "zalozyciel", c.nick));
+      chip.appendChild(rb);
+    }
     czlBox.appendChild(chip);
   });
   const akcje = card.querySelector(".pl-akcje");
@@ -1708,6 +1713,16 @@ function panelLoginDziecka(c, card) {
 function rosterDzieci() { try { return JSON.parse(localStorage.getItem("mana_dzieci") || "[]"); } catch { return []; } }
 function rosterDzieckoDodaj(e) { const a = rosterDzieci().filter((x) => x.traveler_id !== e.traveler_id); a.push(e); localStorage.setItem("mana_dzieci", JSON.stringify(a)); }
 function rosterDzieckoUsun(id) { localStorage.setItem("mana_dzieci", JSON.stringify(rosterDzieci().filter((x) => x.traveler_id !== id))); }
+async function zmienRole(plemie, traveler, rola, nick) {
+  const pytanie = rola === "zalozyciel"
+    ? `Uczynić „${nick}" współzałożycielem? Będzie mógł zapraszać, dodawać dzieci i zarządzać wpisami plemienia.`
+    : `Cofnąć „${nick}" do zwykłego członka?`;
+  if (!confirm(pytanie)) return;
+  const { data, error } = await supabase.rpc("zmien_role_czlonka", { p_plemie: plemie, p_traveler: traveler, p_rola: rola });
+  if (error) { alert("Błąd: " + error.message); return; }
+  if (!data || !data.ok) { alert((data && data.error) || "Nie zmieniono roli."); return; }
+  renderPlemie();
+}
 
 /* ===== KALENDARZ PLEMIENIA (kolumny = członkowie) ===== */
 let PLEMIE_KAL = null;
