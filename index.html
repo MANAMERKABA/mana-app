@@ -2243,16 +2243,19 @@ async function otworzZestaw(id) {
     <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">${esc(z.cel || "")}${term ? " · do " + esc(term) : ""}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
       <button id="egz-skan" style="${EGZ_BP}">📷 Skanuj stronę</button>
+      <button id="egz-reczne" style="${EGZ_BG}">✍ Wpisz ręcznie</button>
       <button id="egz-rozloz" style="${EGZ_BP}background:#2e5a7a;">Rozłóż materiał</button>
       ${fcount ? `<button id="egz-fiszki" style="${EGZ_BG}">Fiszki (${fcount})</button>` : ""}
     </div>
-    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Zeskanowane strony: <b id="egz-licznik">${count || 0}</b> <span>· możesz wybrać wiele zdjęć naraz</span></div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Materiał: <b id="egz-licznik">${count || 0}</b> <span>· skan (wiele zdjęć naraz) albo wpis ręczny</span></div>
     <input id="egz-skan-plik" type="file" accept="image/*,application/pdf" multiple style="display:none"/>
+    <div id="egz-reczne-box"></div>
     <div id="egz-strony"></div>
     <div id="egz-plan"></div>`;
   $("egz-wstecz").addEventListener("click", renderEgzaminLista);
   $("egz-skan").addEventListener("click", () => $("egz-skan-plik").click());
   $("egz-skan-plik").addEventListener("change", (e) => { const fs = e.target.files; e.target.value = ""; if (fs && fs.length) egzSkanuj(fs); });
+  $("egz-reczne").addEventListener("click", egzReczneForm);
   $("egz-rozloz").addEventListener("click", egzRozloz);
   if (fcount) $("egz-fiszki").addEventListener("click", egzPokazFiszki);
   egzRenderStrony(z.id);
@@ -2310,6 +2313,30 @@ async function egzRenderStrony(zestawId) {
   }));
 }
 
+function egzReczneForm() {
+  const box = $("egz-reczne-box"); if (!box) return;
+  if (box.querySelector("textarea")) { box.innerHTML = ""; return; }
+  box.innerHTML = `<div style="background:#fff;border:1px solid #e7e3d8;border-radius:8px;padding:10px;margin:6px 0;">
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Wpisz zakres / materiał ręcznie — np. „Rozdz. 3–5: równania kwadratowe, układy równań". Trafi do materiału tak samo jak skan.</div>
+    <textarea id="egz-reczne-txt" style="width:100%;min-height:90px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;"></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px;"><button id="egz-reczne-zapisz" style="${EGZ_BP}">Dodaj</button><button id="egz-reczne-anu" style="${EGZ_BG}">Anuluj</button></div>
+  </div>`;
+  $("egz-reczne-anu").addEventListener("click", () => { box.innerHTML = ""; });
+  $("egz-reczne-zapisz").addEventListener("click", egzDodajReczne);
+  $("egz-reczne-txt").focus();
+}
+async function egzDodajReczne() {
+  if (!egzAktywny) return;
+  const txt = ($("egz-reczne-txt").value || "").trim();
+  if (!txt) { alert("Wpisz treść zakresu/materiału."); return; }
+  const zestawId = egzAktywny.id;
+  const { count } = await supabase.from("kuznia_materialy").select("id", { count: "exact", head: true }).eq("zestaw_id", zestawId);
+  const { error } = await supabase.from("kuznia_materialy").insert({ zestaw_id: zestawId, traveler_id: TRAVELER.id, dokument_id: null, tekst: txt, kolejnosc: count || 0 });
+  if (error) { alert("Nie zapisano: " + error.message); return; }
+  $("egz-reczne-box").innerHTML = "";
+  const lic = $("egz-licznik"); if (lic) lic.textContent = (parseInt(lic.textContent) || 0) + 1;
+  egzRenderStrony(zestawId);
+}
 async function egzSkanuj(files) {
   if (egzZajety || !egzAktywny) return;
   const lista = Array.from(files || []);
