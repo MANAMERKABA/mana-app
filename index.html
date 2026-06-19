@@ -1808,7 +1808,7 @@ async function renderPlemieKalendarz() {
       if (!ja) zajete.filter((z) => z.traveler_id === c.traveler_id && czesciWarszawy(z.data_czas).dataISO === dISO).forEach((z) => {
         const cz = czesciWarszawy(z.data_czas), a = cz.godz * 60 + cz.min;
         let dur = 60; if (z.koniec) { const dd = (new Date(z.koniec) - new Date(z.data_czas)) / 60000; if (dd > 0) dur = dd; }
-        body.appendChild(el(`<div title="Zajęte" style="position:absolute;left:2px;right:2px;top:${(a - START * 60) * PX}px;height:${Math.max(14, dur * PX)}px;background:repeating-linear-gradient(45deg,#e8e4da,#e8e4da 5px,#f1eee7 5px,#f1eee7 10px);border-radius:4px;font-size:9px;color:#9a958a;padding:1px 3px;overflow:hidden;pointer-events:none;">Zajęte</div>`));
+        body.appendChild(el(`<div title="Zajęte" style="position:absolute;left:2px;right:2px;top:${(a - START * 60) * PX}px;height:${Math.max(14, dur * PX)}px;background:repeating-linear-gradient(45deg,#e8e4da,#e8e4da 5px,#f1eee7 5px,#f1eee7 10px);border-radius:4px;font-size:9px;color:#9a958a;padding:1px 3px;overflow:hidden;pointer-events:none;">${fmtGodz(z.data_czas)}${z.koniec ? "–" + fmtGodz(z.koniec) : ""} Zajęte</div>`));
       });
       const mine = evs.filter((e) => { if (e.caly_dzien) return false; const cz = czesciWarszawy(e.data_czas); if (cz.dataISO !== dISO) return false; return ja ? e.traveler_id === mojeId : (e.traveler_id === c.traveler_id && e.plemie_id === p.id); });
       mine.forEach((e) => {
@@ -1881,6 +1881,7 @@ function renderPokoje() {
 /* ====================================================================
    EKRAN STARTOWY — dane dnia
    ==================================================================== */
+let najblizszeRaw = [];
 async function wczytajDzien() {
   const { s } = granceDnia(0);
   const koniecJutra = granceDnia(1).e;
@@ -1905,8 +1906,9 @@ async function wczytajDzien() {
     .gte("data_czas", s.toISOString()).lt("data_czas", oknoDo.toISOString())
     .order("data_czas", { ascending: true }).limit(1);
 
+  najblizszeRaw = wydOkno || [];
   const teraz = new Date();
-  const nadchodzace = (wydOkno || []).filter((w) =>
+  const nadchodzace = najblizszeRaw.filter((w) =>
     (w.caly_dzien || new Date(w.koniec || w.data_czas) >= teraz)
     && !ukryteKat.has(kategoriaZE(w)));
   const dzisISO = czesciWarszawy(teraz).dataISO;
@@ -1917,6 +1919,17 @@ async function wczytajDzien() {
   renderZadaniaEkran(zadania || []);
   renderRocznica((caloDniowe || [])[0] || null, s);
 }
+/* Minione wpisy znikają z „Najbliższe" bez przeładowania — re-filtr co minutę i przy powrocie do apki (nie rusza czatu asystenta) */
+function odswiezNajblizsze() {
+  if (!najblizszeRaw.length) return;
+  const teraz = new Date();
+  const nadchodzace = najblizszeRaw.filter((w) =>
+    (w.caly_dzien || new Date(w.koniec || w.data_czas) >= teraz)
+    && !ukryteKat.has(kategoriaZE(w)));
+  renderNajblizsze(nadchodzace.slice(0, 6), nadchodzace.length > 6);
+}
+setInterval(odswiezNajblizsze, 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) odswiezNajblizsze(); });
 
 function renderBrief(ileWyd, ileZad) {
   const nick = TRAVELER.nick || "podróżniku";
