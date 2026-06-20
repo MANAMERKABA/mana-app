@@ -2184,6 +2184,15 @@ const EGZ_IN = "width:100%;box-sizing:border-box;padding:9px;border:1px solid #d
 
 function otworzEgzamin() { egzAktywny = null; pokazWidok("egzamin"); renderEgzaminLista(); }
 
+function egzTabBarHTML(active, maDzieci) {
+  const t = (id, label) => `<button class="egz-tab" data-egztab="${id}" style="background:${active === id ? "#1a7158" : "#efece3"};color:${active === id ? "#fff" : "var(--ink)"};border:none;border-radius:18px;padding:6px 14px;font-size:13px;cursor:pointer;">${label}</button>`;
+  return `<div style="display:flex;gap:6px;margin-bottom:12px;">${t("moje", "Moje")}${maDzieci ? t("dzieci", "Dzieci / Plemię") : ""}</div>`;
+}
+function egzWirujTaby(wrap) {
+  wrap.querySelectorAll(".egz-tab").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.egztab === "moje") renderEgzaminLista(); else renderPostepyDzieci();
+  }));
+}
 async function renderEgzaminLista() {
   egzAktywny = null;
   const wrap = $("egz-tresc");
@@ -2191,7 +2200,7 @@ async function renderEgzaminLista() {
   const { data: zs = [], error } = await supabase.from("kuznia_zestawy").select("*").eq("traveler_id", TRAVELER.id).order("created_at", { ascending: false });
   if (error) { wrap.innerHTML = `<div style="color:#c4513a;">Błąd: ${esc(error.message)}</div>`; return; }
   const { data: dzieciL } = await supabase.rpc("moje_dzieci");
-  let h = `<button id="egz-nowy-btn" style="${EGZ_BP}">+ Nowy zestaw</button>${(dzieciL && dzieciL.length) ? ` <button id="egz-postepy-btn" style="${EGZ_BG}">👨‍👧 Postępy dzieci</button>` : ""}`;
+  let h = egzTabBarHTML("moje", dzieciL && dzieciL.length) + `<button id="egz-nowy-btn" style="${EGZ_BP}">+ Nowy zestaw</button>`;
   if (!zs.length) h += `<div style="color:var(--ink-soft);font-size:14px;padding:14px 0;">Nie masz jeszcze materiału. Dodaj zestaw, zeskanuj książkę i poproś o rozłożenie nauki na okres.</div>`;
   for (const z of zs) {
     const term = z.zakres_do || z.data_celu;
@@ -2202,17 +2211,16 @@ async function renderEgzaminLista() {
   }
   wrap.innerHTML = h;
   $("egz-nowy-btn").addEventListener("click", egzFormNowy);
-  const _pb = $("egz-postepy-btn"); if (_pb) _pb.addEventListener("click", renderPostepyDzieci);
+  egzWirujTaby(wrap);
   wrap.querySelectorAll(".egz-karta").forEach((k) => k.addEventListener("click", () => otworzZestaw(k.dataset.id)));
 }
 async function renderPostepyDzieci() {
   egzAktywny = null;
   const wrap = $("egz-tresc");
-  wrap.innerHTML = `<button id="egz-postepy-wstecz" style="${EGZ_BG}padding:6px 10px;font-size:12px;">← Lista</button>
-    <div style="font-weight:700;font-size:17px;margin:8px 0 4px;">Postępy dzieci</div>
-    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">Co dzieci mają zadane i jak im idzie. Materiał zadajesz z poziomu swojego zestawu („Zadaj dziecku").</div>
+  wrap.innerHTML = egzTabBarHTML("dzieci", true)
+    + `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">Co dzieci mają zadane i jak im idzie. Materiał zadajesz z poziomu swojego zestawu („Zadaj dziecku").</div>
     <div id="egz-postepy-tresc">Wczytuję…</div>`;
-  $("egz-postepy-wstecz").addEventListener("click", renderEgzaminLista);
+  egzWirujTaby(wrap);
   const box = $("egz-postepy-tresc");
   const { data: dzieci } = await supabase.rpc("moje_dzieci");
   if (!dzieci || !dzieci.length) { box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;">Brak dzieci pod opieką.</div>`; return; }
