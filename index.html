@@ -2252,14 +2252,12 @@ async function renderPostepyDzieci() {
     const opcje = mojeZ.map((z) => `<option value="${z.id}">${escP(z.tytul)}</option>`).join("");
     cont.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 10px;">
       <select class="zk-set" style="padding:7px;border:1px solid var(--line);border-radius:8px;font-size:13px;">${opcje}</select>
-      <input class="zk-prog" type="number" min="0" max="100" placeholder="próg %" style="width:80px;padding:7px;border:1px solid var(--line);border-radius:8px;font-size:13px;">
       <button class="zk-ok" style="${EGZ_BP}padding:6px 12px;">Zadaj</button>
       <span class="zk-out" style="font-size:12px;"></span></div>`;
     cont.querySelector(".zk-ok").addEventListener("click", async (e) => {
       e.target.disabled = true;
       const src = cont.querySelector(".zk-set").value;
-      const prog = cont.querySelector(".zk-prog").value ? Number(cont.querySelector(".zk-prog").value) : null;
-      const { data, error } = await supabase.rpc("zadaj_zestaw_dziecku", { p_dziecko: kid, p_src_zestaw: src, p_prog: prog, p_bramkowanie: false });
+      const { data, error } = await supabase.rpc("zadaj_zestaw_dziecku", { p_dziecko: kid, p_src_zestaw: src, p_prog: null, p_bramkowanie: false });
       e.target.disabled = false;
       const out = cont.querySelector(".zk-out");
       if (error || !data || !data.ok) { out.textContent = (error && error.message) || (data && data.error) || "Nie zadano"; out.style.color = "#c4513a"; return; }
@@ -2282,22 +2280,18 @@ function egzZadajForm(dzieci) {
   if (box.querySelector(".egz-zadaj-form")) { box.innerHTML = ""; return; }
   const opcje = dzieci.map((d) => `<option value="${d.traveler_id}">${escP(d.nick)}</option>`).join("");
   box.innerHTML = `<div class="egz-zadaj-form" style="background:#fff;border:1px solid #e7e3d8;border-radius:10px;padding:12px;margin:8px 0;">
-    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;">Skopiuj ten zestaw (materiał + fiszki + plan) dziecku, żeby je ćwiczyło. Próg = ile % musi zaliczyć.</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;">Skopiuj ten zestaw (materiał + fiszki + plan) dziecku, żeby je ćwiczyło. (Próg zaliczenia dojdzie razem z trybem testu.)</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <select id="egz-zadaj-kto" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${opcje}</select>
-      <input id="egz-zadaj-prog" type="number" min="0" max="100" placeholder="próg %" style="width:90px;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
-      <label style="font-size:13px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="egz-zadaj-bram"> bramkowanie</label>
       <button id="egz-zadaj-ok" style="${EGZ_BP}">Zadaj</button>
     </div>
     <div class="egz-zadaj-wynik" style="margin-top:6px;"></div>
   </div>`;
   $("egz-zadaj-ok").addEventListener("click", async (e) => {
     const kto = Number($("egz-zadaj-kto").value);
-    const prog = $("egz-zadaj-prog").value ? Number($("egz-zadaj-prog").value) : null;
-    const bram = $("egz-zadaj-bram").checked;
     const out = box.querySelector(".egz-zadaj-wynik");
     e.target.disabled = true;
-    const { data, error } = await supabase.rpc("zadaj_zestaw_dziecku", { p_dziecko: kto, p_src_zestaw: egzAktywny.id, p_prog: prog, p_bramkowanie: bram });
+    const { data, error } = await supabase.rpc("zadaj_zestaw_dziecku", { p_dziecko: kto, p_src_zestaw: egzAktywny.id, p_prog: null, p_bramkowanie: false });
     e.target.disabled = false;
     if (error) { out.innerHTML = `<span style="color:#c4513a;font-size:13px;">Błąd: ${escP(error.message)}</span>`; return; }
     if (!data || !data.ok) { out.innerHTML = `<span style="color:#c4513a;font-size:13px;">${escP((data && data.error) || "Nie zadano.")}</span>`; return; }
@@ -2453,7 +2447,7 @@ async function egzSkanuj(files) {
   const zestawId = egzAktywny.id;
   let { count } = await supabase.from("kuznia_materialy").select("id", { count: "exact", head: true }).eq("zestaw_id", zestawId);
   count = count || 0;
-  let ok = 0, blad = 0;
+  let ok = 0, blad = 0, lastErr = "";
   for (let i = 0; i < lista.length; i++) {
     const file = lista[i];
     trzosToast(`Czytam ${i + 1}/${lista.length}…`);
@@ -2470,11 +2464,11 @@ async function egzSkanuj(files) {
       const ins = await supabase.from("kuznia_materialy").insert({ zestaw_id: zestawId, traveler_id: TRAVELER.id, dokument_id: dok.data.id, tekst, kolejnosc: count });
       if (ins.error) throw ins.error;
       count++; ok++;
-    } catch (e) { blad++; }
+    } catch (e) { blad++; lastErr = (e && e.message) ? e.message : String(e); console.error("egzSkanuj", e); }
     if (egzAktywny && egzAktywny.id === zestawId) { const lic = $("egz-licznik"); if (lic) lic.textContent = count; egzRenderStrony(zestawId); }
   }
   egzZajety = false;
-  trzosToast(`Gotowe: ${ok} stron${blad ? `, błędów: ${blad}` : ""}`);
+  trzosToast(blad ? `Wgrano: ${ok}, błąd: ${lastErr || "?"}` : `Gotowe: ${ok} stron`);
 }
 
 async function egzRozloz() {
