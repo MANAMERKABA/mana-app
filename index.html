@@ -2227,10 +2227,12 @@ async function renderPostepyDzieci() {
   const ids = dzieci.map((d) => d.traveler_id);
   const { data: zestawy = [] } = await supabase.from("kuznia_zestawy").select("id, tytul, traveler_id, prog_zaliczenia, przypisany_przez").in("traveler_id", ids).order("created_at", { ascending: false });
   const { data: wyniki = [] } = await supabase.from("kuznia_wyniki").select("zestaw_id, wynik_proc, liczba, data_czas").in("traveler_id", ids).order("data_czas", { ascending: false });
+  const { data: mojeZ = [] } = await supabase.from("kuznia_zestawy").select("id, tytul").eq("traveler_id", TRAVELER.id).order("created_at", { ascending: false });
   let html = "";
   for (const d of dzieci) {
     const zd = (zestawy || []).filter((z) => z.traveler_id === d.traveler_id);
-    html += `<div style="font-weight:600;margin:12px 0 4px;">${escP(d.nick)}</div>`;
+    html += `<div style="font-weight:600;margin:14px 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${escP(d.nick)}<button class="egz-zadaj-kid" data-kid="${d.traveler_id}" style="${EGZ_BG}padding:3px 10px;font-size:12px;">➕ Zadaj materiał</button></div>
+      <div class="egz-zadaj-kid-box" data-kidbox="${d.traveler_id}"></div>`;
     if (!zd.length) { html += `<div style="font-size:13px;color:var(--ink-soft);">Brak materiału do nauki.</div>`; continue; }
     for (const z of zd) {
       const w = (wyniki || []).find((x) => x.zestaw_id === z.id);
@@ -2242,6 +2244,38 @@ async function renderPostepyDzieci() {
     }
   }
   box.innerHTML = html;
+  box.querySelectorAll(".egz-zadaj-kid").forEach((b) => b.addEventListener("click", () => {
+    const kid = Number(b.dataset.kid);
+    const cont = box.querySelector(`[data-kidbox="${kid}"]`);
+    if (cont.querySelector("select")) { cont.innerHTML = ""; return; }
+    if (!mojeZ.length) { cont.innerHTML = `<div style="font-size:12px;color:var(--ink-soft);margin:4px 0 8px;">Nie masz zestawów — stwórz materiał w „Moje", potem zadasz.</div>`; return; }
+    const opcje = mojeZ.map((z) => `<option value="${z.id}">${escP(z.tytul)}</option>`).join("");
+    cont.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 10px;">
+      <select class="zk-set" style="padding:7px;border:1px solid var(--line);border-radius:8px;font-size:13px;">${opcje}</select>
+      <input class="zk-prog" type="number" min="0" max="100" placeholder="próg %" style="width:80px;padding:7px;border:1px solid var(--line);border-radius:8px;font-size:13px;">
+      <button class="zk-ok" style="${EGZ_BP}padding:6px 12px;">Zadaj</button>
+      <span class="zk-out" style="font-size:12px;"></span></div>`;
+    cont.querySelector(".zk-ok").addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      const src = cont.querySelector(".zk-set").value;
+      const prog = cont.querySelector(".zk-prog").value ? Number(cont.querySelector(".zk-prog").value) : null;
+      const { data, error } = await supabase.rpc("zadaj_zestaw_dziecku", { p_dziecko: kid, p_src_zestaw: src, p_prog: prog, p_bramkowanie: false });
+      e.target.disabled = false;
+      const out = cont.querySelector(".zk-out");
+      if (error || !data || !data.ok) { out.textContent = (error && error.message) || (data && data.error) || "Nie zadano"; out.style.color = "#c4513a"; return; }
+      out.textContent = "Zadane ✓"; out.style.color = "#1a7158";
+      setTimeout(renderPostepyDzieci, 800);
+    });
+  }));
+}
+async function egzUsunZestaw(id, tytul) {
+  if (!confirm(`Usunąć zestaw „${tytul}"? Skasuje materiał, fiszki i wyniki tego zestawu. Nieodwracalne.`)) return;
+  await supabase.from("kuznia_fiszki").delete().eq("zestaw_id", id);
+  await supabase.from("kuznia_materialy").delete().eq("zestaw_id", id);
+  await supabase.from("kuznia_wyniki").delete().eq("zestaw_id", id);
+  const { error } = await supabase.from("kuznia_zestawy").delete().eq("id", id);
+  if (error) { alert("Nie usunięto: " + error.message); return; }
+  renderEgzaminLista();
 }
 function egzZadajForm(dzieci) {
   const box = $("egz-zadaj-box"); if (!box) return;
@@ -2316,6 +2350,7 @@ async function otworzZestaw(id) {
       <button id="egz-rozloz" style="${EGZ_BP}background:#2e5a7a;">Rozłóż materiał</button>
       ${fcount ? `<button id="egz-fiszki" style="${EGZ_BG}">Fiszki (${fcount})</button>` : ""}
       ${(dzieciOtw && dzieciOtw.length) ? `<button id="egz-zadaj" style="${EGZ_BG}">👨‍👧 Zadaj dziecku</button>` : ""}
+      <button id="egz-usun" style="${EGZ_BG}color:#c4513a;">🗑 Usuń zestaw</button>
     </div>
     <div id="egz-zadaj-box"></div>
     <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Materiał: <b id="egz-licznik">${count || 0}</b> <span>· skan (wiele zdjęć naraz) albo wpis ręczny</span></div>
@@ -2330,6 +2365,7 @@ async function otworzZestaw(id) {
   $("egz-rozloz").addEventListener("click", egzRozloz);
   if (fcount) $("egz-fiszki").addEventListener("click", egzPokazFiszki);
   const _zb = $("egz-zadaj"); if (_zb) _zb.addEventListener("click", () => egzZadajForm(dzieciOtw));
+  $("egz-usun").addEventListener("click", () => egzUsunZestaw(z.id, z.tytul));
   egzRenderStrony(z.id);
   egzRenderPlan(z.plan_md);
 }
