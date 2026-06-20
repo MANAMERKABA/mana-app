@@ -2190,7 +2190,8 @@ async function renderEgzaminLista() {
   wrap.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
   const { data: zs = [], error } = await supabase.from("kuznia_zestawy").select("*").eq("traveler_id", TRAVELER.id).order("created_at", { ascending: false });
   if (error) { wrap.innerHTML = `<div style="color:#c4513a;">Błąd: ${esc(error.message)}</div>`; return; }
-  let h = `<button id="egz-nowy-btn" style="${EGZ_BP}">+ Nowy zestaw</button>`;
+  const { data: dzieciL } = await supabase.rpc("moje_dzieci");
+  let h = `<button id="egz-nowy-btn" style="${EGZ_BP}">+ Nowy zestaw</button>${(dzieciL && dzieciL.length) ? ` <button id="egz-postepy-btn" style="${EGZ_BG}">👨‍👧 Postępy dzieci</button>` : ""}`;
   if (!zs.length) h += `<div style="color:var(--ink-soft);font-size:14px;padding:14px 0;">Nie masz jeszcze materiału. Dodaj zestaw, zeskanuj książkę i poproś o rozłożenie nauki na okres.</div>`;
   for (const z of zs) {
     const term = z.zakres_do || z.data_celu;
@@ -2201,7 +2202,66 @@ async function renderEgzaminLista() {
   }
   wrap.innerHTML = h;
   $("egz-nowy-btn").addEventListener("click", egzFormNowy);
+  const _pb = $("egz-postepy-btn"); if (_pb) _pb.addEventListener("click", renderPostepyDzieci);
   wrap.querySelectorAll(".egz-karta").forEach((k) => k.addEventListener("click", () => otworzZestaw(k.dataset.id)));
+}
+async function renderPostepyDzieci() {
+  egzAktywny = null;
+  const wrap = $("egz-tresc");
+  wrap.innerHTML = `<button id="egz-postepy-wstecz" style="${EGZ_BG}padding:6px 10px;font-size:12px;">← Lista</button>
+    <div style="font-weight:700;font-size:17px;margin:8px 0 4px;">Postępy dzieci</div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:10px;">Co dzieci mają zadane i jak im idzie. Materiał zadajesz z poziomu swojego zestawu („Zadaj dziecku").</div>
+    <div id="egz-postepy-tresc">Wczytuję…</div>`;
+  $("egz-postepy-wstecz").addEventListener("click", renderEgzaminLista);
+  const box = $("egz-postepy-tresc");
+  const { data: dzieci } = await supabase.rpc("moje_dzieci");
+  if (!dzieci || !dzieci.length) { box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;">Brak dzieci pod opieką.</div>`; return; }
+  const ids = dzieci.map((d) => d.traveler_id);
+  const { data: zestawy = [] } = await supabase.from("kuznia_zestawy").select("id, tytul, traveler_id, prog_zaliczenia, przypisany_przez").in("traveler_id", ids).order("created_at", { ascending: false });
+  const { data: wyniki = [] } = await supabase.from("kuznia_wyniki").select("zestaw_id, wynik_proc, liczba, data_czas").in("traveler_id", ids).order("data_czas", { ascending: false });
+  let html = "";
+  for (const d of dzieci) {
+    const zd = (zestawy || []).filter((z) => z.traveler_id === d.traveler_id);
+    html += `<div style="font-weight:600;margin:12px 0 4px;">${escP(d.nick)}</div>`;
+    if (!zd.length) { html += `<div style="font-size:13px;color:var(--ink-soft);">Brak materiału do nauki.</div>`; continue; }
+    for (const z of zd) {
+      const w = (wyniki || []).find((x) => x.zestaw_id === z.id);
+      const ost = w ? `${w.wynik_proc}% (${w.liczba} fiszek) · ${fmtData(w.data_czas, { day: "numeric", month: "short" })}` : "jeszcze nie ćwiczył";
+      html += `<div style="background:#fff;border:1px solid #e7e3d8;border-radius:10px;padding:9px 11px;margin-bottom:6px;">
+        <div style="font-size:14px;font-weight:600;">${escP(z.tytul)}${z.przypisany_przez ? ` <span style="font-size:11px;color:#1a7158;">· zadane</span>` : ""}</div>
+        <div style="font-size:12px;color:var(--ink-soft);">Ostatnia sesja: ${ost}${z.prog_zaliczenia ? ` · próg ${z.prog_zaliczenia}%` : ""}</div>
+      </div>`;
+    }
+  }
+  box.innerHTML = html;
+}
+function egzZadajForm(dzieci) {
+  const box = $("egz-zadaj-box"); if (!box) return;
+  if (box.querySelector(".egz-zadaj-form")) { box.innerHTML = ""; return; }
+  const opcje = dzieci.map((d) => `<option value="${d.traveler_id}">${escP(d.nick)}</option>`).join("");
+  box.innerHTML = `<div class="egz-zadaj-form" style="background:#fff;border:1px solid #e7e3d8;border-radius:10px;padding:12px;margin:8px 0;">
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;">Skopiuj ten zestaw (materiał + fiszki + plan) dziecku, żeby je ćwiczyło. Próg = ile % musi zaliczyć.</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <select id="egz-zadaj-kto" style="padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${opcje}</select>
+      <input id="egz-zadaj-prog" type="number" min="0" max="100" placeholder="próg %" style="width:90px;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+      <label style="font-size:13px;display:inline-flex;align-items:center;gap:5px;cursor:pointer;"><input type="checkbox" id="egz-zadaj-bram"> bramkowanie</label>
+      <button id="egz-zadaj-ok" style="${EGZ_BP}">Zadaj</button>
+    </div>
+    <div class="egz-zadaj-wynik" style="margin-top:6px;"></div>
+  </div>`;
+  $("egz-zadaj-ok").addEventListener("click", async (e) => {
+    const kto = Number($("egz-zadaj-kto").value);
+    const prog = $("egz-zadaj-prog").value ? Number($("egz-zadaj-prog").value) : null;
+    const bram = $("egz-zadaj-bram").checked;
+    const out = box.querySelector(".egz-zadaj-wynik");
+    e.target.disabled = true;
+    const { data, error } = await supabase.rpc("zadaj_zestaw_dziecku", { p_dziecko: kto, p_src_zestaw: egzAktywny.id, p_prog: prog, p_bramkowanie: bram });
+    e.target.disabled = false;
+    if (error) { out.innerHTML = `<span style="color:#c4513a;font-size:13px;">Błąd: ${escP(error.message)}</span>`; return; }
+    if (!data || !data.ok) { out.innerHTML = `<span style="color:#c4513a;font-size:13px;">${escP((data && data.error) || "Nie zadano.")}</span>`; return; }
+    const nick = (dzieci.find((d) => d.traveler_id === kto) || {}).nick || "dziecku";
+    out.innerHTML = `<span style="color:#1a7158;font-size:13px;">Zadane „${escP(nick)}" ✓ — ma to teraz w swoim Egzaminie.</span>`;
+  });
 }
 
 function egzFormNowy() {
@@ -2236,6 +2296,7 @@ async function otworzZestaw(id) {
   egzAktywny = z;
   const { count } = await supabase.from("kuznia_materialy").select("id", { count: "exact", head: true }).eq("zestaw_id", id);
   const { count: fcount } = await supabase.from("kuznia_fiszki").select("id", { count: "exact", head: true }).eq("zestaw_id", id);
+  const { data: dzieciOtw } = (z.traveler_id === TRAVELER.id) ? await supabase.rpc("moje_dzieci") : { data: [] };
   const term = z.zakres_do || z.data_celu;
   const wrap = $("egz-tresc");
   wrap.innerHTML = `<button id="egz-wstecz" style="${EGZ_BG}padding:6px 10px;font-size:12px;">← Lista</button>
@@ -2246,7 +2307,9 @@ async function otworzZestaw(id) {
       <button id="egz-reczne" style="${EGZ_BG}">✍ Wpisz ręcznie</button>
       <button id="egz-rozloz" style="${EGZ_BP}background:#2e5a7a;">Rozłóż materiał</button>
       ${fcount ? `<button id="egz-fiszki" style="${EGZ_BG}">Fiszki (${fcount})</button>` : ""}
+      ${(dzieciOtw && dzieciOtw.length) ? `<button id="egz-zadaj" style="${EGZ_BG}">👨‍👧 Zadaj dziecku</button>` : ""}
     </div>
+    <div id="egz-zadaj-box"></div>
     <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Materiał: <b id="egz-licznik">${count || 0}</b> <span>· skan (wiele zdjęć naraz) albo wpis ręczny</span></div>
     <input id="egz-skan-plik" type="file" accept="image/*,application/pdf" multiple style="display:none"/>
     <div id="egz-reczne-box"></div>
@@ -2258,6 +2321,7 @@ async function otworzZestaw(id) {
   $("egz-reczne").addEventListener("click", egzReczneForm);
   $("egz-rozloz").addEventListener("click", egzRozloz);
   if (fcount) $("egz-fiszki").addEventListener("click", egzPokazFiszki);
+  const _zb = $("egz-zadaj"); if (_zb) _zb.addEventListener("click", () => egzZadajForm(dzieciOtw));
   egzRenderStrony(z.id);
   egzRenderPlan(z.plan_md);
 }
@@ -2425,6 +2489,15 @@ async function egzOcen(f, umiem) {
   if (egzFiszkaIdx >= egzKolejka.length) egzPodsumowanieFiszek(); else egzRenderFiszka();
 }
 function egzPodsumowanieFiszek() {
+  if (egzAktywny && egzSesja.przejrzane > 0) {
+    const poprawne = Math.max(0, egzSesja.przejrzane - egzSesja.slabe);
+    const proc = Math.round((poprawne / egzSesja.przejrzane) * 100);
+    supabase.from("kuznia_wyniki").insert({
+      zestaw_id: egzAktywny.id, traveler_id: TRAVELER.id, typ: "fiszki",
+      liczba: egzSesja.przejrzane, poprawne, wynik_proc: proc,
+      zaliczony: egzAktywny.prog_zaliczenia ? (proc >= egzAktywny.prog_zaliczenia) : null,
+    }).then(() => {});
+  }
   const box = $("egz-plan");
   box.innerHTML = `
     <div style="background:#fff;border:1px solid #e7e3d8;border-radius:14px;padding:20px 16px;text-align:center;">
