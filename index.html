@@ -573,6 +573,7 @@
         <input type="text" id="hyz-nowe" placeholder="Nowe zadanie…" maxlength="200">
         <button id="hyz-dodaj" title="Dodaj zadanie">+</button>
       </div>
+      <div id="hyz-zad-propozycje"></div>
       <div class="m-lista" id="hyz-zad-aktywne"></div>
       <button class="m-zrob-naglowek" id="hyz-zrob-toggle"></button>
       <div id="hyz-zad-zrobione" style="display:none"></div>
@@ -1521,6 +1522,9 @@ function kartaPlemienia(p) {
     const dz = el(`<button style="${BG}">+ Dodaj dziecko</button>`);
     dz.addEventListener("click", () => formDodajDziecko(p, card));
     akcje.appendChild(dz);
+    const zz = el(`<button style="${BG}">➕ Zadanie</button>`);
+    zz.addEventListener("click", () => formZadajZadanie(p, card));
+    akcje.appendChild(zz);
   }
   if (owner) {
     const edit = el(`<button style="${BG}">Edytuj</button>`);
@@ -1535,6 +1539,41 @@ function kartaPlemienia(p) {
     akcje.appendChild(leave);
   }
   return card;
+}
+
+/* Zadanie plemienne = PROPOZYCJA dla członka (status=proponowane); wchodzi do jego zadań osobistych dopiero po przyjęciu */
+function formZadajZadanie(p, card) {
+  const ist = card.querySelector(".pl-zadanie-form"); if (ist) { ist.remove(); return; }
+  const czl = (p.czlonkowie || []).filter((c) => c.traveler_id !== (TRAVELER && TRAVELER.id));
+  if (!czl.length) { alert("Brak innych członków, którym można zadać zadanie."); return; }
+  const opcje = czl.map((c) => `<option value="${c.traveler_id}">${escP(c.nick || "uczestnik")}</option>`).join("");
+  const f = el(`<div class="pl-zadanie-form" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;">
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Zaproponuj zadanie członkowi. Trafi do niego jako propozycja — wejdzie do jego zadań osobistych dopiero po przyjęciu.</div>
+    <select class="zz-kto" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">${opcje}</select>
+    <input class="zz-tytul" type="text" placeholder="Treść zadania" maxlength="200" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+    <input class="zz-termin" type="datetime-local" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+    <div style="display:flex;gap:8px;"><button class="zz-ok" style="${BT}">Wyślij propozycję</button><button class="zz-anu" style="${BG}">Anuluj</button></div>
+    <div class="zz-out" style="margin-top:6px;font-size:13px;"></div>
+  </div>`);
+  f.querySelector(".zz-anu").addEventListener("click", () => f.remove());
+  f.querySelector(".zz-ok").addEventListener("click", () => {
+    const kto = Number(f.querySelector(".zz-kto").value);
+    const tytul = f.querySelector(".zz-tytul").value.trim();
+    const termin = f.querySelector(".zz-termin").value;
+    if (!tytul) { alert("Wpisz treść zadania."); return; }
+    zaproponujZadanie(p, kto, tytul, termin, f);
+  });
+  card.appendChild(f);
+}
+async function zaproponujZadanie(p, kto, tytul, terminStr, f) {
+  let dataCzas = null, strefa = null;
+  if (terminStr) { const [d, g] = terminStr.split("T"); dataCzas = isoZWarszawy(d, g || "09:00"); strefa = TZ; }
+  const rekord = { traveler_id: kto, typ: "zadanie", tytul, status: "proponowane", priorytet: "normalny", plemie_id: p.id, utworzony_przez: TRAVELER.id, data_czas: dataCzas, strefa };
+  const { error } = await supabase.from("events").insert(rekord);
+  const out = f.querySelector(".zz-out");
+  if (error) { out.innerHTML = `<span style="color:#c4513a;">Błąd: ${escP(error.message)}</span>`; return; }
+  out.innerHTML = `<span style="color:#1a7158;">Propozycja wysłana ✓ — czeka na przyjęcie u członka.</span>`;
+  f.querySelector(".zz-tytul").value = "";
 }
 
 function formNowePlemie(wrap, btn) {
@@ -1897,7 +1936,7 @@ async function wczytajDzien() {
   const { data: zadania = [] } = await supabase
     .from("events").select("*")
     .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
-    .neq("status", "zrobione")
+    .eq("status", "planowane")
     .order("pozycja", { ascending: true, nullsFirst: false });
 
   const { data: caloDniowe = [] } = await supabase
@@ -3676,7 +3715,7 @@ function oknoWydarzenia(opcje) {
    HORYZONT — zadania (lista, przeciąganie pointer-events, V, Zrobione)
    ==================================================================== */
 async function wczytajZadaniaHoryzont() {
-  const { data: aktywne = [] } = await supabase
+  const { data: wszystkie = [] } = await supabase
     .from("events").select("*")
     .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
     .neq("status", "zrobione")
@@ -3688,14 +3727,52 @@ async function wczytajZadaniaHoryzont() {
     .eq("status", "zrobione")
     .order("updated_at", { ascending: false }).limit(30);
 
+  // zadania plemienne czekające na przyjęcie (status=proponowane) — NIE wchodzą do aktywnych, dopóki nie zatwierdzone
+  const propozycje = (wszystkie || []).filter((z) => z.status === "proponowane");
+  const aktywne = (wszystkie || []).filter((z) => z.status !== "proponowane");
+
   const fAkt = zapytanieSzukaj
-    ? (aktywne || []).filter((z) => pasujeDoSzukania(z, zapytanieSzukaj))
-    : (aktywne || []);
+    ? aktywne.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj))
+    : aktywne;
   const fZrob = zapytanieSzukaj
     ? (zrobione || []).filter((z) => pasujeDoSzukania(z, zapytanieSzukaj))
     : (zrobione || []);
+  renderPropozycjeZadan(propozycje);
   renderZadaniaAktywne(fAkt);
   renderZadaniaZrobione(fZrob);
+}
+function renderPropozycjeZadan(prop) {
+  const box = $("hyz-zad-propozycje");
+  if (!box) return;
+  box.innerHTML = "";
+  if (!prop || !prop.length) return;
+  box.appendChild(el(`<div style="margin:6px 16px 4px;font-size:12px;font-weight:600;color:#b8842a;">📥 Do zatwierdzenia (${prop.length})</div>`));
+  for (const z of prop) {
+    const term = z.data_czas ? (fmtData(z.data_czas, { day: "numeric", month: "short" }) + " · " + fmtGodz(z.data_czas)) : "";
+    const w = el(`<div style="background:#fff8ec;border:1px solid #f0dcae;border-radius:11px;padding:10px 12px;margin:0 16px 7px;">
+      <div style="font-size:14.5px;font-weight:500;">${esc(z.tytul)}</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">zadanie plemienne${term ? " · " + esc(term) : ""}</div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button class="pz-akc" style="${EGZ_BP}flex:1;">✓ Przyjmij</button>
+        <button class="pz-odrz" style="${EGZ_BG}flex:1;">✕ Odrzuć</button>
+      </div></div>`);
+    w.querySelector(".pz-akc").addEventListener("click", () => akceptujZadanie(z));
+    w.querySelector(".pz-odrz").addEventListener("click", () => odrzucZadanie(z));
+    box.appendChild(w);
+  }
+}
+async function akceptujZadanie(z) {
+  const { data: ost = [] } = await supabase.from("events").select("pozycja").eq("traveler_id", TRAVELER.id).eq("typ", "zadanie").eq("status", "planowane").order("pozycja", { ascending: false, nullsFirst: false }).limit(1);
+  const nowaPoz = (((ost || [])[0]?.pozycja) ?? 0) + 1000;
+  const { error } = await supabase.from("events").update({ status: "planowane", pozycja: nowaPoz }).eq("id", z.id).eq("traveler_id", TRAVELER.id);
+  if (error) { alert("Nie przyjęto: " + error.message); return; }
+  wczytajZadaniaHoryzont();
+}
+async function odrzucZadanie(z) {
+  if (!confirm(`Odrzucić zadanie „${z.tytul}"?`)) return;
+  const { error } = await supabase.from("events").delete().eq("id", z.id).eq("traveler_id", TRAVELER.id);
+  if (error) { alert("Nie odrzucono: " + error.message); return; }
+  wczytajZadaniaHoryzont();
 }
 
 function renderZadaniaAktywne(zad) {
