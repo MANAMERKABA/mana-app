@@ -1550,7 +1550,7 @@ function formZadajZadanie(p, card) {
   const f = el(`<div class="pl-zadanie-form" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;">
     <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Zaproponuj zadanie członkowi. Trafi do niego jako propozycja — wejdzie do jego zadań osobistych dopiero po przyjęciu.</div>
     <select class="zz-kto" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">${opcje}</select>
-    <input class="zz-tytul" type="text" placeholder="Treść zadania" maxlength="200" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+    <textarea class="zz-tytul" placeholder="Treść zadania — możesz wkleić CAŁĄ listę, jedno zadanie w linii" rows="4" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;font-family:inherit;resize:vertical;"></textarea>
     <input class="zz-termin" type="datetime-local" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
     <div style="display:flex;gap:8px;"><button class="zz-ok" style="${BT}">Wyślij propozycję</button><button class="zz-anu" style="${BG}">Anuluj</button></div>
     <div class="zz-out" style="margin-top:6px;font-size:13px;"></div>
@@ -1565,14 +1565,16 @@ function formZadajZadanie(p, card) {
   });
   card.appendChild(f);
 }
-async function zaproponujZadanie(p, kto, tytul, terminStr, f) {
+async function zaproponujZadanie(p, kto, tekst, terminStr, f) {
+  const tytuly = String(tekst || "").split("\n").map((s) => s.trim()).filter(Boolean);
+  if (!tytuly.length) { alert("Wpisz treść zadania."); return; }
   let dataCzas = null, strefa = null;
   if (terminStr) { const [d, g] = terminStr.split("T"); dataCzas = isoZWarszawy(d, g || "09:00"); strefa = TZ; }
-  const rekord = { traveler_id: kto, typ: "zadanie", tytul, status: "proponowane", priorytet: "normalny", plemie_id: p.id, utworzony_przez: TRAVELER.id, data_czas: dataCzas, strefa };
-  const { error } = await supabase.from("events").insert(rekord);
+  const rows = tytuly.map((tytul) => ({ traveler_id: kto, typ: "zadanie", tytul, status: "proponowane", priorytet: "normalny", plemie_id: p.id, utworzony_przez: TRAVELER.id, data_czas: dataCzas, strefa }));
+  const { error } = await supabase.from("events").insert(rows);
   const out = f.querySelector(".zz-out");
   if (error) { out.innerHTML = `<span style="color:#c4513a;">Błąd: ${escP(error.message)}</span>`; return; }
-  out.innerHTML = `<span style="color:#1a7158;">Propozycja wysłana ✓ — czeka na przyjęcie u członka.</span>`;
+  out.innerHTML = `<span style="color:#1a7158;">Wysłano ${rows.length} ${rows.length === 1 ? "propozycję" : "propozycji"} ✓ — czeka(ją) na przyjęcie.</span>`;
   f.querySelector(".zz-tytul").value = "";
 }
 
