@@ -2343,6 +2343,7 @@ async function otworzZestaw(id) {
       <button id="egz-reczne" style="${EGZ_BG}">✍ Wpisz ręcznie</button>
       <button id="egz-rozloz" style="${EGZ_BP}background:#2e5a7a;">Rozłóż materiał</button>
       ${fcount ? `<button id="egz-fiszki" style="${EGZ_BG}">Fiszki (${fcount})</button>` : ""}
+      ${fcount ? `<button id="egz-test" style="${EGZ_BP}background:#7a4a8a;">🎯 Test</button>` : ""}
       ${(dzieciOtw && dzieciOtw.length) ? `<button id="egz-zadaj" style="${EGZ_BG}">👨‍👧 Zadaj dziecku</button>` : ""}
       <button id="egz-usun" style="${EGZ_BG}color:#c4513a;">🗑 Usuń zestaw</button>
     </div>
@@ -2358,6 +2359,7 @@ async function otworzZestaw(id) {
   $("egz-reczne").addEventListener("click", egzReczneForm);
   $("egz-rozloz").addEventListener("click", egzRozloz);
   if (fcount) $("egz-fiszki").addEventListener("click", egzPokazFiszki);
+  if (fcount) $("egz-test").addEventListener("click", () => egzTestKonfig());
   const _zb = $("egz-zadaj"); if (_zb) _zb.addEventListener("click", () => egzZadajForm(dzieciOtw));
   $("egz-usun").addEventListener("click", () => egzUsunZestaw(z.id, z.tytul));
   egzRenderStrony(z.id);
@@ -2439,33 +2441,82 @@ async function egzDodajReczne() {
   const lic = $("egz-licznik"); if (lic) lic.textContent = (parseInt(lic.textContent) || 0) + 1;
   egzRenderStrony(zestawId);
 }
+let egzPdfjsLib = null;
+async function egzLadujPdfjs() {
+  if (egzPdfjsLib) return egzPdfjsLib;
+  const m = await import("https://esm.sh/pdfjs-dist@4.0.379/build/pdf.min.mjs");
+  m.GlobalWorkerOptions.workerSrc = "https://esm.sh/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs";
+  egzPdfjsLib = m;
+  return m;
+}
+
+// Wysyła JEDNĄ stronę (obraz lub wyrenderowaną stronę PDF) przez OCR → kuznia_materialy.
+async function egzWyslijStrone(blob, ext, mime, zestawId, kolejnosc) {
+  const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
+  const up = await supabase.storage.from("dokumenty").upload(sciezka, blob, { contentType: mime || undefined, upsert: false });
+  if (up.error) throw up.error;
+  const dok = await supabase.from("dokumenty").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "material", kontekst: "nauka", plik_url: sciezka, mime: mime || null, zrodlo: "zdjecie", ocr_status: "oczekuje" }).select("id").single();
+  if (dok.error) throw dok.error;
+  const { data, error } = await supabase.functions.invoke("kuznia-skan", { body: { dokument_id: dok.data.id } });
+  if (error || !data || !data.ok) throw new Error((error && error.message) || (data && data.error) || "OCR");
+  const tekst = (data.dane && data.dane.tekst) || "";
+  const ins = await supabase.from("kuznia_materialy").insert({ zestaw_id: zestawId, traveler_id: TRAVELER.id, dokument_id: dok.data.id, tekst, kolejnosc });
+  if (ins.error) throw ins.error;
+}
+
 async function egzSkanuj(files) {
   if (egzZajety || !egzAktywny) return;
   const lista = Array.from(files || []);
   if (!lista.length) return;
   egzZajety = true;
   const zestawId = egzAktywny.id;
+  const odswiez = () => { if (egzAktywny && egzAktywny.id === zestawId) { const lic = $("egz-licznik"); if (lic) lic.textContent = count; egzRenderStrony(zestawId); } };
   let { count } = await supabase.from("kuznia_materialy").select("id", { count: "exact", head: true }).eq("zestaw_id", zestawId);
   count = count || 0;
   let ok = 0, blad = 0, lastErr = "";
-  for (let i = 0; i < lista.length; i++) {
-    const file = lista[i];
-    trzosToast(`Czytam ${i + 1}/${lista.length}…`);
+  for (const file of lista) {
+    const isPdf = (file.type === "application/pdf") || /\.pdf$/i.test(file.name);
     try {
-      const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
-      const up = await supabase.storage.from("dokumenty").upload(sciezka, file, { contentType: file.type || undefined, upsert: false });
-      if (up.error) throw up.error;
-      const dok = await supabase.from("dokumenty").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "material", kontekst: "nauka", plik_url: sciezka, mime: file.type || null, zrodlo: "zdjecie", ocr_status: "oczekuje" }).select("id").single();
-      if (dok.error) throw dok.error;
-      const { data, error } = await supabase.functions.invoke("kuznia-skan", { body: { dokument_id: dok.data.id } });
-      if (error || !data || !data.ok) throw new Error((error && error.message) || (data && data.error) || "OCR");
-      const tekst = (data.dane && data.dane.tekst) || "";
-      const ins = await supabase.from("kuznia_materialy").insert({ zestaw_id: zestawId, traveler_id: TRAVELER.id, dokument_id: dok.data.id, tekst, kolejnosc: count });
-      if (ins.error) throw ins.error;
-      count++; ok++;
+      if (isPdf) {
+        trzosToast("Otwieram PDF…");
+        const pdfjs = await egzLadujPdfjs();
+        const buf = await file.arrayBuffer();
+        const doc = await pdfjs.getDocument({ data: buf }).promise;
+        const n = doc.numPages;
+        let od = 1, koniec = n;
+        if (n > 1) {
+          const odp = prompt(`PDF ma ${n} stron. Które wczytać? (np. 12-40, albo Enter = wszystkie)`, `1-${n}`);
+          if (odp === null) { try { doc.destroy(); } catch (_) {} continue; }
+          const z = odp.trim().match(/^(\d+)\s*[-–]\s*(\d+)$/), j = odp.trim().match(/^(\d+)$/);
+          if (z) { od = Math.max(1, +z[1]); koniec = Math.min(n, +z[2]); }
+          else if (j) { od = koniec = Math.min(n, Math.max(1, +j[1])); }
+          if (od > koniec) { const t = od; od = koniec; koniec = t; }
+        }
+        for (let pageNo = od; pageNo <= koniec; pageNo++) {
+          trzosToast(`Czytam stronę ${pageNo}/${koniec}…`);
+          try {
+            const p = await doc.getPage(pageNo);
+            const viewport = p.getViewport({ scale: 2 });
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.round(viewport.width); canvas.height = Math.round(viewport.height);
+            await p.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+            const blob = await new Promise((res) => canvas.toBlob(res, "image/jpeg", 0.85));
+            canvas.width = canvas.height = 0;
+            if (!blob) throw new Error("render strony");
+            await egzWyslijStrone(blob, "jpg", "image/jpeg", zestawId, count);
+            count++; ok++;
+          } catch (e) { blad++; lastErr = (e && e.message) ? e.message : String(e); console.error("egzSkanuj/pdf", e); }
+          odswiez();
+        }
+        try { doc.destroy(); } catch (_) {}
+      } else {
+        trzosToast("Czytam stronę…");
+        const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+        await egzWyslijStrone(file, ext, file.type, zestawId, count);
+        count++; ok++;
+        odswiez();
+      }
     } catch (e) { blad++; lastErr = (e && e.message) ? e.message : String(e); console.error("egzSkanuj", e); }
-    if (egzAktywny && egzAktywny.id === zestawId) { const lic = $("egz-licznik"); if (lic) lic.textContent = count; egzRenderStrony(zestawId); }
   }
   egzZajety = false;
   trzosToast(blad ? `Wgrano: ${ok}, błąd: ${lastErr || "?"}` : `Gotowe: ${ok} stron`);
@@ -2589,6 +2640,148 @@ function egzRenderFiszka() {
   $("egz-mow-p").addEventListener("click", (e) => { e.stopPropagation(); egzMow(f.pytanie, langP); });
   $("egz-mow-o").addEventListener("click", (e) => { e.stopPropagation(); egzMow(f.odpowiedz, egzZgadnijJezyk(f.odpowiedz)); });
   $("egz-fisz-powrot").addEventListener("click", () => egzRenderPlan(egzAktywny.plan_md));
+}
+
+/* ───────── TRYB TESTU (retrieval practice + auto-sprawdzanie) ───────── */
+function egzNorm(s) {
+  return String(s == null ? "" : s).toLowerCase().trim()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/ł/g, "l").replace(/ø/g, "o")
+    .replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+}
+function egzTasuj(a) { const t = a.slice(); for (let i = t.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const x = t[i]; t[i] = t[j]; t[j] = x; } return t; }
+async function egzSrUpdate(f, umiem) {
+  let poziom = f.poziom || 0, lapsy = f.lapsy || 0, powt = (f.powtorzenia || 0) + 1;
+  if (umiem) poziom = Math.min(5, poziom + 1); else { poziom = 0; lapsy++; }
+  const d = new Date(); d.setDate(d.getDate() + EGZ_INT[Math.min(poziom, EGZ_INT.length - 1)]);
+  const nextDue = `${d.getFullYear()}-${dwa(d.getMonth() + 1)}-${dwa(d.getDate())}`;
+  f.poziom = poziom; f.lapsy = lapsy; f.powtorzenia = powt;
+  try { await supabase.from("kuznia_fiszki").update({ poziom, lapsy, powtorzenia: powt, ostatnia: new Date().toISOString(), next_due: nextDue }).eq("id", f.id); } catch (e) {}
+}
+
+let egzTest = null;
+async function egzTestKonfig() {
+  if (!egzAktywny) return;
+  const { data: fs = [] } = await supabase.from("kuznia_fiszki").select("*").eq("zestaw_id", egzAktywny.id);
+  if (!fs.length) { $("egz-plan").innerHTML = `<div style="color:var(--ink-soft);font-size:13px;padding:8px 0;">Brak fiszek — najpierw „Rozłóż materiał".</div>`; return; }
+  egzTest = { pula: fs };
+  const box = $("egz-plan");
+  box.innerHTML = `
+    <button id="egz-test-wstecz" style="${EGZ_BG}padding:6px 10px;font-size:12px;margin-bottom:8px;">← Plan</button>
+    <div style="background:#fff;border:1px solid #e7e3d8;border-radius:14px;padding:18px 16px;">
+      <div style="font-weight:700;font-size:16px;margin-bottom:10px;">🎯 Test wiedzy</div>
+      <label style="font-size:13px;display:block;margin-bottom:4px;">Ile pytań? (dostępne: ${fs.length})</label>
+      <input id="egz-test-n" type="number" min="1" max="${fs.length}" value="${Math.min(fs.length, 20)}" style="width:100%;padding:8px;border:1px solid #d8d2c4;border-radius:8px;margin-bottom:10px;">
+      <label style="font-size:13px;display:block;margin-bottom:4px;">Na czas? (minuty — puste = bez limitu)</label>
+      <input id="egz-test-min" type="number" min="1" placeholder="np. 10" style="width:100%;padding:8px;border:1px solid #d8d2c4;border-radius:8px;margin-bottom:14px;">
+      <button id="egz-test-start" style="${EGZ_BP}width:100%;">Zaczynamy</button>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;">Wpisujesz odpowiedź, system sprawdza sam. Błędne wracają do powtórek.</div>
+    </div>`;
+  $("egz-test-wstecz").addEventListener("click", () => egzRenderPlan(egzAktywny.plan_md));
+  $("egz-test-start").addEventListener("click", () => {
+    const n = Math.max(1, Math.min(fs.length, parseInt($("egz-test-n").value, 10) || fs.length));
+    const min = parseInt($("egz-test-min").value, 10);
+    egzTestStart(n, (min > 0 ? min : 0));
+  });
+}
+function egzTestStart(n, minuty) {
+  const kolejka = egzTasuj(egzTest.pula).slice(0, n);
+  egzTest = { pula: egzTest.pula, kolejka, idx: 0, wyniki: [], koniecTs: minuty ? Date.now() + minuty * 60000 : 0, startTs: Date.now(), timer: null };
+  egzTestPytanie();
+  if (minuty) egzTest.timer = setInterval(egzTestTik, 1000);
+}
+function egzTestTik() {
+  if (!egzTest || !egzTest.koniecTs) return;
+  const left = egzTest.koniecTs - Date.now();
+  const el = $("egz-test-timer");
+  if (left <= 0) { if (el) el.textContent = "0:00"; egzTestKoniec(true); return; }
+  if (el) { const s = Math.ceil(left / 1000); el.textContent = `${Math.floor(s / 60)}:${dwa(s % 60)}`; }
+}
+function egzTestPytanie() {
+  const t = egzTest, f = t.kolejka[t.idx], total = t.kolejka.length;
+  const box = $("egz-plan");
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:12px;color:var(--ink-soft);">Pytanie ${t.idx + 1} / ${total}</div>
+      ${t.koniecTs ? `<div style="font-size:13px;font-weight:700;color:#7a4a8a;">⏱ <span id="egz-test-timer">–</span></div>` : ""}
+    </div>
+    <div style="background:#fff;border:1px solid #e7e3d8;border-radius:14px;padding:22px 16px;min-height:90px;display:flex;flex-direction:column;justify-content:center;">
+      <div style="font-size:19px;font-weight:600;text-align:center;margin-bottom:14px;">${esc(f.pytanie)}</div>
+      <input id="egz-test-odp" type="text" autocomplete="off" placeholder="Twoja odpowiedź…" style="width:100%;padding:10px;border:1px solid #d8d2c4;border-radius:8px;font-size:15px;">
+    </div>
+    <div id="egz-test-akcje" style="margin-top:10px;">
+      <button id="egz-test-sprawdz" style="${EGZ_BP}width:100%;">Sprawdź</button>
+    </div>`;
+  if (t.koniecTs) egzTestTik();
+  const inp = $("egz-test-odp"); if (inp) { inp.focus(); inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); egzTestSprawdz(); } }); }
+  $("egz-test-sprawdz").addEventListener("click", egzTestSprawdz);
+}
+function egzTestSprawdz() {
+  const t = egzTest, f = t.kolejka[t.idx];
+  const user = ($("egz-test-odp") ? $("egz-test-odp").value : "").trim();
+  const dobrze = egzNorm(user) !== "" && egzNorm(user) === egzNorm(f.odpowiedz);
+  egzSrUpdate(f, dobrze);
+  t.wyniki.push({ f, ok: dobrze, user });
+  const ost = t.idx >= t.kolejka.length - 1;
+  const box = $("egz-test-akcje");
+  box.innerHTML = `
+    <div style="background:${dobrze ? "#eaf6ef" : "#fbeeea"};border:1px solid ${dobrze ? "#bfe3cd" : "#f0c9bd"};border-radius:12px;padding:12px 14px;margin-bottom:10px;">
+      <div style="font-weight:700;color:${dobrze ? "#1a7158" : "#c4513a"};margin-bottom:4px;">${dobrze ? "Dobrze ✓" : "Źle ✗"}</div>
+      ${dobrze ? "" : `<div style="font-size:13px;"><span style="color:var(--ink-soft);">Twoja:</span> ${esc(user || "—")}</div>`}
+      <div style="font-size:13px;"><span style="color:var(--ink-soft);">Poprawna:</span> <b>${esc(f.odpowiedz || "")}</b></div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      ${dobrze ? "" : `<button id="egz-test-uznaj" style="${EGZ_BG}flex:1;border:1px solid #1a7158;color:#1a7158;">✓ Miałem dobrze</button>`}
+      <button id="egz-test-dalej" style="${EGZ_BP}flex:1;">${ost ? "Wynik" : "Dalej →"}</button>
+    </div>`;
+  const u = $("egz-test-uznaj");
+  if (u) u.addEventListener("click", () => {
+    const w = t.wyniki[t.wyniki.length - 1];
+    if (!w.ok) { w.ok = true; egzSrUpdate(f, true); u.outerHTML = `<div style="flex:1;text-align:center;color:#1a7158;font-size:13px;align-self:center;">Zaliczone ✓</div>`; }
+  });
+  $("egz-test-dalej").addEventListener("click", egzTestDalej);
+}
+function egzTestDalej() {
+  const t = egzTest;
+  t.idx++;
+  if (t.idx >= t.kolejka.length) egzTestKoniec(false);
+  else egzTestPytanie();
+}
+function egzTestKoniec(zCzasu) {
+  const t = egzTest;
+  if (t.timer) { clearInterval(t.timer); t.timer = null; }
+  const odp = t.wyniki.length;
+  const dobre = t.wyniki.filter((w) => w.ok).length;
+  const proc = odp ? Math.round((dobre / odp) * 100) : 0;
+  const prog = egzAktywny && egzAktywny.prog_zaliczenia ? egzAktywny.prog_zaliczenia : 0;
+  const zaliczony = prog ? proc >= prog : null;
+  const zle = t.wyniki.filter((w) => !w.ok).map((w) => w.f);
+  if (egzAktywny && odp > 0) {
+    supabase.from("kuznia_wyniki").insert({
+      zestaw_id: egzAktywny.id, traveler_id: TRAVELER.id, typ: "test",
+      liczba: odp, poprawne: dobre, wynik_proc: proc, zaliczony,
+      czas_ms: Math.max(0, Date.now() - (t.startTs || Date.now())),
+    }).then(() => {});
+  }
+  const box = $("egz-plan");
+  box.innerHTML = `
+    <div style="background:#fff;border:1px solid #e7e3d8;border-radius:14px;padding:20px 16px;text-align:center;">
+      <div style="font-size:30px;font-weight:800;color:${proc >= 80 ? "#1a7158" : proc >= 50 ? "#b8842a" : "#c4513a"};">${proc}%</div>
+      <div style="font-size:14px;color:var(--ink-soft);margin-top:2px;">${dobre} / ${odp} dobrze${zCzasu ? " · czas minął" : ""}</div>
+      ${prog ? `<div style="font-size:13px;margin-top:6px;font-weight:700;color:${zaliczony ? "#1a7158" : "#c4513a"};">${zaliczony ? "Zaliczony ✓ (próg " + prog + "%)" : "Poniżej progu " + prog + "%"}</div>` : ""}
+    </div>
+    ${zle.length ? `<div style="margin-top:12px;font-size:13px;font-weight:600;">Do poprawy (${zle.length}):</div>
+      <div style="margin-top:6px;">${zle.map((f) => `<div style="background:#fff;border:1px solid #f0ece2;border-radius:8px;padding:8px 10px;margin-bottom:6px;font-size:13px;"><b>${esc(f.pytanie)}</b> → ${esc(f.odpowiedz || "")}</div>`).join("")}</div>` : `<div style="text-align:center;color:#1a7158;font-size:14px;margin-top:10px;">Komplet! 🎉</div>`}
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      ${zle.length ? `<button id="egz-test-popraw" style="${EGZ_BP}flex:1;">↻ Popraw błędne</button>` : ""}
+      <button id="egz-test-plan" style="${EGZ_BG}flex:1;">← Plan</button>
+    </div>`;
+  $("egz-test-plan").addEventListener("click", () => egzRenderPlan(egzAktywny.plan_md));
+  const p = $("egz-test-popraw");
+  if (p) p.addEventListener("click", () => {
+    egzTest = { pula: zle, kolejka: egzTasuj(zle), idx: 0, wyniki: [], koniecTs: 0, startTs: Date.now(), timer: null };
+    egzTestPytanie();
+  });
 }
 
 /* czytanie odpowiedzi asystenta na głos (TTS) */
