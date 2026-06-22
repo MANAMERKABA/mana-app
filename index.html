@@ -2479,9 +2479,26 @@ async function egzSkanuj(files) {
     try {
       if (isPdf) {
         trzosToast("Otwieram PDF…");
-        const pdfjs = await egzLadujPdfjs();
-        const buf = await file.arrayBuffer();
-        const doc = await pdfjs.getDocument({ data: buf }).promise;
+        let pdfjs = null;
+        try {
+          pdfjs = await Promise.race([
+            egzLadujPdfjs(),
+            new Promise((_, rej) => setTimeout(() => rej(new Error("pdfjs-timeout")), 9000)),
+          ]);
+        } catch (e) { pdfjs = null; console.warn("pdf.js niedostępny — wysyłam cały PDF", e); }
+        let doc = null;
+        if (pdfjs) {
+          try { doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise; }
+          catch (e) { doc = null; console.warn("pdf.js render błąd — wysyłam cały PDF", e); }
+        }
+        if (!doc) {
+          // FALLBACK bez pdf.js: cały PDF idzie do OCR jako jeden materiał (działa dla małych plików)
+          trzosToast("Czytam PDF…");
+          const ext = (file.name.split(".").pop() || "pdf").toLowerCase();
+          await egzWyslijStrone(file, ext, file.type || "application/pdf", zestawId, count);
+          count++; ok++; odswiez();
+          continue;
+        }
         const n = doc.numPages;
         let od = 1, koniec = n;
         if (n > 1) {
