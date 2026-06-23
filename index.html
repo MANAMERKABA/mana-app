@@ -1518,6 +1518,9 @@ function kartaPlemienia(p) {
   const kalBtn = el(`<button style="${BT}">Kalendarz</button>`);
   kalBtn.addEventListener("click", () => otworzKalendarzPlemienia(p));
   akcje.appendChild(kalBtn);
+  const zadBtn = el(`<button style="${BG}">📋 Zadania</button>`);
+  zadBtn.addEventListener("click", () => otworzZadaniaPlemienia(p));
+  akcje.appendChild(zadBtn);
   // ➕ Zadanie — dla KAŻDEGO członka (zlecenie wymaga praw, wspólne wymaga tylko członkostwa — RLS pilnuje)
   const zz = el(`<button style="${BG}">➕ Zadanie</button>`);
   zz.addEventListener("click", () => formZadajZadanie(p, card));
@@ -1628,6 +1631,88 @@ async function dodajWspolne(p, tekst, terminStr, kategoria, f) {
   if (error) { out.innerHTML = `<span style="color:#c4513a;">Błąd: ${escP(error.message)}</span>`; return; }
   out.innerHTML = `<span style="color:#1a7158;">Dodano ${rows.length} ${kategoria === "zakupy" ? "do wspólnej listy zakupów" : (rows.length === 1 ? "wspólne zadanie" : "wspólnych zadań")} ✓ — widzą wszyscy w plemieniu.</span>`;
   f.querySelector(".zz-tytul").value = "";
+}
+
+/* PANEL „Zadania plemienia" — lista otwartych (dla kogo/wspólne/status) + ROZLICZENIE (kto zrobił i kiedy) + przypisywanie.
+   Model przypisania wg rynku (Asana/DRI): jedna osoba = przeniesienie; kilka osób = kopie (każdy osobno rozliczany). „Razem" = tryb Wspólne. */
+const STATUS_ETYK = { proponowane: "czeka na przyjęcie", planowane: "do zrobienia", przelozone: "przełożone", odwolane: "odwołane", odrzucone: "odrzucone", zrobione: "zrobione" };
+async function otworzZadaniaPlemienia(p) {
+  const czl = p.czlonkowie || [];
+  const overlay = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head">
+      <span class="m-modal__tytul">Zadania · ${escP(p.nazwa)}</span>
+      <button class="m-modal__x" aria-label="Zamknij">&#10005;</button>
+    </div>
+    <div class="m-form" id="zp-tresc"><div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div></div>
+  </div></div>`);
+  document.body.appendChild(overlay);
+  const zamknij = () => overlay.remove();
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
+  overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+
+  const nickOf = (id) => { const c = czl.find((x) => x.traveler_id === id); return c ? (c.nick || "uczestnik") : "ktoś"; };
+
+  async function odswiez() {
+    const tresc = overlay.querySelector("#zp-tresc");
+    const { data: lista = [], error } = await supabase.rpc("zadania_plemienia", { p_plemie: p.id });
+    if (error) { tresc.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(error.message)}</div>`; return; }
+    const otwarte = (lista || []).filter((z) => z.status !== "zrobione");
+    const zrobione = (lista || []).filter((z) => z.status === "zrobione");
+    tresc.innerHTML = "";
+
+    // OTWARTE
+    tresc.appendChild(el(`<div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin:2px 0 6px;">OTWARTE (${otwarte.length})</div>`));
+    if (!otwarte.length) tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:13px;margin-bottom:8px;">Brak otwartych zadań w tym plemieniu.</div>`));
+    for (const z of otwarte) {
+      const komu = z.wspolne ? "👥 wspólne" : ("dla: " + escP(z.owner_nick || nickOf(z.traveler_id)));
+      const term = z.data_czas ? (" · " + escP(fmtData(z.data_czas, { day: "numeric", month: "short" })) + " " + escP(fmtGodz(z.data_czas))) : "";
+      const row = el(`<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px;">
+        <div style="font-size:14.5px;">${esc(z.tytul)}</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${komu} · ${escP(STATUS_ETYK[z.status] || z.status)}${term}</div>
+        <div style="margin-top:7px;"><button class="zp-przyp" style="${BG}font-size:12px;padding:5px 10px;">Przypisz / przenieś</button></div>
+        <div class="zp-form" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px;"></div>
+      </div>`);
+      const form = row.querySelector(".zp-form");
+      row.querySelector(".zp-przyp").addEventListener("click", () => {
+        if (form.style.display === "block") { form.style.display = "none"; return; }
+        const opcje = czl.map((c) => `<label style="display:flex;align-items:center;gap:7px;font-size:13.5px;padding:3px 0;"><input type="checkbox" value="${c.traveler_id}" style="width:16px;height:16px;"> ${escP(c.nick || "uczestnik")}${c.zarzadzany ? " · dziecko" : ""}</label>`).join("");
+        form.innerHTML = `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Komu przypisać?</div>${opcje}
+          <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;margin-top:6px;color:var(--ink-soft);"><input type="checkbox" class="zp-kopie" style="width:16px;height:16px;"> każdemu osobno (kopie — każdy ma własne)</label>
+          <div style="font-size:11px;color:var(--ink-soft);margin:4px 0 8px;">Jedna osoba = przeniesienie. Kilka osób bez „kopie" też zrobi kopie. „Razem, ktokolwiek zrobi" → użyj trybu Wspólne.</div>
+          <div style="display:flex;gap:8px;"><button class="zp-ok" style="${BT}font-size:12.5px;padding:6px 12px;">Przypisz</button><button class="zp-anu" style="${BG}font-size:12.5px;padding:6px 12px;">Anuluj</button></div>
+          <div class="zp-out" style="font-size:12.5px;margin-top:6px;"></div>`;
+        form.style.display = "block";
+        form.querySelector(".zp-anu").addEventListener("click", () => { form.style.display = "none"; });
+        form.querySelector(".zp-ok").addEventListener("click", async () => {
+          const osoby = [...form.querySelectorAll('input[type="checkbox"]:not(.zp-kopie):checked')].map((i) => Number(i.value));
+          if (!osoby.length) { alert("Zaznacz przynajmniej jedną osobę."); return; }
+          const kopie = form.querySelector(".zp-kopie").checked;
+          const { data, error: e2 } = await supabase.rpc("przypisz_zadanie", { p_event: z.id, p_osoby: osoby, p_kopie: kopie });
+          if (e2) { form.querySelector(".zp-out").innerHTML = `<span style="color:#c4513a;">Błąd: ${escP(e2.message)}</span>`; return; }
+          await odswiez();
+          if (typeof wczytajZadaniaHoryzont === "function") wczytajZadaniaHoryzont();
+        });
+      });
+      tresc.appendChild(row);
+    }
+
+    // ROZLICZENIE
+    tresc.appendChild(el(`<div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin:14px 0 6px;">ROZLICZENIE — zrobione (${zrobione.length})</div>`));
+    if (!zrobione.length) tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:13px;">Jeszcze nic nie odhaczone.</div>`));
+    else {
+      // licznik per osoba
+      const licznik = {};
+      zrobione.forEach((z) => { const n = z.zrobione_przez_nick || z.owner_nick || nickOf(z.zrobione_przez || z.traveler_id); licznik[n] = (licznik[n] || 0) + 1; });
+      const podsum = Object.keys(licznik).map((n) => `${escP(n)}: ${licznik[n]}`).join(" · ");
+      tresc.appendChild(el(`<div style="font-size:12px;color:#1a7158;margin-bottom:6px;">Kto ile zrobił → ${podsum}</div>`));
+      for (const z of zrobione) {
+        const kto = z.zrobione_przez_nick || z.owner_nick || nickOf(z.zrobione_przez || z.traveler_id);
+        const kiedy = z.zrobione_kiedy ? (escP(fmtData(z.zrobione_kiedy, { day: "numeric", month: "short" })) + " " + escP(fmtGodz(z.zrobione_kiedy))) : "";
+        tresc.appendChild(el(`<div style="font-size:13.5px;color:var(--ink-soft);padding:3px 0;border-bottom:1px solid var(--line);">✓ ${esc(z.tytul)} — <b>${escP(kto)}</b>${kiedy ? " · " + kiedy : ""}</div>`));
+      }
+    }
+  }
+  odswiez();
 }
 
 function formNowePlemie(wrap, btn) {
