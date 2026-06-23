@@ -575,8 +575,8 @@
         <button id="hyz-dodaj" title="Dodaj zadanie">+</button>
       </div>
       <div id="hyz-zad-propozycje"></div>
-      <div id="hyz-zad-wspolne"></div>
       <div class="m-lista" id="hyz-zad-aktywne"></div>
+      <div id="hyz-zad-wspolne"></div>
       <button class="m-zrob-naglowek" id="hyz-zrob-toggle"></button>
       <div id="hyz-zad-zrobione" style="display:none"></div>
     </div>
@@ -1988,11 +1988,14 @@ async function wczytajDzien() {
     .gte("data_czas", s.toISOString()).lte("data_czas", koniecJutra.toISOString())
     .order("data_czas", { ascending: true });
 
-  const { data: zadania = [] } = await supabase
+  const { data: zadaniaWlasne = [] } = await supabase
     .from("events").select("*")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie").eq("wspolne", false)
     .eq("status", "planowane")
     .order("pozycja", { ascending: true, nullsFirst: false });
+  // + wspólne zadania plemion (jedna pozycja u wszystkich) — żeby ekran startowy był spójny z Horyzontem
+  const { data: zadWsp = [] } = await supabase.rpc("wspolne_zadania");
+  const zadania = [...(zadaniaWlasne || []), ...((zadWsp || []).filter((z) => z.status !== "zrobione"))];
 
   const { data: caloDniowe = [] } = await supabase
     .from("events").select("tytul, data_czas")
@@ -3861,8 +3864,8 @@ async function wczytajZadaniaHoryzont() {
     ? wspolne.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj))
     : wspolne;
   renderPropozycjeZadan(propozycje);
+  renderZadaniaAktywne(fAkt, fWsp.length > 0);
   renderWspolneZadania(fWsp);
-  renderZadaniaAktywne(fAkt);
   renderZadaniaZrobione(fZrob);
   policzPropozycje();
 }
@@ -3928,11 +3931,12 @@ function renderWspolneZadania(zad) {
         <button class="ws-box" aria-label="Odhacz" style="flex:none;width:22px;height:22px;border-radius:6px;border:2px solid ${zrobione ? kolor : "var(--line)"};background:${zrobione ? kolor : "transparent"};cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;margin-top:1px;">
           ${zrobione ? `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"><path d="M5 12l5 5L20 6"/></svg>` : ""}
         </button>
-        <div style="flex:1;min-width:0;">
+        <div class="ws-tresc" style="flex:1;min-width:0;cursor:pointer;">
           <div style="font-size:14.5px;${zrobione ? "text-decoration:line-through;" : ""}">${esc(z.tytul)}</div>
           ${atryb ? `<div style="font-size:11.5px;color:#1a7158;margin-top:2px;">${atryb}</div>` : (term ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${term}</div>` : "")}
         </div></div>`);
       w.querySelector(".ws-box").addEventListener("click", () => przelaczWspolne(z, !zrobione));
+      w.querySelector(".ws-tresc").addEventListener("click", () => oknoZadania(z));
       box.appendChild(w);
     }
   }
@@ -3956,9 +3960,10 @@ async function policzPropozycje() {
   aktualizujBadgeHoryzont(count || 0);
 }
 
-function renderZadaniaAktywne(zad) {
+function renderZadaniaAktywne(zad, pokazNaglowek) {
   const lista = $("hyz-zad-aktywne");
   lista.innerHTML = "";
+  if (pokazNaglowek) lista.appendChild(el(`<div style="margin:6px 16px 4px;font-size:12px;font-weight:600;color:var(--ink-soft);">🙋 Moje zadania</div>`));
   if (!zad.length) {
     lista.appendChild(el(`<div class="m-pusto" style="margin:4px 0">Brak otwartych zadań — dodaj pierwsze powyżej.</div>`));
     return;
@@ -4096,6 +4101,7 @@ function oknoZadania(z) {
     </div>
     <div class="m-modal__akcje">
       <button class="m-btn m-btn--usun" id="z-usun">Usuń</button>
+      <button class="m-btn" id="z-na-wyd" style="background:#efece3;">→ Wydarzenie</button>
       <button class="m-btn m-btn--zapisz" id="z-zapisz">Zapisz</button>
     </div>
   </div></div>`);
@@ -4103,6 +4109,23 @@ function oknoZadania(z) {
   const zamknij = () => overlay.remove();
   overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
   overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+
+  // zmień zadanie → wydarzenie (ląduje na kalendarzu); wymaga terminu
+  overlay.querySelector("#z-na-wyd").addEventListener("click", async () => {
+    const tytul = overlay.querySelector("#z-tytul").value.trim();
+    if (!tytul) { overlay.querySelector("#z-tytul").focus(); return; }
+    const terminStr = overlay.querySelector("#z-termin").value;
+    if (!terminStr) { alert("Aby zmienić na wydarzenie, ustaw najpierw termin (datę i godzinę)."); overlay.querySelector("#z-termin").focus(); return; }
+    const [dCz, gCz] = terminStr.split("T");
+    const terminISO = isoZWarszawy(dCz, gCz || "09:00");
+    const rekord = { tytul, typ: "wydarzenie", status: "planowane", data_czas: terminISO, strefa: TZ, wspolne: false,
+      opis: overlay.querySelector("#z-opis").value.trim() || null };
+    const { error } = await supabase.from("events").update(rekord).eq("id", z.id);
+    if (error) { alert("Nie udało się zmienić na wydarzenie: " + error.message); return; }
+    zamknij();
+    wczytajZadaniaHoryzont();
+    if (typeof renderKalendarz === "function") renderKalendarz();
+  });
 
   overlay.querySelector("#z-zapisz").addEventListener("click", async () => {
     const tytul = overlay.querySelector("#z-tytul").value.trim();
