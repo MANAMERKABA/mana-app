@@ -3913,45 +3913,37 @@ function oknoWydarzenia(opcje) {
    ==================================================================== */
 /* PLEMIE_MAP (plemie_id -> {nazwa,kolor}) zadeklarowane w sekcji kalendarza; tu tylko odświeżamy */
 async function wczytajZadaniaHoryzont() {
-  // zadania OSOBISTE (moje + przyjęte zlecenia); wspólne NIE tu — przychodzą z RPC, żeby nie dublować
-  const { data: wszystkie = [] } = await supabase
+  // WSZYSTKIE moje zadania (osobiste + plemienne przypisane mnie + moje wspólne)
+  const { data: moje = [] } = await supabase
     .from("events").select("*")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie").eq("wspolne", false)
-    .neq("status", "zrobione")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
     .order("pozycja", { ascending: true, nullsFirst: false });
 
-  const { data: zrobione = [] } = await supabase
-    .from("events").select("*")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie").eq("wspolne", false)
-    .eq("status", "zrobione")
-    .order("updated_at", { ascending: false }).limit(30);
-
-  // WSPÓLNE zadania plemion (jedna pozycja u wszystkich) + mapa plemion (nazwa/kolor)
-  const [rW, rP] = await Promise.all([
-    supabase.rpc("wspolne_zadania"),
-    supabase.rpc("moje_plemiona_full"),
-  ]);
-  const wspolne = rW.data || [];
+  // plemiona + zadania KAŻDEGO plemienia (wszystkich członków) via RPC — do grup z podglądem
+  const rP = await supabase.rpc("moje_plemiona_full");
+  const plemiona = rP.data || [];
   PLEMIE_MAP = {};
-  (rP.data || []).forEach((p) => { PLEMIE_MAP[p.id] = { nazwa: p.nazwa, kolor: p.kolor }; });
+  plemiona.forEach((p) => { PLEMIE_MAP[p.id] = { nazwa: p.nazwa, kolor: p.kolor }; });
+  const perPlemie = {};
+  await Promise.all(plemiona.map(async (p) => {
+    const r = await supabase.rpc("zadania_plemienia", { p_plemie: p.id });
+    perPlemie[p.id] = r.data || [];
+  }));
 
-  // zadania plemienne czekające na przyjęcie (status=proponowane) — NIE wchodzą do aktywnych, dopóki nie zatwierdzone
-  const propozycje = (wszystkie || []).filter((z) => z.status === "proponowane");
-  const aktywne = (wszystkie || []).filter((z) => z.status !== "proponowane");
+  // INBOX: moje zadania czekające na przyjęcie (zlecenia)
+  const propozycje = (moje || []).filter((z) => z.status === "proponowane");
+  // MOJE ZADANIA = czysto osobiste (bez plemienia); plemienne idą do grup plemion
+  let mojeBez = (moje || []).filter((z) => !z.plemie_id && z.status !== "zrobione" && z.status !== "proponowane");
+  let mojeBezZrob = (moje || []).filter((z) => !z.plemie_id && z.status === "zrobione").slice(0, 30);
+  if (zapytanieSzukaj) {
+    mojeBez = mojeBez.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj));
+    mojeBezZrob = mojeBezZrob.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj));
+  }
 
-  const fAkt = zapytanieSzukaj
-    ? aktywne.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj))
-    : aktywne;
-  const fZrob = zapytanieSzukaj
-    ? (zrobione || []).filter((z) => pasujeDoSzukania(z, zapytanieSzukaj))
-    : (zrobione || []);
-  const fWsp = zapytanieSzukaj
-    ? wspolne.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj))
-    : wspolne;
   renderPropozycjeZadan(propozycje);
-  renderZadaniaAktywne(fAkt, fWsp.length > 0);
-  renderWspolneZadania(fWsp);
-  renderZadaniaZrobione(fZrob);
+  renderZadaniaAktywne(mojeBez, plemiona.length > 0);
+  renderPlemieGrupy(plemiona, perPlemie);
+  renderZadaniaZrobione(mojeBezZrob);
   policzPropozycje();
 }
 function renderPropozycjeZadan(prop) {
@@ -3989,42 +3981,79 @@ async function odrzucZadanie(z) {
 }
 
 /* WSPÓLNE zadania plemion — jedna pozycja u wszystkich; kto odhaczy, widzą wszyscy (kto/kiedy) */
-function renderWspolneZadania(zad) {
+/* GRUPY PLEMION w zakładce Zadania — per plemię: widoczne (wspólne + przypisane mnie),
+   ▾ Pozostałe (zadania innych — podgląd na rozwinięcie), ▾ Zrobione (z kto/kiedy). */
+function renderPlemieGrupy(plemiona, perPlemie) {
   const box = $("hyz-zad-wspolne");
   if (!box) return;
   box.innerHTML = "";
-  if (!zad || !zad.length) return;
-  // grupowanie per plemię
-  const grupy = {};
-  for (const z of zad) { (grupy[z.plemie_id] = grupy[z.plemie_id] || []).push(z); }
-  for (const pid of Object.keys(grupy)) {
-    const lista = grupy[pid];
-    const kolor = lista[0].plemie_kolor || (PLEMIE_MAP[pid] && PLEMIE_MAP[pid].kolor) || "#1f9e8f";
-    const nazwa = lista[0].plemie_nazwa || (PLEMIE_MAP[pid] && PLEMIE_MAP[pid].nazwa) || "plemię";
-    const czyZakupy = lista.some((z) => z.kategoria === "zakupy");
-    const naglowek = czyZakupy ? `🛒 Lista zakupów · ${escP(nazwa)}` : `👥 Wspólne · ${escP(nazwa)}`;
-    box.appendChild(el(`<div style="display:flex;align-items:center;gap:7px;margin:8px 16px 4px;font-size:12px;font-weight:600;color:var(--ink-soft);">
-      <span style="width:10px;height:10px;border-radius:50%;background:${kolor};flex:none;"></span>${naglowek}</div>`));
-    for (const z of lista) {
-      const zrobione = z.status === "zrobione";
-      let atryb = "";
-      if (zrobione && z.zrobione_kiedy) {
-        atryb = `✓ ${escP(z.zrobione_przez_nick || "ktoś")} · ${escP(fmtData(z.zrobione_kiedy, { day: "numeric", month: "short" }))} ${escP(fmtGodz(z.zrobione_kiedy))}`;
-      }
-      const term = (!zrobione && z.data_czas) ? (escP(fmtData(z.data_czas, { day: "numeric", month: "short" })) + " · " + escP(fmtGodz(z.data_czas))) : "";
-      const w = el(`<div style="display:flex;align-items:flex-start;gap:9px;background:var(--surface);border:1px solid var(--line);border-left:3px solid ${kolor};border-radius:11px;padding:9px 11px;margin:0 16px 6px;${zrobione ? "opacity:.62;" : ""}">
-        <button class="ws-box" aria-label="Odhacz" style="flex:none;width:22px;height:22px;border-radius:6px;border:2px solid ${zrobione ? kolor : "var(--line)"};background:${zrobione ? kolor : "transparent"};cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;margin-top:1px;">
-          ${zrobione ? `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"><path d="M5 12l5 5L20 6"/></svg>` : ""}
-        </button>
-        <div class="ws-tresc" style="flex:1;min-width:0;cursor:pointer;">
-          <div style="font-size:14.5px;${zrobione ? "text-decoration:line-through;" : ""}">${esc(z.tytul)}</div>
-          ${atryb ? `<div style="font-size:11.5px;color:#1a7158;margin-top:2px;">${atryb}</div>` : (term ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${term}</div>` : "")}
-        </div></div>`);
-      w.querySelector(".ws-box").addEventListener("click", () => przelaczWspolne(z, !zrobione));
-      w.querySelector(".ws-tresc").addEventListener("click", () => oknoZadania(z));
-      box.appendChild(w);
-    }
+  const me = TRAVELER && TRAVELER.id;
+  for (const p of (plemiona || [])) {
+    let tasks = perPlemie[p.id] || [];
+    if (zapytanieSzukaj) tasks = tasks.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj));
+    const kolor = p.kolor || "#1f9e8f";
+    const aktywne = tasks.filter((z) => z.status !== "zrobione");
+    const zrob = tasks.filter((z) => z.status === "zrobione");
+    // widoczne: wspólne + przypisane mnie (moje proponowane są w skrzynce, nie tu)
+    const widoczne = aktywne.filter((z) => z.wspolne || (z.traveler_id === me && z.status !== "proponowane"));
+    // pozostałe: zadania innych osób (w tym ich propozycje czekające na przyjęcie)
+    const reszta = aktywne.filter((z) => !z.wspolne && z.traveler_id !== me);
+    if (!widoczne.length && !reszta.length && !zrob.length) continue;
+
+    box.appendChild(el(`<div style="display:flex;align-items:center;gap:7px;margin:12px 16px 5px;font-size:12px;font-weight:700;color:var(--ink-soft);">
+      <span style="width:11px;height:11px;border-radius:50%;background:${kolor};flex:none;"></span>${escP(p.nazwa)}</div>`));
+
+    for (const z of widoczne) box.appendChild(itemPlemieMoje(z, kolor));
+    if (!widoczne.length) box.appendChild(el(`<div style="font-size:12.5px;color:var(--ink-soft);margin:0 16px 4px;">Brak Twoich zadań tutaj.</div>`));
+
+    if (reszta.length) box.appendChild(sekcjaRozwijalna(`Pozostałe (${reszta.length})`, kolor, reszta.map((z) => itemPlemieInni(z))));
+    if (zrob.length) box.appendChild(sekcjaRozwijalna(`Zrobione (${zrob.length})`, kolor, zrob.map((z) => itemPlemieZrobione(z))));
   }
+}
+/* widoczny element plemienny (wspólny lub przypisany mnie) — checkbox + klik = edycja */
+function itemPlemieMoje(z, kolor) {
+  const term = z.data_czas ? (escP(fmtData(z.data_czas, { day: "numeric", month: "short" })) + " · " + escP(fmtGodz(z.data_czas))) : "";
+  const meta = z.wspolne ? ("👥 wspólne" + (term ? " · " + term : "")) : (term || "do zrobienia");
+  const w = el(`<div style="display:flex;align-items:flex-start;gap:9px;background:var(--surface);border:1px solid var(--line);border-left:3px solid ${kolor};border-radius:11px;padding:9px 11px;margin:0 16px 6px;">
+    <button class="pm-box" aria-label="Odhacz" style="flex:none;width:22px;height:22px;border-radius:6px;border:2px solid var(--line);background:transparent;cursor:pointer;margin-top:1px;"></button>
+    <div class="pm-tresc" style="flex:1;min-width:0;cursor:pointer;">
+      <div style="font-size:14.5px;">${esc(z.tytul)}</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${meta}</div>
+    </div></div>`);
+  w.querySelector(".pm-box").addEventListener("click", async () => {
+    if (z.wspolne) { przelaczWspolne(z, true); }
+    else { const ok = await ustawStatus(z.id, "zrobione"); if (ok) wczytajZadaniaHoryzont(); }
+  });
+  w.querySelector(".pm-tresc").addEventListener("click", () => oknoZadania(z));
+  return w;
+}
+/* zadanie INNEJ osoby — tylko podgląd (kto + status) */
+function itemPlemieInni(z) {
+  const stan = STATUS_ETYK[z.status] || z.status;
+  const term = z.data_czas ? (" · " + escP(fmtData(z.data_czas, { day: "numeric", month: "short" })) + " " + escP(fmtGodz(z.data_czas))) : "";
+  return el(`<div style="margin:0 16px 5px;padding:7px 10px;border:1px dashed var(--line);border-radius:10px;">
+    <div style="font-size:13.5px;">${esc(z.tytul)}</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${escP(z.owner_nick || "ktoś")} · ${escP(stan)}${term}</div></div>`);
+}
+/* zrobione w plemieniu — rozliczenie kto/kiedy */
+function itemPlemieZrobione(z) {
+  const kto = z.zrobione_przez_nick || z.owner_nick || "ktoś";
+  const kiedy = z.zrobione_kiedy ? (" · " + escP(fmtData(z.zrobione_kiedy, { day: "numeric", month: "short" })) + " " + escP(fmtGodz(z.zrobione_kiedy))) : "";
+  return el(`<div style="margin:0 16px 4px;font-size:13px;color:var(--ink-soft);"><span style="text-decoration:line-through;">${esc(z.tytul)}</span> — <b>${escP(kto)}</b>${kiedy}</div>`);
+}
+/* sekcja rozwijalna (domyślnie zwinięta) */
+function sekcjaRozwijalna(etykieta, kolor, elementy) {
+  const wrap = el(`<div style="margin:0 16px 8px;"></div>`);
+  const btn = el(`<button style="background:none;border:none;color:var(--ink-soft);font-size:12px;cursor:pointer;padding:2px 0;">▾ ${escP(etykieta)}</button>`);
+  const tresc = el(`<div style="display:none;margin-top:4px;"></div>`);
+  elementy.forEach((e) => tresc.appendChild(e));
+  btn.addEventListener("click", () => {
+    const otw = tresc.style.display === "block";
+    tresc.style.display = otw ? "none" : "block";
+    btn.textContent = (otw ? "▾ " : "▴ ") + etykieta;
+  });
+  wrap.appendChild(btn); wrap.appendChild(tresc);
+  return wrap;
 }
 async function przelaczWspolne(z, zrobione) {
   const { error } = await supabase.rpc("przelacz_wspolne", { p_event: z.id, p_zrobione: zrobione });
