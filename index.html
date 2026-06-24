@@ -588,6 +588,7 @@
         <button id="hyz-dodaj" title="Dodaj zadanie">+</button>
       </div>
       <div id="hyz-zad-propozycje"></div>
+      <div id="hyz-zad-wyd-aktywne"></div>
       <div class="m-lista" id="hyz-zad-aktywne"></div>
       <div id="hyz-zad-wspolne"></div>
       <button class="m-zrob-naglowek" id="hyz-zrob-toggle"></button>
@@ -1579,15 +1580,17 @@ function kartaSejf(d) {
         });
         if (error) throw error;
       }
-      if (waznosc) {
-        const przypom = new Date(new Date(waznosc + "T09:00").getTime() - 14 * 86400000);
+      if (waznosc && !edycja) {
+        // WYDARZENIE AKTYWNE na prawdziwej dacie ważności + wyprzedzenie 14 dni (wskoczy do zadań 2 tyg. przed)
         await supabase.from("events").insert({
-          traveler_id: TRAVELER.id, typ: "zadanie", tytul: `Sejf: odnowić „${tytul}" (ważne do ${waznosc})`,
-          status: "planowane", priorytet: "normalny", data_czas: isoZWarszawy(dataKalISO(przypom), "09:00"), strefa: TZ, kategoria: "inne",
+          traveler_id: TRAVELER.id, typ: "wydarzenie", caly_dzien: true,
+          tytul: `Odnowić: ${tytul}`, status: "planowane",
+          data_czas: isoZeStrefy(waznosc, "00:00", TZ), koniec: isoZeStrefy(nastepnyDzienISO(waznosc), "00:00", TZ),
+          strefa: TZ, kategoria: "inne", uprzedz_dni: 14,
         });
       }
       zamknij();
-      trzosToast(waznosc ? "Zapisano + przypomnienie w Horyzoncie ✓" : "Zapisano do Sejfu ✓");
+      trzosToast(waznosc && !edycja ? "Zapisano + termin w Horyzoncie ✓" : "Zapisano do Sejfu ✓");
       renderSejf();
     } catch (e) {
       btn.disabled = false; btn.textContent = "Zapisz";
@@ -3946,6 +3949,9 @@ function oknoWydarzenia(opcje) {
         <label>Powtarzaj do (puste = bez końca)</label>
         <input type="date" id="w-powt-do" value="${ev && ev.powtarzanie_do ? czesciWarszawy(ev.powtarzanie_do).dataISO : ""}">
       </div>
+      <label>Uprzedź o ile dni (puste = zwykłe wydarzenie)</label>
+      <input type="number" id="w-uprzedz" min="0" max="365" placeholder="np. 14 — wskoczy jako zadanie 14 dni przed" value="${ev && ev.uprzedz_dni != null ? ev.uprzedz_dni : ""}">
+      <div style="font-size:11.5px;color:var(--ink-soft);margin:-2px 0 4px;">Ustawienie tego zamienia wydarzenie w <b>aktywne</b>: w tym oknie pojawi się na liście zadań do odhaczenia.</div>
       <label>Opis</label>
       <textarea id="w-opis">${ev ? esc(ev.opis || "") : ""}</textarea>
       <label>Lokalizacja</label>
@@ -4120,12 +4126,15 @@ function oknoWydarzenia(opcje) {
     }
     const powtVal = overlay.querySelector("#w-powt").value;
     const powtDoStr = overlay.querySelector("#w-powt-do").value;
+    const uprzedzRaw = overlay.querySelector("#w-uprzedz").value;
+    const uprzedz = (uprzedzRaw !== "" && Number(uprzedzRaw) >= 0) ? Math.floor(Number(uprzedzRaw)) : null;
     const rekord = {
       tytul, data_czas: dataCzas, koniec, caly_dzien: calyD, strefa: strefaWyd,
       kategoria: wybranaKat,
       plemie_id: ktoSel.value || null,
       powtarzalnosc: powtVal,
       powtarzanie_do: (powtVal !== "jednorazowe" && powtDoStr) ? isoZeStrefy(powtDoStr, "00:00", TZ) : null,
+      uprzedz_dni: uprzedz,
       opis: overlay.querySelector("#w-opis").value.trim() || null,
       lokalizacja: overlay.querySelector("#w-lok").value.trim() || null,
     };
@@ -4185,6 +4194,15 @@ async function wczytajZadaniaHoryzont() {
     perPlemie[p.id] = r.data || [];
   }));
 
+  // WYDARZENIA AKTYWNE (z wyprzedzeniem) — w otwartym oknie wskakują jako zadania do odhaczenia
+  const { data: wydAkt = [] } = await supabase.from("events").select("*")
+    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
+    .not("uprzedz_dni", "is", null).neq("status", "zrobione")
+    .or("powtarzalnosc.is.null,powtarzalnosc.eq.jednorazowe");
+  const terazMs = Date.now();
+  let aktywneWyd = (wydAkt || []).filter((e) => (new Date(e.data_czas).getTime() - (e.uprzedz_dni || 0) * 86400000) <= terazMs);
+  if (zapytanieSzukaj) aktywneWyd = aktywneWyd.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj));
+
   // INBOX: moje zadania czekające na przyjęcie (zlecenia)
   const propozycje = (moje || []).filter((z) => z.status === "proponowane");
   // MOJE ZADANIA = czysto osobiste (bez plemienia); plemienne idą do grup plemion
@@ -4196,10 +4214,36 @@ async function wczytajZadaniaHoryzont() {
   }
 
   renderPropozycjeZadan(propozycje);
+  renderWydarzeniaAktywne(aktywneWyd);
   renderZadaniaAktywne(mojeBez, plemiona.length > 0);
   renderPlemieGrupy(plemiona, perPlemie);
   renderZadaniaZrobione(mojeBezZrob);
   policzPropozycje();
+}
+/* wydarzenia AKTYWNE w oknie wyprzedzenia — renderowane jak zadania (z odhaczaniem) */
+function renderWydarzeniaAktywne(lista) {
+  const box = $("hyz-zad-wyd-aktywne");
+  if (!box) return;
+  box.innerHTML = "";
+  if (!lista || !lista.length) return;
+  const teraz = new Date();
+  box.appendChild(el(`<div style="margin:6px 16px 4px;font-size:12px;font-weight:600;color:#b8842a;">⏳ Terminy do domknięcia (${lista.length})</div>`));
+  lista.sort((a, b) => new Date(a.data_czas) - new Date(b.data_czas));
+  for (const e of lista) {
+    const data = new Date(e.data_czas);
+    const zalegle = data < teraz;
+    const term = fmtData(e.data_czas, { day: "numeric", month: "short", year: "numeric" }) + (e.caly_dzien ? "" : " · " + fmtGodz(e.data_czas));
+    const meta = (zalegle ? "po terminie — " : "termin ") + term;
+    const w = el(`<div style="display:flex;align-items:flex-start;gap:9px;background:#fff8ec;border:1px solid #f0dcae;border-radius:11px;padding:9px 11px;margin:0 16px 6px;">
+      <button class="wa-box" aria-label="Domknij" style="flex:none;width:22px;height:22px;border-radius:6px;border:2px solid ${zalegle ? "#c4513a" : "var(--line)"};background:transparent;cursor:pointer;margin-top:1px;"></button>
+      <div class="wa-tresc" style="flex:1;min-width:0;cursor:pointer;">
+        <div style="font-size:14.5px;">${esc(e.tytul)}</div>
+        <div style="font-size:11.5px;color:${zalegle ? "#c4513a" : "var(--ink-soft)"};margin-top:2px;">${esc(meta)}</div>
+      </div></div>`);
+    w.querySelector(".wa-box").addEventListener("click", async () => { const ok = await ustawStatus(e.id, "zrobione"); if (ok) { wczytajZadaniaHoryzont(); if (typeof renderKalendarz === "function") renderKalendarz(); } });
+    w.querySelector(".wa-tresc").addEventListener("click", () => oknoWydarzenia({ event: e }));
+    box.appendChild(w);
+  }
 }
 function renderPropozycjeZadan(prop) {
   const box = $("hyz-zad-propozycje");
