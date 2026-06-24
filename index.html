@@ -385,10 +385,16 @@
   /* przełączanie warstw zakładkami — także na mobile */
   #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="zadania"],
   #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="plemie"],
+  #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="zakupy"],
   #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="kalendarz"],
   #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="plemie"],
+  #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="zakupy"],
   #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="kalendarz"],
-  #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="zadania"] { display: none; }
+  #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="zadania"],
+  #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="zakupy"],
+  #m-widok-horyzont[data-tab="zakupy"] > .m-warstwa[data-typ="kalendarz"],
+  #m-widok-horyzont[data-tab="zakupy"] > .m-warstwa[data-typ="zadania"],
+  #m-widok-horyzont[data-tab="zakupy"] > .m-warstwa[data-typ="plemie"] { display: none; }
   #m-widok-horyzont > .m-warstwa > .m-warstwa__head { display: none; }
   .m-mini-mies__bar {
     display: flex; align-items: center; justify-content: space-between;
@@ -446,10 +452,16 @@
     #m-widok-horyzont > .m-warstwa { grid-column: 2; }
     #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="zadania"],
     #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="plemie"],
+    #m-widok-horyzont[data-tab="kalendarz"] > .m-warstwa[data-typ="zakupy"],
     #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="kalendarz"],
     #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="plemie"],
+    #m-widok-horyzont[data-tab="zadania"] > .m-warstwa[data-typ="zakupy"],
     #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="kalendarz"],
-    #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="zadania"] { display: none; }
+    #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="zadania"],
+    #m-widok-horyzont[data-tab="plemie"] > .m-warstwa[data-typ="zakupy"],
+    #m-widok-horyzont[data-tab="zakupy"] > .m-warstwa[data-typ="kalendarz"],
+    #m-widok-horyzont[data-tab="zakupy"] > .m-warstwa[data-typ="zadania"],
+    #m-widok-horyzont[data-tab="zakupy"] > .m-warstwa[data-typ="plemie"] { display: none; }
     /* taby zastępują nagłówki warstw na desktopie */
     #m-widok-horyzont > .m-warstwa > .m-warstwa__head { display: none; }
     .m-tg__scroll { max-height: 72vh; }
@@ -555,6 +567,7 @@
       <button class="m-tab m-tab--on" data-tab="kalendarz" role="tab">Kalendarz</button>
       <button class="m-tab" data-tab="zadania" role="tab">Zadania</button>
       <button class="m-tab" data-tab="plemie" role="tab">Plemię</button>
+      <button class="m-tab" data-tab="zakupy" role="tab">Zakupy</button>
     </div>
     <div class="m-warstwa" data-typ="kalendarz">
       <div class="m-warstwa__head">
@@ -588,6 +601,14 @@
       </div>
       <div id="hyz-plemie"></div>
     </div>
+
+    <div class="m-warstwa" data-typ="zakupy">
+      <div class="m-warstwa__head">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+        <span>Zakupy</span>
+      </div>
+      <div id="hyz-zakupy"></div>
+    </div>
     <div class="m-stopka"></div>
   </div>
 
@@ -603,6 +624,21 @@
       <button id="trzos-dodaj-koszt" style="background:#c4513a;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Koszt (paragon)</button>
     </div>
     <div id="trzos-lista" style="padding:6px 16px 30px;"></div>
+    <div class="m-stopka"></div>
+  </div>
+
+  <div id="m-widok-sejf" style="display:none">
+    <div class="m-hyz-bar">
+      <button class="m-back" id="m-back-sejf">&#8592; Ekran startowy</button>
+      <span class="m-hyz-tytul">Sejf</span>
+      <input type="search" id="sejf-szukaj" class="m-szukaj" placeholder="Szukaj w sejfie…" aria-label="Szukaj">
+      <span class="m-user"></span>
+    </div>
+    <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button id="sejf-dodaj" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Dokument</button>
+      <span style="font-size:12px;color:var(--ink-soft);">umowy · dowód rej. · polisy — pod kluczem</span>
+    </div>
+    <div id="sejf-lista" style="padding:6px 16px 30px;"></div>
     <div class="m-stopka"></div>
   </div>
 
@@ -633,6 +669,8 @@ const POKOJE = [
     ikona: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
   { nazwa: "Trzos", zywy: true, akcja: "trzos",
     ikona: '<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M16 14h2"/>' },
+  { nazwa: "Sejf", zywy: true, akcja: "sejf",
+    ikona: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5V6M15.5 12H18M12 15.5V18M8.5 12H6"/>' },
   { nazwa: "Egzamin", zywy: true, akcja: "egzamin",
     ikona: '<path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5"/>' },
   { nazwa: "Puls", zywy: false,
@@ -1206,11 +1244,13 @@ function pokazWidok(nazwa) {
   $("m-widok-ekran").style.display = nazwa === "ekran" ? "" : "none";
   $("m-widok-horyzont").style.display = nazwa === "horyzont" ? "" : "none";
   $("m-widok-trzos").style.display = nazwa === "trzos" ? "" : "none";
+  $("m-widok-sejf").style.display = nazwa === "sejf" ? "" : "none";
   $("m-widok-egzamin").style.display = nazwa === "egzamin" ? "" : "none";
   window.scrollTo(0, 0);
 }
 $("m-back").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-trzos").addEventListener("click", () => pokazWidok("ekran"));
+$("m-back-sejf").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-egzamin").addEventListener("click", () => pokazWidok("ekran"));
 
 /* ════════════════════════════════════════════════════════════════════
@@ -1420,6 +1460,154 @@ async function usunTrzos(t) {
 $("trzos-dodaj-przychod").addEventListener("click", () => kartaTrzos("przychod", null));
 $("trzos-dodaj-koszt").addEventListener("click", () => kartaTrzos("koszt", null));
 
+/* ====================================================================
+   SEJF — pokój dokumentów (reużywa tabeli `dokumenty` + bucket `dokumenty`, jak Trzos).
+   Dane wrażliwe: RLS na własne wpisy + bucket prywatny (signed URL).
+   ==================================================================== */
+const SEJF_PRZEKLADKI = ["Pojazd", "Dom / Mieszkanie", "Ubezpieczenia", "Umowy", "Zdrowie", "Finanse", "Inne"];
+let sejfSzukaj = "";
+function otworzSejf() { pokazWidok("sejf"); renderSejf(); }
+
+async function renderSejf() {
+  const lista = $("sejf-lista");
+  lista.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
+  const { data = [], error } = await supabase.from("dokumenty").select("*")
+    .eq("traveler_id", TRAVELER.id).eq("kontekst", "sejf")
+    .order("data_utworzenia", { ascending: false });
+  if (error) { lista.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(error.message)}</div>`; return; }
+  let docs = data || [];
+  if (sejfSzukaj) {
+    const q = sejfSzukaj.toLowerCase();
+    docs = docs.filter((d) => [d.tytul, d.opis, d.kategoria, d.typ].some((x) => (x || "").toLowerCase().includes(q)));
+  }
+  lista.innerHTML = "";
+  if (!docs.length) { lista.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">${sejfSzukaj ? "Nic nie znaleziono." : "Sejf pusty — dodaj pierwszy dokument (umowa, dowód rej., polisa)."}</div>`)); return; }
+  const grupy = {};
+  docs.forEach((d) => { const k = d.kategoria || "Inne"; (grupy[k] = grupy[k] || []).push(d); });
+  for (const k of Object.keys(grupy)) {
+    lista.appendChild(el(`<div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin:12px 0 6px;">📂 ${escP(k)}</div>`));
+    for (const d of grupy[k]) lista.appendChild(kartaDokSejf(d));
+  }
+}
+
+function kartaDokSejf(d) {
+  const dzis = new Date();
+  let waznHtml = "";
+  if (d.data_waznosci) {
+    const w = new Date(d.data_waznosci + "T00:00");
+    const dni = Math.round((w - dzis) / 86400000);
+    const kolor = dni < 0 ? "#c4513a" : (dni <= 30 ? "#d98324" : "var(--ink-soft)");
+    const txt = dni < 0 ? `ważność minęła · ${fmtData(d.data_waznosci, { day: "numeric", month: "short", year: "numeric" })}` : `ważne do ${fmtData(d.data_waznosci, { day: "numeric", month: "short", year: "numeric" })}`;
+    waznHtml = `<div style="font-size:11.5px;color:${kolor};margin-top:2px;">⏳ ${esc(txt)}</div>`;
+  }
+  const w = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
+    <div style="font-size:15px;font-weight:500;">${esc(d.tytul || "(bez tytułu)")}</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${esc(d.typ || "dokument")}${d.data_dokumentu ? " · " + esc(fmtData(d.data_dokumentu, { day: "numeric", month: "short", year: "numeric" })) : ""}${d.plik_url ? " · 📎 plik" : ""}</div>
+    ${waznHtml}
+    ${d.opis ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;white-space:pre-wrap;">${esc(d.opis)}</div>` : ""}
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+      ${d.plik_url ? `<button class="sj-otw" style="${BG}font-size:12px;padding:5px 10px;">📄 Otwórz</button>` : ""}
+      <button class="sj-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
+      <button class="sj-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
+    </div></div>`);
+  if (d.plik_url) w.querySelector(".sj-otw").addEventListener("click", () => otworzDokSejf(d.plik_url));
+  w.querySelector(".sj-edit").addEventListener("click", () => kartaSejf(d));
+  w.querySelector(".sj-usun").addEventListener("click", () => usunSejf(d));
+  return w;
+}
+
+async function otworzDokSejf(sciezka) {
+  const { data, error } = await supabase.storage.from("dokumenty").createSignedUrl(sciezka, 300);
+  if (error || !data) { trzosToast("Nie udało się otworzyć dokumentu."); return; }
+  window.open(data.signedUrl, "_blank");
+}
+
+function kartaSejf(d) {
+  const edycja = !!d;
+  const opcjePrzek = SEJF_PRZEKLADKI.map((k) => `<option value="${escP(k)}"${d && d.kategoria === k ? " selected" : ""}>${escP(k)}</option>`).join("");
+  const ov = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">${edycja ? "Dokument" : "Nowy dokument"}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form">
+      <label>Tytuł</label>
+      <input type="text" id="sj-tytul" maxlength="200" value="${edycja ? esc(d.tytul || "") : ""}" placeholder="np. Dowód rejestracyjny — Mercedes GLC">
+      <div class="m-form__row">
+        <div><label>Przekładka</label><select id="sj-kat">${opcjePrzek}</select></div>
+        <div><label>Rodzaj</label><input type="text" id="sj-typ" maxlength="60" value="${edycja ? esc(d.typ || "") : ""}" placeholder="umowa / polisa / dowód"></div>
+      </div>
+      <div class="m-form__row">
+        <div><label>Data dokumentu</label><input type="date" id="sj-data" value="${edycja && d.data_dokumentu ? d.data_dokumentu : ""}"></div>
+        <div><label>Ważny do (opcjonalnie)</label><input type="date" id="sj-waznosc" value="${edycja && d.data_waznosci ? d.data_waznosci : ""}"></div>
+      </div>
+      <label>Notatki / kontakt (telefon, osoba, miejsce)</label>
+      <textarea id="sj-opis">${edycja ? esc(d.opis || "") : ""}</textarea>
+      ${edycja ? "" : `<label>Plik (skan / zdjęcie / PDF) — opcjonalnie</label><input type="file" id="sj-plik" accept="image/*,application/pdf">`}
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">„Ważny do" doda przypomnienie do Horyzontu (2 tyg. wcześniej).</div>
+    </div>
+    <div class="m-modal__akcje"><button class="m-btn m-btn--zapisz" id="sj-zapisz">Zapisz</button></div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zamknij = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  ov.querySelector("#sj-zapisz").addEventListener("click", async () => {
+    const tytul = ov.querySelector("#sj-tytul").value.trim();
+    if (!tytul) { ov.querySelector("#sj-tytul").focus(); return; }
+    const kategoria = ov.querySelector("#sj-kat").value;
+    const typ = ov.querySelector("#sj-typ").value.trim() || "dokument";
+    const dataDok = ov.querySelector("#sj-data").value || null;
+    const waznosc = ov.querySelector("#sj-waznosc").value || null;
+    const opis = ov.querySelector("#sj-opis").value.trim() || null;
+    const btn = ov.querySelector("#sj-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
+    try {
+      if (edycja) {
+        const { error } = await supabase.from("dokumenty").update({ tytul, kategoria, typ, data_dokumentu: dataDok, data_waznosci: waznosc, opis }).eq("id", d.id);
+        if (error) throw error;
+      } else {
+        let plik_url = null, mime = null;
+        const plik = ov.querySelector("#sj-plik").files[0] || null;
+        if (plik) {
+          const ext = (plik.name.split(".").pop() || "bin").toLowerCase();
+          const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
+          const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, plik, { contentType: plik.type || undefined, upsert: false });
+          if (upErr) throw upErr;
+          plik_url = sciezka; mime = plik.type || null;
+        }
+        const { error } = await supabase.from("dokumenty").insert({
+          traveler_id: TRAVELER.id, org_id: null, typ, kontekst: "sejf",
+          plik_url, mime, zrodlo: plik ? "plik" : "reczny", ocr_status: plik ? "oczekuje" : null,
+          tytul, kategoria, data_dokumentu: dataDok, data_waznosci: waznosc, opis,
+        });
+        if (error) throw error;
+      }
+      if (waznosc) {
+        const przypom = new Date(new Date(waznosc + "T09:00").getTime() - 14 * 86400000);
+        await supabase.from("events").insert({
+          traveler_id: TRAVELER.id, typ: "zadanie", tytul: `Sejf: odnowić „${tytul}" (ważne do ${waznosc})`,
+          status: "planowane", priorytet: "normalny", data_czas: isoZWarszawy(dataKalISO(przypom), "09:00"), strefa: TZ, kategoria: "inne",
+        });
+      }
+      zamknij();
+      trzosToast(waznosc ? "Zapisano + przypomnienie w Horyzoncie ✓" : "Zapisano do Sejfu ✓");
+      renderSejf();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "Zapisz";
+      trzosToast("Błąd: " + (e.message || e));
+    }
+  });
+}
+
+async function usunSejf(d) {
+  if (!confirm(`Usunąć „${d.tytul || "dokument"}" z Sejfu?`)) return;
+  if (d.plik_url) { try { await supabase.storage.from("dokumenty").remove([d.plik_url]); } catch (e) {} }
+  const { error } = await supabase.from("dokumenty").delete().eq("id", d.id);
+  if (error) { trzosToast("Błąd: " + error.message); return; }
+  trzosToast("Usunięto.");
+  renderSejf();
+}
+
+$("sejf-dodaj").addEventListener("click", () => kartaSejf(null));
+$("sejf-szukaj").addEventListener("input", (e) => { sejfSzukaj = e.target.value.trim(); renderSejf(); });
+
 /* klikalne nagłówki sekcji na ekranie startowym — wchodzą w Horyzont */
 function wpinajKlik(elem, fn) {
   elem.addEventListener("click", fn);
@@ -1439,6 +1627,7 @@ $("m-hyz-tabs").addEventListener("click", (ev) => {
   $("m-hyz-tabs").querySelectorAll(".m-tab").forEach((b) =>
     b.classList.toggle("m-tab--on", b.dataset.tab === t));
   if (t === "plemie") renderPlemie();
+  if (t === "zakupy") renderZakupy();
 });
 
 /* ===== PLEMIĘ (Horyzont) ===== */
@@ -2052,6 +2241,7 @@ function renderPokoje() {
       </span><span class="m-room__name">${esc(p.nazwa)}</span>${badge}</button>`);
     if (p.akcja === "horyzont") { btn.addEventListener("click", otworzHoryzont); policzPropozycje(); }
     if (p.akcja === "trzos") btn.addEventListener("click", otworzTrzos);
+    if (p.akcja === "sejf") btn.addEventListener("click", otworzSejf);
     if (p.akcja === "egzamin") btn.addEventListener("click", otworzEgzamin);
     wrap.appendChild(btn);
   }
@@ -2080,7 +2270,7 @@ async function wczytajDzien() {
     .order("pozycja", { ascending: true, nullsFirst: false });
   // + wspólne zadania plemion (jedna pozycja u wszystkich) — żeby ekran startowy był spójny z Horyzontem
   const { data: zadWsp = [] } = await supabase.rpc("wspolne_zadania");
-  const zadania = [...(zadaniaWlasne || []), ...((zadWsp || []).filter((z) => z.status !== "zrobione"))];
+  const zadania = [...(zadaniaWlasne || []), ...((zadWsp || []).filter((z) => z.status !== "zrobione" && z.kategoria !== "zakupy"))];
 
   const { data: caloDniowe = [] } = await supabase
     .from("events").select("tytul, data_czas")
@@ -3355,19 +3545,59 @@ function liniaPlemie(e) {
   const obcy = e.traveler_id !== (TRAVELER && TRAVELER.id);
   return (obcy ? (OSOBA_MAP[e.traveler_id] || "ktoś") + " · " : "") + nazwa;
 }
+/* rozwija REGUŁĘ cykliczną na wystąpienia w oknie [ws, we] (model regułowy — jeden wiersz = reguła) */
+function rozwinCykliczne(ev, ws, we) {
+  const freq = ev.powtarzalnosc;
+  if (!freq || freq === "jednorazowe") return [];
+  const baseMs = new Date(ev.data_czas).getTime();
+  const dur = ev.koniec ? (new Date(ev.koniec).getTime() - baseMs) : 0;
+  const endSeria = ev.powtarzanie_do ? (new Date(ev.powtarzanie_do).getTime() + 86400000) : Infinity; // wliczając dzień końcowy
+  const wsMs = ws.getTime(), weMs = we.getTime();
+  const out = [];
+  const d = new Date(baseMs);
+  // szybkie przewinięcie dla dziennie/tygodniowo, by nie iterować od bardzo dawnej daty
+  if ((freq === "dziennie" || freq === "tygodniowo") && d.getTime() < wsMs) {
+    const stepDays = freq === "dziennie" ? 1 : 7;
+    const skok = Math.floor((wsMs - dur - d.getTime()) / (stepDays * 86400000));
+    if (skok > 0) d.setDate(d.getDate() + skok * stepDays);
+  }
+  let guard = 0;
+  while (d.getTime() <= weMs && d.getTime() < endSeria && guard++ < 1500) {
+    const t = d.getTime();
+    if (t >= baseMs && (t + dur) >= wsMs) {
+      out.push({ ...ev, data_czas: new Date(t).toISOString(), koniec: dur ? new Date(t + dur).toISOString() : ev.koniec, _seria: true });
+    }
+    if (freq === "dziennie") d.setDate(d.getDate() + 1);
+    else if (freq === "tygodniowo") d.setDate(d.getDate() + 7);
+    else if (freq === "miesiecznie") d.setMonth(d.getMonth() + 1);
+    else if (freq === "rocznie") d.setFullYear(d.getFullYear() + 1);
+    else break;
+  }
+  return out;
+}
 async function wczytajWydarzeniaZakres(od, doData) {
   const odISO = isoZWarszawy(dataKalISO(od), "00:00");
   const doISO = isoZWarszawy(dataKalISO(doData), "00:00");
   await zaladujPlemionaCache();
-  // overlap: data_czas < koniec_widoku  I  (koniec > poczatek_widoku  ALBO  brak koniec i data_czas >= poczatek_widoku)
-  // bez filtra traveler_id — RLS zwraca własne + wydarzenia plemion, w których jestem
-  const { data } = await supabase
+  // 1) wpisy JEDNORAZOWE — overlap z oknem
+  const { data: jedno = [] } = await supabase
     .from("events").select("*")
     .in("typ", ["wydarzenie", "zadanie"])
+    .or("powtarzalnosc.is.null,powtarzalnosc.eq.jednorazowe")
     .lt("data_czas", doISO)
     .or(`koniec.gt.${odISO},and(koniec.is.null,data_czas.gte.${odISO})`)
     .order("data_czas", { ascending: true });
-  let lista = data || [];
+  // 2) REGUŁY cykliczne — pierwsza data przed końcem okna, seria jeszcze trwa; rozwijane lokalnie
+  const { data: cykl = [] } = await supabase
+    .from("events").select("*")
+    .in("typ", ["wydarzenie", "zadanie"])
+    .in("powtarzalnosc", ["dziennie", "tygodniowo", "miesiecznie", "rocznie"])
+    .lt("data_czas", doISO)
+    .or(`powtarzanie_do.is.null,powtarzanie_do.gte.${odISO}`);
+  let lista = [...(jedno || [])];
+  for (const rule of (cykl || [])) {
+    for (const occ of rozwinCykliczne(rule, new Date(odISO), new Date(doISO))) lista.push(occ);
+  }
   const _me = TRAVELER && TRAVELER.id;
   // propozycje (wydarzenia do zatwierdzenia) NIE pojawiają się na kalendarzu, dopóki nieprzyjęte
   lista = lista.filter((e) => e.status !== "proponowane");
@@ -3376,6 +3606,7 @@ async function wczytajWydarzeniaZakres(od, doData) {
   if (!pokazRocznice) lista = lista.filter((e) => !e.caly_dzien);
   if (ukryteKat.size) lista = lista.filter((e) => !ukryteKat.has(kategoriaZE(e)));
   if (zapytanieSzukaj) lista = lista.filter((e) => pasujeDoSzukania(e, zapytanieSzukaj));
+  lista.sort((a, b) => new Date(a.data_czas) - new Date(b.data_czas));
   return lista;
 }
 
@@ -3703,6 +3934,18 @@ function oknoWydarzenia(opcje) {
         </div>
         <div class="m-strefa-hint" id="w-dur-hint" style="display:none"></div>
       </div>
+      <label>Powtarzanie</label>
+      <select id="w-powt">
+        <option value="jednorazowe">Bez powtarzania</option>
+        <option value="dziennie">Codziennie</option>
+        <option value="tygodniowo">Co tydzień</option>
+        <option value="miesiecznie">Co miesiąc</option>
+        <option value="rocznie">Co rok (urodziny, rocznice)</option>
+      </select>
+      <div id="w-powt-do-box" style="display:none">
+        <label>Powtarzaj do (puste = bez końca)</label>
+        <input type="date" id="w-powt-do" value="${ev && ev.powtarzanie_do ? czesciWarszawy(ev.powtarzanie_do).dataISO : ""}">
+      </div>
       <label>Opis</label>
       <textarea id="w-opis">${ev ? esc(ev.opis || "") : ""}</textarea>
       <label>Lokalizacja</label>
@@ -3756,6 +3999,13 @@ function oknoWydarzenia(opcje) {
   };
   caly.addEventListener("change", aktualizujCaly);
   aktualizujCaly();
+
+  /* powtarzanie (cykliczność) — pokaż „powtarzaj do" gdy wybrane co innego niż jednorazowe */
+  const powt = overlay.querySelector("#w-powt");
+  if (ev && ev.powtarzalnosc) powt.value = ev.powtarzalnosc;
+  const aktualizujPowt = () => { overlay.querySelector("#w-powt-do-box").style.display = (powt.value !== "jednorazowe") ? "" : "none"; };
+  powt.addEventListener("change", aktualizujPowt);
+  aktualizujPowt();
 
   /* kategoria — chipy z kolorami */
   const rysujChipy = () => {
@@ -3868,10 +4118,14 @@ function oknoWydarzenia(opcje) {
         + (calyD ? "" : ", " + (overlay.querySelector("#w-godz").value || ""));
       if (!confirm(`Uwaga: ${kiedyTxt} to termin w przeszłości. Zapisać mimo to?`)) return;
     }
+    const powtVal = overlay.querySelector("#w-powt").value;
+    const powtDoStr = overlay.querySelector("#w-powt-do").value;
     const rekord = {
       tytul, data_czas: dataCzas, koniec, caly_dzien: calyD, strefa: strefaWyd,
       kategoria: wybranaKat,
       plemie_id: ktoSel.value || null,
+      powtarzalnosc: powtVal,
+      powtarzanie_do: (powtVal !== "jednorazowe" && powtDoStr) ? isoZeStrefy(powtDoStr, "00:00", TZ) : null,
       opis: overlay.querySelector("#w-opis").value.trim() || null,
       lokalizacja: overlay.querySelector("#w-lok").value.trim() || null,
     };
@@ -3899,7 +4153,8 @@ function oknoWydarzenia(opcje) {
     if (PLEMIE_KAL) renderPlemieKalendarz();
   });
   if (ev) overlay.querySelector("#w-usun").addEventListener("click", async () => {
-    if (!confirm("Usunąć to wydarzenie?")) return;
+    const seria = ev.powtarzalnosc && ev.powtarzalnosc !== "jednorazowe";
+    if (!confirm(seria ? "To wydarzenie się powtarza — usunąć CAŁĄ serię?" : "Usunąć to wydarzenie?")) return;
     const { error } = await supabase.from("events").delete().eq("id", ev.id);
     if (error) { alert("Nie udało się usunąć: " + error.message); return; }
     zamknij();
@@ -3989,7 +4244,7 @@ function renderPlemieGrupy(plemiona, perPlemie) {
   box.innerHTML = "";
   const me = TRAVELER && TRAVELER.id;
   for (const p of (plemiona || [])) {
-    let tasks = perPlemie[p.id] || [];
+    let tasks = (perPlemie[p.id] || []).filter((z) => z.kategoria !== "zakupy"); // zakupy mają osobną zakładkę
     if (zapytanieSzukaj) tasks = tasks.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj));
     const kolor = p.kolor || "#1f9e8f";
     const aktywne = tasks.filter((z) => z.status !== "zrobione");
@@ -4059,6 +4314,72 @@ async function przelaczWspolne(z, zrobione) {
   const { error } = await supabase.rpc("przelacz_wspolne", { p_event: z.id, p_zrobione: zrobione });
   if (error) { alert("Nie udało się zapisać: " + error.message); return; }
   wczytajZadaniaHoryzont();
+}
+/* ZAKŁADKA ZAKUPY — współdzielona lista zakupów per plemię (wspólne pozycje kategoria=zakupy) */
+async function renderZakupy() {
+  const box = $("hyz-zakupy");
+  if (!box) return;
+  box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:12px 16px;">Wczytuję…</div>`;
+  const [rP, rW] = await Promise.all([
+    supabase.rpc("moje_plemiona_full"),
+    supabase.rpc("wspolne_zadania"),
+  ]);
+  const plemiona = rP.data || [];
+  const pozycje = (rW.data || []).filter((z) => z.kategoria === "zakupy");
+  box.innerHTML = "";
+  if (!plemiona.length) { box.appendChild(el(`<div style="padding:12px 16px;color:var(--ink-soft);font-size:14px;">Najpierw załóż plemię (np. „Patrycja i Adam"), żeby mieć wspólną listę zakupów.</div>`)); return; }
+
+  const opcje = plemiona.map((p) => `<option value="${p.id}">${escP(p.nazwa)}</option>`).join("");
+  const add = el(`<div style="padding:8px 16px 4px;">
+    <select id="zk-plemie" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:6px;">${opcje}</select>
+    <textarea id="zk-tekst" placeholder="Dodaj do listy — możesz wkleić CAŁĄ listę, jedno w linii" rows="3" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;resize:vertical;margin-bottom:6px;"></textarea>
+    <button id="zk-dodaj" style="${BT}">🛒 Dodaj do listy</button>
+    <div id="zk-out" style="font-size:12.5px;margin-top:5px;"></div>
+  </div>`);
+  box.appendChild(add);
+  add.querySelector("#zk-dodaj").addEventListener("click", async () => {
+    const pid = add.querySelector("#zk-plemie").value;
+    const tytuly = add.querySelector("#zk-tekst").value.split("\n").map((s) => s.trim()).filter(Boolean);
+    if (!tytuly.length) { alert("Wpisz co dodać."); return; }
+    const rows = tytuly.map((tytul) => ({ traveler_id: TRAVELER.id, typ: "zadanie", tytul, status: "planowane", priorytet: "normalny", plemie_id: pid, utworzony_przez: TRAVELER.id, wspolne: true, kategoria: "zakupy" }));
+    const { error } = await supabase.from("events").insert(rows);
+    if (error) { add.querySelector("#zk-out").innerHTML = `<span style="color:#c4513a;">Błąd: ${escP(error.message)}</span>`; return; }
+    renderZakupy();
+  });
+
+  if (!pozycje.length) { box.appendChild(el(`<div style="padding:8px 16px;color:var(--ink-soft);font-size:13.5px;">Lista pusta — dodaj pierwszą pozycję powyżej.</div>`)); return; }
+  const grupy = {};
+  pozycje.forEach((z) => { (grupy[z.plemie_id] = grupy[z.plemie_id] || []).push(z); });
+  for (const p of plemiona) {
+    const lista = grupy[p.id]; if (!lista || !lista.length) continue;
+    const kolor = p.kolor || "#1f9e8f";
+    box.appendChild(el(`<div style="display:flex;align-items:center;gap:7px;margin:10px 16px 4px;font-size:12px;font-weight:700;color:var(--ink-soft);"><span style="width:11px;height:11px;border-radius:50%;background:${kolor};flex:none;"></span>🛒 ${escP(p.nazwa)}</div>`));
+    lista.sort((a, b) => (a.status === "zrobione") - (b.status === "zrobione"));
+    for (const z of lista) {
+      const kupione = z.status === "zrobione";
+      const atryb = (kupione && z.zrobione_kiedy) ? `kupił(a): ${escP(z.zrobione_przez_nick || "ktoś")} · ${escP(fmtData(z.zrobione_kiedy, { day: "numeric", month: "short" }))}` : "";
+      const w = el(`<div style="display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-left:3px solid ${kolor};border-radius:11px;padding:9px 11px;margin:0 16px 6px;${kupione ? "opacity:.6;" : ""}">
+        <button class="zk-box" aria-label="Kupione" style="flex:none;width:22px;height:22px;border-radius:6px;border:2px solid ${kupione ? kolor : "var(--line)"};background:${kupione ? kolor : "transparent"};cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;">${kupione ? `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round"><path d="M5 12l5 5L20 6"/></svg>` : ""}</button>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14.5px;${kupione ? "text-decoration:line-through;" : ""}">${esc(z.tytul)}</div>
+          ${atryb ? `<div style="font-size:11.5px;color:#1a7158;margin-top:2px;">${atryb}</div>` : ""}
+        </div>
+        <button class="zk-usun" title="Usuń" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:16px;line-height:1;padding:0 2px;">×</button>
+      </div>`);
+      w.querySelector(".zk-box").addEventListener("click", async () => {
+        const { error } = await supabase.rpc("przelacz_wspolne", { p_event: z.id, p_zrobione: !kupione });
+        if (error) { alert("Nie zapisano: " + error.message); return; }
+        renderZakupy();
+      });
+      w.querySelector(".zk-usun").addEventListener("click", async () => {
+        if (!confirm(`Usunąć „${z.tytul}" z listy?`)) return;
+        const { error } = await supabase.from("events").delete().eq("id", z.id);
+        if (error) { alert("Nie usunięto: " + error.message); return; }
+        renderZakupy();
+      });
+      box.appendChild(w);
+    }
+  }
 }
 function aktualizujBadgeHoryzont(n) {
   const b = $("hyz-badge");
