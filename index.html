@@ -1502,7 +1502,7 @@ function kartaDokSejf(d) {
   }
   const w = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
     <div style="font-size:15px;font-weight:500;">${esc(d.tytul || "(bez tytułu)")}</div>
-    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${esc(d.typ || "dokument")}${d.data_dokumentu ? " · " + esc(fmtData(d.data_dokumentu, { day: "numeric", month: "short", year: "numeric" })) : ""}${d.plik_url ? " · 📎 plik" : ""}</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${esc(d.rodzaj || "dokument")}${d.data_dokumentu ? " · " + esc(fmtData(d.data_dokumentu, { day: "numeric", month: "short", year: "numeric" })) : ""}${d.plik_url ? " · 📎 plik" : ""}</div>
     ${waznHtml}
     ${d.opis ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;white-space:pre-wrap;">${esc(d.opis)}</div>` : ""}
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
@@ -1532,7 +1532,7 @@ function kartaSejf(d) {
       <input type="text" id="sj-tytul" maxlength="200" value="${edycja ? esc(d.tytul || "") : ""}" placeholder="np. Dowód rejestracyjny — Mercedes GLC">
       <div class="m-form__row">
         <div><label>Przekładka</label><select id="sj-kat">${opcjePrzek}</select></div>
-        <div><label>Rodzaj</label><input type="text" id="sj-typ" maxlength="60" value="${edycja ? esc(d.typ || "") : ""}" placeholder="umowa / polisa / dowód"></div>
+        <div><label>Rodzaj</label><input type="text" id="sj-typ" maxlength="60" value="${edycja ? esc(d.rodzaj || "") : ""}" placeholder="umowa / polisa / dowód"></div>
       </div>
       <div class="m-form__row">
         <div><label>Data dokumentu</label><input type="date" id="sj-data" value="${edycja && d.data_dokumentu ? d.data_dokumentu : ""}"></div>
@@ -1553,14 +1553,14 @@ function kartaSejf(d) {
     const tytul = ov.querySelector("#sj-tytul").value.trim();
     if (!tytul) { ov.querySelector("#sj-tytul").focus(); return; }
     const kategoria = ov.querySelector("#sj-kat").value;
-    const typ = ov.querySelector("#sj-typ").value.trim() || "dokument";
+    const rodzaj = ov.querySelector("#sj-typ").value.trim() || null;
     const dataDok = ov.querySelector("#sj-data").value || null;
     const waznosc = ov.querySelector("#sj-waznosc").value || null;
     const opis = ov.querySelector("#sj-opis").value.trim() || null;
     const btn = ov.querySelector("#sj-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
     try {
       if (edycja) {
-        const { error } = await supabase.from("dokumenty").update({ tytul, kategoria, typ, data_dokumentu: dataDok, data_waznosci: waznosc, opis }).eq("id", d.id);
+        const { error } = await supabase.from("dokumenty").update({ tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis }).eq("id", d.id);
         if (error) throw error;
       } else {
         let plik_url = null, mime = null;
@@ -1573,9 +1573,9 @@ function kartaSejf(d) {
           plik_url = sciezka; mime = plik.type || null;
         }
         const { error } = await supabase.from("dokumenty").insert({
-          traveler_id: TRAVELER.id, org_id: null, typ, kontekst: "sejf",
-          plik_url, mime, zrodlo: plik ? "plik" : "reczny", ocr_status: plik ? "oczekuje" : null,
-          tytul, kategoria, data_dokumentu: dataDok, data_waznosci: waznosc, opis,
+          traveler_id: TRAVELER.id, org_id: null, typ: "inne", kontekst: "sejf",
+          plik_url, mime, zrodlo: plik ? "plik" : "reczne", ocr_status: plik ? "oczekuje" : "pominiete",
+          tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis,
         });
         if (error) throw error;
       }
