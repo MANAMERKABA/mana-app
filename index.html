@@ -1564,6 +1564,7 @@ function kartaSejf(d) {
       </div>
       <label>Notatki / kontakt (telefon, osoba, miejsce)</label>
       <textarea id="sj-opis">${edycja ? esc(d.opis || "") : ""}</textarea>
+      ${edycja ? `<label>Strony dokumentu (↑↓ kolejność · 👁 podgląd · × usuń)</label><div id="sj-strony"></div>` : ""}
       <label>${edycja ? "Dodaj kolejne strony/pliki (opcjonalnie)" : "Pliki — strony dokumentu (możesz wybrać kilka, także po kolei)"}</label>
       <input type="file" id="sj-plik" accept="image/*,application/pdf" multiple>
       <div id="sj-plik-info" style="font-size:11.5px;color:#1a7158;margin-top:3px;"></div>
@@ -1585,6 +1586,30 @@ function kartaSejf(d) {
     plikInput.value = "";
     plikInfo.textContent = wybranePliki.length ? `Do dodania: ${wybranePliki.length} ${wybranePliki.length === 1 ? "plik" : "plików"}` : "";
   });
+  // zarządzanie istniejącymi stronami (kolejność / usuwanie pojedynczej) — tryb edycji
+  const pracujPliki = edycja ? [...plikiZDok(d)] : [];
+  const usunieteSciezki = [];
+  function renderStrony() {
+    const box = ov.querySelector("#sj-strony");
+    if (!box) return;
+    box.innerHTML = "";
+    if (!pracujPliki.length) { box.appendChild(el(`<div style="font-size:12px;color:var(--ink-soft);">Brak stron — dodaj poniżej.</div>`)); return; }
+    pracujPliki.forEach((p, i) => {
+      const r = el(`<div style="display:flex;align-items:center;gap:5px;border:1px solid var(--line);border-radius:8px;padding:5px 7px;margin-bottom:5px;">
+        <span style="flex:1;min-width:0;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i + 1}. ${escP(p.nazwa || "plik")}</span>
+        <button class="st-up" style="${BG}padding:3px 7px;font-size:12px;"${i === 0 ? " disabled" : ""}>↑</button>
+        <button class="st-dn" style="${BG}padding:3px 7px;font-size:12px;"${i === pracujPliki.length - 1 ? " disabled" : ""}>↓</button>
+        <button class="st-otw" style="${BG}padding:3px 7px;font-size:12px;">👁</button>
+        <button class="st-del" style="${BG}padding:3px 7px;font-size:12px;color:#c0392b;">×</button>
+      </div>`);
+      r.querySelector(".st-up").addEventListener("click", () => { if (i > 0) { const t = pracujPliki[i - 1]; pracujPliki[i - 1] = pracujPliki[i]; pracujPliki[i] = t; renderStrony(); } });
+      r.querySelector(".st-dn").addEventListener("click", () => { if (i < pracujPliki.length - 1) { const t = pracujPliki[i + 1]; pracujPliki[i + 1] = pracujPliki[i]; pracujPliki[i] = t; renderStrony(); } });
+      r.querySelector(".st-otw").addEventListener("click", () => otworzPlikiSejf([p]));
+      r.querySelector(".st-del").addEventListener("click", () => { if (p.sciezka) usunieteSciezki.push(p.sciezka); pracujPliki.splice(i, 1); renderStrony(); });
+      box.appendChild(r);
+    });
+  }
+  if (edycja) renderStrony();
   ov.querySelector("#sj-zapisz").addEventListener("click", async () => {
     const tytul = ov.querySelector("#sj-tytul").value.trim();
     if (!tytul) { ov.querySelector("#sj-tytul").focus(); return; }
@@ -1606,12 +1631,15 @@ function kartaSejf(d) {
         nowePliki.push({ sciezka, mime: plik.type || null, nazwa: plik.name });
       }
       if (edycja) {
-        const istn = plikiZDok(d);
-        const pliki = [...istn, ...nowePliki];
+        const pliki = [...pracujPliki, ...nowePliki];   // kolejność po reorderze + nowe na końcu, minus usunięte
         const patch = { tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis, pliki };
-        if (!d.plik_url && pliki[0]) { patch.plik_url = pliki[0].sciezka; patch.mime = pliki[0].mime; patch.zrodlo = "plik"; patch.ocr_status = "oczekuje"; }
+        patch.plik_url = pliki[0] ? pliki[0].sciezka : null;
+        patch.mime = pliki[0] ? (pliki[0].mime || null) : null;
+        if (pliki.length && !d.zrodlo) { patch.zrodlo = "plik"; patch.ocr_status = "oczekuje"; }
         const { error } = await supabase.from("dokumenty").update(patch).eq("id", d.id);
         if (error) throw error;
+        // zasada integralności: skasowane strony znikają też ze storage
+        if (usunieteSciezki.length) { try { await supabase.storage.from("dokumenty").remove(usunieteSciezki); } catch (e) {} }
       } else {
         const first = nowePliki[0] || null;
         const { data: ins, error } = await supabase.from("dokumenty").insert({
