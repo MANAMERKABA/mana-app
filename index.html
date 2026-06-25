@@ -1560,6 +1560,7 @@ function kartaSejf(d) {
     const opis = ov.querySelector("#sj-opis").value.trim() || null;
     const btn = ov.querySelector("#sj-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
     try {
+      let docId = d && d.id;
       if (edycja) {
         const { error } = await supabase.from("dokumenty").update({ tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis }).eq("id", d.id);
         if (error) throw error;
@@ -1573,24 +1574,36 @@ function kartaSejf(d) {
           if (upErr) throw upErr;
           plik_url = sciezka; mime = plik.type || null;
         }
-        const { error } = await supabase.from("dokumenty").insert({
+        const { data: ins, error } = await supabase.from("dokumenty").insert({
           traveler_id: TRAVELER.id, org_id: null, typ: "inne", kontekst: "sejf",
           plik_url, mime, zrodlo: plik ? "plik" : "reczne", ocr_status: plik ? "oczekuje" : "pominiete",
           tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis,
-        });
+        }).select("id").single();
         if (error) throw error;
+        docId = ins.id;
       }
-      if (waznosc && !edycja) {
-        // WYDARZENIE AKTYWNE na prawdziwej dacie ważności + wyprzedzenie 14 dni (wskoczy do zadań 2 tyg. przed)
-        await supabase.from("events").insert({
+      // ZASADA INTEGRALNOŚCI — synchronizacja wydarzenia-przypomnienia z dokumentem (twórz/przesuń/kasuj)
+      const istnEv = (edycja && d.event_id) ? d.event_id : null;
+      if (waznosc) {
+        const evPayload = {
           traveler_id: TRAVELER.id, typ: "wydarzenie", caly_dzien: true,
           tytul: `Odnowić: ${tytul}`, status: "planowane",
           data_czas: isoZeStrefy(waznosc, "00:00", TZ), koniec: isoZeStrefy(nastepnyDzienISO(waznosc), "00:00", TZ),
           strefa: TZ, kategoria: "inne", uprzedz_dni: 14,
-        });
+        };
+        if (istnEv) {
+          await supabase.from("events").update(evPayload).eq("id", istnEv);
+        } else {
+          const { data: evIns } = await supabase.from("events").insert(evPayload).select("id").single();
+          if (evIns) await supabase.from("dokumenty").update({ event_id: evIns.id }).eq("id", docId);
+        }
+      } else if (istnEv) {
+        // ważność usunięta → kasuj powiązane wydarzenie (i link)
+        await supabase.from("events").delete().eq("id", istnEv);
+        await supabase.from("dokumenty").update({ event_id: null }).eq("id", docId);
       }
       zamknij();
-      trzosToast(waznosc && !edycja ? "Zapisano + termin w Horyzoncie ✓" : "Zapisano do Sejfu ✓");
+      trzosToast(waznosc ? "Zapisano + termin w Horyzoncie ✓" : "Zapisano do Sejfu ✓");
       renderSejf();
     } catch (e) {
       btn.disabled = false; btn.textContent = "Zapisz";
@@ -1601,10 +1614,12 @@ function kartaSejf(d) {
 
 async function usunSejf(d) {
   if (!confirm(`Usunąć „${d.tytul || "dokument"}" z Sejfu?`)) return;
+  // zasada integralności: kasujemy też powiązane wydarzenie-przypomnienie i plik
+  if (d.event_id) { try { await supabase.from("events").delete().eq("id", d.event_id); } catch (e) {} }
   if (d.plik_url) { try { await supabase.storage.from("dokumenty").remove([d.plik_url]); } catch (e) {} }
   const { error } = await supabase.from("dokumenty").delete().eq("id", d.id);
   if (error) { trzosToast("Błąd: " + error.message); return; }
-  trzosToast("Usunięto.");
+  trzosToast("Usunięto (z terminem).");
   renderSejf();
 }
 
