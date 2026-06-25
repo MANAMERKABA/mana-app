@@ -698,7 +698,7 @@ const KATEGORIE = ["praca", "rodzina", "prywatne", "zdrowie", "inne"];
 const KOLOR_KAT = { praca: "#2e5a7a", rodzina: "#1a7158", prywatne: "#7a4ea0", zdrowie: "#c44a3a", inne: "#8c887e" };
 const ETYK_KAT = { praca: "Praca", rodzina: "Rodzina", prywatne: "Prywatne", zdrowie: "Zdrowie", inne: "Inne" };
 const ukryteKat = new Set();
-const widocznePlemiona = new Set();
+const ukrytePlemiona = new Set(); // plemiona, których WSPÓLNE wpisy ukrywamy; domyślnie widać wszystkie
 const kategoriaZE = (e) => (e && KATEGORIE.includes(e.kategoria)) ? e.kategoria : "inne";
 const kolorKategorii = (e) => KOLOR_KAT[kategoriaZE(e)];
 
@@ -3636,7 +3636,7 @@ function otworzMenuKal() {
     `<button data-kat="${k}"><span class="m-kat-kropka" style="background:${KOLOR_KAT[k]}"></span>${!ukryteKat.has(k) ? "✓ " : ""}${esc(ETYK_KAT[k])}</button>`
   ).join("");
   const chipyPlem = Object.keys(PLEMIE_MAP || {}).map((id) =>
-    `<button data-plemie="${id}"><span class="m-kat-kropka" style="background:${PLEMIE_MAP[id].kolor || "#1f9e8f"}"></span>${widocznePlemiona.has(id) ? "✓ " : ""}${esc(PLEMIE_MAP[id].nazwa)}</button>`
+    `<button data-plemie="${id}"><span class="m-kat-kropka" style="background:${PLEMIE_MAP[id].kolor || "#1f9e8f"}"></span>${!ukrytePlemiona.has(id) ? "✓ " : ""}${esc(PLEMIE_MAP[id].nazwa)}</button>`
   ).join("");
   const panel = el(`<div class="m-kalmenu-panel" id="kal-menu-panel">
     <button data-w="dzis">Dziś</button>
@@ -3668,7 +3668,7 @@ function otworzMenuKal() {
   panel.querySelectorAll("button[data-plemie]").forEach((b) => {
     b.addEventListener("click", () => {
       const id = b.dataset.plemie;
-      if (widocznePlemiona.has(id)) widocznePlemiona.delete(id); else widocznePlemiona.add(id);
+      if (ukrytePlemiona.has(id)) ukrytePlemiona.delete(id); else ukrytePlemiona.add(id);
       panel.remove();
       renderKalendarz();
       wczytajDzien();
@@ -3790,7 +3790,7 @@ function renderMiniFiltry() {
   if (plemList.length) {
     html += `<div class="m-mini-naglowek">Plemiona (cudze wpisy)</div>`;
     for (const id of plemList) {
-      const on = widocznePlemiona.has(id);
+      const on = !ukrytePlemiona.has(id);
       html += `<button class="m-mini-filtr${on ? "" : " m-mini-filtr--off"}" data-tog="plemie" data-plemie="${id}">`
         + `<span class="m-mini-filtr__check">${on ? "☑" : "☐"}</span>`
         + `<span class="m-mini-filtr__dot" style="background:${PLEMIE_MAP[id].kolor || "#1f9e8f"}"></span>`
@@ -3812,7 +3812,7 @@ function renderMiniFiltry() {
   wrap.querySelectorAll('[data-tog="plemie"]').forEach((b) =>
     b.addEventListener("click", () => {
       const id = b.dataset.plemie;
-      if (widocznePlemiona.has(id)) widocznePlemiona.delete(id); else widocznePlemiona.add(id);
+      if (ukrytePlemiona.has(id)) ukrytePlemiona.delete(id); else ukrytePlemiona.add(id);
       renderKalendarz();
       wczytajDzien();
     })
@@ -3899,8 +3899,10 @@ async function wczytajWydarzeniaZakres(od, doData) {
   // propozycje (wydarzenia do zatwierdzenia) NIE pojawiają się na kalendarzu, dopóki nieprzyjęte
   lista = lista.filter((e) => e.status !== "proponowane");
   // własne wpisy zawsze; cudze wpisy plemienia tylko, gdy dane plemię jest włączone jako nakładka
-  lista = lista.filter((e) => e.traveler_id === _me || (e.plemie_id && widocznePlemiona.has(e.plemie_id)));
-  if (!pokazRocznice) lista = lista.filter((e) => !e.caly_dzien);
+  // własne wpisy zawsze; WSPÓLNE wpisy plemienia (cudze) widać domyślnie — nakładka tylko UKRYWA wybrane plemię
+  lista = lista.filter((e) => e.traveler_id === _me || (e.plemie_id && !ukrytePlemiona.has(e.plemie_id)));
+  // „Rocznice" chowa tylko coroczne całodniowe (urodziny), NIE zwykłe wielodniowe (np. camp, wyjazd)
+  if (!pokazRocznice) lista = lista.filter((e) => !(e.caly_dzien && e.powtarzalnosc === "rocznie"));
   if (ukryteKat.size) lista = lista.filter((e) => !ukryteKat.has(kategoriaZE(e)));
   if (zapytanieSzukaj) lista = lista.filter((e) => pasujeDoSzukania(e, zapytanieSzukaj));
   lista.sort((a, b) => new Date(a.data_czas) - new Date(b.data_czas));
