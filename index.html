@@ -698,7 +698,7 @@ const KATEGORIE = ["praca", "rodzina", "prywatne", "zdrowie", "inne"];
 const KOLOR_KAT = { praca: "#2e5a7a", rodzina: "#1a7158", prywatne: "#7a4ea0", zdrowie: "#c44a3a", inne: "#8c887e" };
 const ETYK_KAT = { praca: "Praca", rodzina: "Rodzina", prywatne: "Prywatne", zdrowie: "Zdrowie", inne: "Inne" };
 const ukryteKat = new Set();
-const ukrytePlemiona = new Set(); // plemiona, których WSPÓLNE wpisy ukrywamy; domyślnie widać wszystkie
+const widocznePlemiona = new Set(); // nakładka: cudze wpisy plemienia na PRYWATNYM kalendarzu (opt-in); zajętość rodziny jest w kalendarzu plemienia
 const kategoriaZE = (e) => (e && KATEGORIE.includes(e.kategoria)) ? e.kategoria : "inne";
 const kolorKategorii = (e) => KOLOR_KAT[kategoriaZE(e)];
 
@@ -2443,7 +2443,7 @@ async function renderPlemieKalendarz() {
   wrap.appendChild(head);
 
   const START = 7, END = 22, PX = 0.7, H = (END - START) * 60 * PX;
-  const wielo = dni > 1, dayRowH = wielo ? 18 : 0, memRowH = 30, headH = dayRowH + memRowH;
+  const wielo = dni > 1, dayRowH = wielo ? 18 : 0, memRowH = 30, adH = 24, headH = dayRowH + memRowH + adH;
   const grid = el(`<div style="display:flex;border:1px solid var(--line);border-radius:12px;overflow:auto;background:var(--surface);"></div>`);
   const axis = el(`<div style="width:36px;flex:none;border-right:1px solid var(--line);"></div>`);
   axis.appendChild(el(`<div style="height:${headH}px;border-bottom:1px solid var(--line);"></div>`));
@@ -2453,7 +2453,9 @@ async function renderPlemieKalendarz() {
 
   const d0 = isoZWarszawy(dataKalISO(daty[0]), "00:00");
   const koniecZakr = new Date(ostatni.getTime() + 86400000), d1 = isoZWarszawy(dataKalISO(koniecZakr), "00:00");
-  const { data } = await supabase.from("events").select("*").gte("data_czas", d0).lt("data_czas", d1).eq("typ", "wydarzenie");
+  // overlap — łapie też wielodniowe całodniowe zaczynające się przed oknem (np. camp 26–28)
+  const { data } = await supabase.from("events").select("*").eq("typ", "wydarzenie")
+    .lt("data_czas", d1).or(`koniec.gt.${d0},and(koniec.is.null,data_czas.gte.${d0})`);
   const evs = data || [];
   let zajete = [];
   try { const rz = await supabase.rpc("zajetosc_plemienia", { p_plemie: p.id, p_od: d0, p_do: d1 }); zajete = rz.data || []; } catch (e) { zajete = []; }
@@ -2467,6 +2469,22 @@ async function renderPlemieKalendarz() {
       const col = el(`<div style="flex:1;min-width:${wielo ? 96 : 130}px;border-right:1px solid var(--line);${pierwszy && wielo ? "border-left:2px solid var(--line);" : ""}"></div>`);
       if (wielo) col.appendChild(el(`<div style="height:${dayRowH}px;text-align:center;font-size:10px;font-weight:600;color:${isToday ? "var(--turkus,#1f9e8f)" : "var(--ink-soft)"};border-bottom:1px solid var(--line);overflow:hidden;">${d.toLocaleDateString("pl-PL", { weekday: "short", day: "numeric" })}</div>`));
       col.appendChild(el(`<div style="height:${memRowH}px;display:flex;align-items:center;justify-content:center;gap:4px;border-bottom:1px solid var(--line);font-size:11px;font-weight:600;overflow:hidden;"><span style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:${p.kolor || "#1f9e8f"};color:#fff;font-size:8px;flex:none;">${escP(inicjalyPl(c.nick))}</span>${escP(c.nick || "uczestnik")}</div>`));
+      // PASEK CAŁODNIOWY — całodzienne wydarzenia (camp/wyjazd) jako zajęty dzień
+      const adBand = el(`<div style="height:${adH}px;border-bottom:1px solid var(--line);padding:1px 2px;overflow:hidden;"></div>`);
+      const calodz = evs.filter((e) => {
+        if (!e.caly_dzien) return false;
+        const sISO = czesciWarszawy(e.data_czas).dataISO;
+        const eISO = e.koniec ? czesciWarszawy(e.koniec).dataISO : dataKalISO(new Date(new Date(e.data_czas).getTime() + 86400000));
+        if (!(dISO >= sISO && dISO < eISO)) return false;
+        return ja ? (e.traveler_id === mojeId) : (e.traveler_id === c.traveler_id && e.plemie_id === p.id);
+      });
+      calodz.forEach((e) => {
+        const kol = p.kolor || "#1f9e8f";
+        const blk = el(`<div title="${escP(e.tytul)} (cały dzień)" style="background:${kol}22;border-left:3px solid ${kol};border-radius:4px;font-size:9px;color:var(--ink);padding:0 3px;line-height:${adH - 4}px;height:${adH - 4}px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;">📅 ${escP(e.tytul)}</div>`);
+        blk.addEventListener("click", (ev) => { ev.stopPropagation(); oknoWydarzenia({ event: e }); });
+        adBand.appendChild(blk);
+      });
+      col.appendChild(adBand);
       const body = el(`<div style="position:relative;height:${H}px;cursor:${(ja || mogeDlaInnych) ? "pointer" : "default"};"></div>`);
       for (let h = START + 1; h < END; h++) body.appendChild(el(`<div style="position:absolute;left:0;right:0;top:${(h - START) * 60 * PX}px;border-top:1px solid #f0ece0;pointer-events:none;"></div>`));
       if (!ja) zajete.filter((z) => z.traveler_id === c.traveler_id && czesciWarszawy(z.data_czas).dataISO === dISO).forEach((z) => {
@@ -2494,7 +2512,7 @@ async function renderPlemieKalendarz() {
       col.appendChild(body); grid.appendChild(col); pierwszy = false;
     });
   }
-  wrap.appendChild(el(`<div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Twoja kolumna = Twój pełny dzień. Kolumny innych = wspólne wpisy tego plemienia. Klik w swoją kolumnę = nowy wspólny wpis. Przełącznik 1 dzień / 3 dni / Tydzień u góry; całodzienne pominięte.</div>`));
+  wrap.appendChild(el(`<div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">Twoja kolumna = Twój pełny dzień. Kolumny innych = wspólne wpisy tego plemienia. Klik w swoją kolumnę = nowy wspólny wpis. Przełącznik 1 dzień / 3 dni / Tydzień u góry; całodzienne (np. camp, wyjazd) na górnym pasku jako zajęty dzień.</div>`));
 }
 setInterval(() => {
   const tn = czesciWarszawy(new Date()), tMin = tn.godz * 60 + tn.min, vis = tMin >= 7 * 60 && tMin <= 22 * 60;
@@ -3636,7 +3654,7 @@ function otworzMenuKal() {
     `<button data-kat="${k}"><span class="m-kat-kropka" style="background:${KOLOR_KAT[k]}"></span>${!ukryteKat.has(k) ? "✓ " : ""}${esc(ETYK_KAT[k])}</button>`
   ).join("");
   const chipyPlem = Object.keys(PLEMIE_MAP || {}).map((id) =>
-    `<button data-plemie="${id}"><span class="m-kat-kropka" style="background:${PLEMIE_MAP[id].kolor || "#1f9e8f"}"></span>${!ukrytePlemiona.has(id) ? "✓ " : ""}${esc(PLEMIE_MAP[id].nazwa)}</button>`
+    `<button data-plemie="${id}"><span class="m-kat-kropka" style="background:${PLEMIE_MAP[id].kolor || "#1f9e8f"}"></span>${widocznePlemiona.has(id) ? "✓ " : ""}${esc(PLEMIE_MAP[id].nazwa)}</button>`
   ).join("");
   const panel = el(`<div class="m-kalmenu-panel" id="kal-menu-panel">
     <button data-w="dzis">Dziś</button>
@@ -3668,7 +3686,7 @@ function otworzMenuKal() {
   panel.querySelectorAll("button[data-plemie]").forEach((b) => {
     b.addEventListener("click", () => {
       const id = b.dataset.plemie;
-      if (ukrytePlemiona.has(id)) ukrytePlemiona.delete(id); else ukrytePlemiona.add(id);
+      if (widocznePlemiona.has(id)) widocznePlemiona.delete(id); else widocznePlemiona.add(id);
       panel.remove();
       renderKalendarz();
       wczytajDzien();
@@ -3790,7 +3808,7 @@ function renderMiniFiltry() {
   if (plemList.length) {
     html += `<div class="m-mini-naglowek">Plemiona (cudze wpisy)</div>`;
     for (const id of plemList) {
-      const on = !ukrytePlemiona.has(id);
+      const on = widocznePlemiona.has(id);
       html += `<button class="m-mini-filtr${on ? "" : " m-mini-filtr--off"}" data-tog="plemie" data-plemie="${id}">`
         + `<span class="m-mini-filtr__check">${on ? "☑" : "☐"}</span>`
         + `<span class="m-mini-filtr__dot" style="background:${PLEMIE_MAP[id].kolor || "#1f9e8f"}"></span>`
@@ -3812,7 +3830,7 @@ function renderMiniFiltry() {
   wrap.querySelectorAll('[data-tog="plemie"]').forEach((b) =>
     b.addEventListener("click", () => {
       const id = b.dataset.plemie;
-      if (ukrytePlemiona.has(id)) ukrytePlemiona.delete(id); else ukrytePlemiona.add(id);
+      if (widocznePlemiona.has(id)) widocznePlemiona.delete(id); else widocznePlemiona.add(id);
       renderKalendarz();
       wczytajDzien();
     })
@@ -3899,8 +3917,8 @@ async function wczytajWydarzeniaZakres(od, doData) {
   // propozycje (wydarzenia do zatwierdzenia) NIE pojawiają się na kalendarzu, dopóki nieprzyjęte
   lista = lista.filter((e) => e.status !== "proponowane");
   // własne wpisy zawsze; cudze wpisy plemienia tylko, gdy dane plemię jest włączone jako nakładka
-  // własne wpisy zawsze; WSPÓLNE wpisy plemienia (cudze) widać domyślnie — nakładka tylko UKRYWA wybrane plemię
-  lista = lista.filter((e) => e.traveler_id === _me || (e.plemie_id && !ukrytePlemiona.has(e.plemie_id)));
+  // PRYWATNY kalendarz: własne wpisy zawsze; cudze wpisy plemienia tylko gdy włączone w nakładce (opt-in)
+  lista = lista.filter((e) => e.traveler_id === _me || (e.plemie_id && widocznePlemiona.has(e.plemie_id)));
   // „Rocznice" chowa tylko coroczne całodniowe (urodziny), NIE zwykłe wielodniowe (np. camp, wyjazd)
   if (!pokazRocznice) lista = lista.filter((e) => !(e.caly_dzien && e.powtarzalnosc === "rocznie"));
   if (ukryteKat.size) lista = lista.filter((e) => !ukryteKat.has(kategoriaZE(e)));
