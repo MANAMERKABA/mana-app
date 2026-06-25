@@ -1858,7 +1858,7 @@ function formKontakt(k) {
       imie,
       telefon: stdTel(ov.querySelector("#kn-tel").value, ov.querySelector("#kn-kraj").value),
       email: stdEmail(ov.querySelector("#kn-email").value),
-      typ: ov.querySelector("#kn-typ").value || null,
+      typ: ov.querySelector("#kn-typ").value || "inny",
       notatka: ov.querySelector("#kn-notatka").value.trim() || null,
       plemie_id: ov.querySelector("#kn-kto").value || null,
     };
