@@ -1734,6 +1734,37 @@ $("sejf-szukaj").addEventListener("input", (e) => { sejfSzukaj = e.target.value.
    ==================================================================== */
 const KON_TYPY = [["znajomy", "Znajomy / rodzina"], ["uslugodawca", "Usługodawca (serwis)"], ["terapeuta", "Terapeuta / zdrowie"], ["klient", "Klient"], ["dostawca", "Dostawca"], ["kontrahent", "Kontrahent"], ["inny", "Inny"]];
 let KON_PLEMIE_MAP = {};
+/* STANDARD ZAPISÓW (wpięty w kafel — zawsze tak samo) */
+function stdEmail(s) { const t = (s || "").trim().toLowerCase(); return t || null; }
+function stdNazwa(s) {
+  const t = (s || "").trim().replace(/\s+/g, " ");
+  if (!t) return null;
+  return t.split(" ").map((w) => {
+    if (!w) return w;
+    const mixed = /[a-ząćęłńóśżź]/.test(w) && /[A-ZĄĆĘŁŃÓŚŻŹ]/.test(w); // celowy zapis (McDonald, O'Brien) — zachowaj
+    return mixed ? w : (w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+  }).join(" ");
+}
+function stdTel(numer, kod) {
+  let t = (numer || "").trim();
+  if (!t) return null;
+  if (t.startsWith("+")) return t.replace(/\s+/g, " ");
+  t = t.replace(/[^\d]/g, "").replace(/^0+/, "");
+  if (!t) return null;
+  return (kod || "+48") + " " + t;
+}
+const KRAJE = [
+  ["+48", "🇵🇱 Polska"], ["+44", "🇬🇧 W. Brytania"], ["+49", "🇩🇪 Niemcy"], ["+33", "🇫🇷 Francja"],
+  ["+39", "🇮🇹 Włochy"], ["+34", "🇪🇸 Hiszpania"], ["+31", "🇳🇱 Holandia"], ["+32", "🇧🇪 Belgia"],
+  ["+41", "🇨🇭 Szwajcaria"], ["+43", "🇦🇹 Austria"], ["+420", "🇨🇿 Czechy"], ["+421", "🇸🇰 Słowacja"],
+  ["+36", "🇭🇺 Węgry"], ["+40", "🇷🇴 Rumunia"], ["+380", "🇺🇦 Ukraina"], ["+370", "🇱🇹 Litwa"],
+  ["+371", "🇱🇻 Łotwa"], ["+372", "🇪🇪 Estonia"], ["+45", "🇩🇰 Dania"], ["+46", "🇸🇪 Szwecja"],
+  ["+47", "🇳🇴 Norwegia"], ["+358", "🇫🇮 Finlandia"], ["+353", "🇮🇪 Irlandia"], ["+351", "🇵🇹 Portugalia"],
+  ["+30", "🇬🇷 Grecja"], ["+359", "🇧🇬 Bułgaria"], ["+385", "🇭🇷 Chorwacja"], ["+386", "🇸🇮 Słowenia"],
+  ["+1", "🇺🇸 USA/Kanada"], ["+7", "🇷🇺 Rosja/Kaz."], ["+90", "🇹🇷 Turcja"], ["+86", "🇨🇳 Chiny"],
+  ["+81", "🇯🇵 Japonia"], ["+82", "🇰🇷 Korea Płd."], ["+91", "🇮🇳 Indie"], ["+61", "🇦🇺 Australia"],
+  ["+55", "🇧🇷 Brazylia"], ["+52", "🇲🇽 Meksyk"], ["+27", "🇿🇦 RPA"], ["+971", "🇦🇪 ZEA"], ["+972", "🇮🇱 Izrael"],
+];
 function przelaczSejfSekcja(seg) {
   document.querySelectorAll(".sejf-seg").forEach((b) => {
     const on = b.dataset.seg === seg;
@@ -1766,7 +1797,7 @@ function kartaKontakt(k) {
   const moje = k.owner_traveler_id === (TRAVELER && TRAVELER.id);
   const konto = k.target_traveler_id ? " · 🟢 konto MANA" : "";
   const zakres = k.plemie_id ? ("👥 " + escP(KON_PLEMIE_MAP[k.plemie_id] || "plemię")) : "🔒 tylko ja";
-  const linie = [k.telefon, k.email].filter(Boolean).map(escP).join(" · ");
+  const linie = [k.telefon, (k.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
   const w = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
     <div style="font-size:15px;font-weight:500;">${esc(k.imie || "(bez imienia)")}${konto}</div>
     ${linie ? `<div style="font-size:12.5px;color:var(--ink);margin-top:2px;">${linie}</div>` : ""}
@@ -1792,11 +1823,15 @@ function formKontakt(k) {
     <div class="m-modal__head"><span class="m-modal__tytul">${edycja ? "Kontakt" : "Nowy kontakt"}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
     <div class="m-form">
       <label>Imię / nazwa</label>
-      <input type="text" id="kn-imie" maxlength="120" value="${edycja ? esc(k.imie || "") : ""}" placeholder="np. Mechanik EKO-GUM / Patrycja">
-      <div class="m-form__row">
-        <div><label>Telefon</label><input type="tel" id="kn-tel" maxlength="40" value="${edycja ? esc(k.telefon || "") : ""}"></div>
-        <div><label>E-mail</label><input type="email" id="kn-email" maxlength="120" value="${edycja ? esc(k.email || "") : ""}"></div>
+      <input type="text" id="kn-imie" autocapitalize="words" maxlength="120" value="${edycja ? esc(k.imie || "") : ""}" placeholder="np. Mechanik EKO-GUM / Patrycja">
+      <label>Telefon</label>
+      <div style="display:flex;gap:6px;">
+        <select id="kn-kraj" style="flex:none;width:150px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${KRAJE.map(([kod, nazwa]) => `<option value="${kod}">${nazwa} ${kod}</option>`).join("")}</select>
+        <input type="tel" id="kn-tel" inputmode="tel" maxlength="40" style="flex:1;min-width:0;" value="${edycja ? esc(k.telefon || "") : ""}" placeholder="numer">
       </div>
+      <label>E-mail</label>
+      <input type="email" id="kn-email" autocapitalize="off" inputmode="email" maxlength="120" value="${edycja ? esc(k.email || "") : ""}" placeholder="adres@…">
+      <div style="height:2px;"></div>
       <div class="m-form__row">
         <div><label>Rodzaj</label><select id="kn-typ"><option value="">—</option>${opcjeTyp}</select></div>
         <div><label>Kto widzi</label><select id="kn-kto"><option value="">🔒 Tylko ja</option></select></div>
@@ -1817,12 +1852,12 @@ function formKontakt(k) {
     if (edycja && k.plemie_id) sel.value = k.plemie_id;
   })();
   ov.querySelector("#kn-zapisz").addEventListener("click", async () => {
-    const imie = ov.querySelector("#kn-imie").value.trim();
+    const imie = stdNazwa(ov.querySelector("#kn-imie").value);
     if (!imie) { ov.querySelector("#kn-imie").focus(); return; }
     const payload = {
       imie,
-      telefon: ov.querySelector("#kn-tel").value.trim() || null,
-      email: ov.querySelector("#kn-email").value.trim() || null,
+      telefon: stdTel(ov.querySelector("#kn-tel").value, ov.querySelector("#kn-kraj").value),
+      email: stdEmail(ov.querySelector("#kn-email").value),
       typ: ov.querySelector("#kn-typ").value || null,
       notatka: ov.querySelector("#kn-notatka").value.trim() || null,
       plemie_id: ov.querySelector("#kn-kto").value || null,
@@ -1861,7 +1896,7 @@ async function dodajZPlemienia() {
   ov.querySelector("#kp-ok").addEventListener("click", async () => {
     const wybr = [...ov.querySelectorAll('input[type="checkbox"]:checked')].map((i) => kandydaci[Number(i.dataset.i)]);
     if (!wybr.length) { alert("Zaznacz kogoś."); return; }
-    const rows = wybr.map((c) => ({ owner_traveler_id: TRAVELER.id, imie: c.nick || "uczestnik", target_traveler_id: c.traveler_id, polaczenie_status: "aktywne", aktywny: true }));
+    const rows = wybr.map((c) => ({ owner_traveler_id: TRAVELER.id, imie: stdNazwa(c.nick || "uczestnik"), target_traveler_id: c.traveler_id, polaczenie_status: "aktywne", aktywny: true }));
     const { error } = await supabase.from("kontakty").insert(rows);
     if (error) { trzosToast("Błąd: " + error.message); return; }
     zamknij(); trzosToast(`Dodano ${rows.length} ✓`); renderKontakty();
