@@ -1508,12 +1508,24 @@ function kartaDokSejf(d) {
     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${esc(d.rodzaj || "dokument")}${d.data_dokumentu ? " · " + esc(fmtData(d.data_dokumentu, { day: "numeric", month: "short", year: "numeric" })) : ""}${n ? " · 📎 " + n + (n === 1 ? " plik" : " str.") : ""}</div>
     ${waznHtml}
     ${d.opis ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;white-space:pre-wrap;">${esc(d.opis)}</div>` : ""}
-    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-      ${n ? `<button class="sj-otw" style="${BG}font-size:12px;padding:5px 10px;">📄 Otwórz${n > 1 ? " (" + n + ")" : ""}</button>` : ""}
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+      <span class="sj-otw-box" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></span>
       <button class="sj-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
       <button class="sj-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
     </div></div>`);
-  if (n) w.querySelector(".sj-otw").addEventListener("click", () => otworzPlikiSejf(pl));
+  const otwBox = w.querySelector(".sj-otw-box");
+  if (n === 1) {
+    const b = el(`<button style="${BG}font-size:12px;padding:5px 10px;">📄 Otwórz</button>`);
+    b.addEventListener("click", () => otworzPlikiSejf(pl));
+    otwBox.appendChild(b);
+  } else if (n > 1) {
+    otwBox.appendChild(el(`<span style="font-size:12px;color:var(--ink-soft);">📄 Strony:</span>`));
+    pl.forEach((p, i) => {
+      const b = el(`<button style="${BG}font-size:12px;padding:5px 9px;">${i + 1}</button>`);
+      b.addEventListener("click", () => otworzPlikiSejf([p]));
+      otwBox.appendChild(b);
+    });
+  }
   w.querySelector(".sj-edit").addEventListener("click", () => kartaSejf(d));
   w.querySelector(".sj-usun").addEventListener("click", () => usunSejf(d));
   return w;
@@ -1552,8 +1564,9 @@ function kartaSejf(d) {
       </div>
       <label>Notatki / kontakt (telefon, osoba, miejsce)</label>
       <textarea id="sj-opis">${edycja ? esc(d.opis || "") : ""}</textarea>
-      <label>${edycja ? "Dodaj kolejne strony/pliki (opcjonalnie)" : "Pliki — strony dokumentu (możesz wybrać kilka)"}</label>
+      <label>${edycja ? "Dodaj kolejne strony/pliki (opcjonalnie)" : "Pliki — strony dokumentu (możesz wybrać kilka, także po kolei)"}</label>
       <input type="file" id="sj-plik" accept="image/*,application/pdf" multiple>
+      <div id="sj-plik-info" style="font-size:11.5px;color:#1a7158;margin-top:3px;"></div>
       ${edycja ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">Już dołączone: ${liczbaPlikow(d)} — nowe dojdą do istniejących.</div>` : ""}
       <div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">„Ważny do" doda przypomnienie do Horyzontu (2 tyg. wcześniej).</div>
     </div>
@@ -1563,6 +1576,15 @@ function kartaSejf(d) {
   const zamknij = () => ov.remove();
   ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
   ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  // kumulacja wybranych plików — wybory po kolei DODAJĄ się (input domyślnie nadpisuje)
+  const wybranePliki = [];
+  const plikInput = ov.querySelector("#sj-plik");
+  const plikInfo = ov.querySelector("#sj-plik-info");
+  plikInput.addEventListener("change", () => {
+    for (const f of plikInput.files) wybranePliki.push(f);
+    plikInput.value = "";
+    plikInfo.textContent = wybranePliki.length ? `Do dodania: ${wybranePliki.length} ${wybranePliki.length === 1 ? "plik" : "plików"}` : "";
+  });
   ov.querySelector("#sj-zapisz").addEventListener("click", async () => {
     const tytul = ov.querySelector("#sj-tytul").value.trim();
     if (!tytul) { ov.querySelector("#sj-tytul").focus(); return; }
@@ -1574,10 +1596,9 @@ function kartaSejf(d) {
     const btn = ov.querySelector("#sj-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
     try {
       let docId = d && d.id;
-      // wgraj WSZYSTKIE wybrane pliki (strony dokumentu)
-      const wybrane = [...(ov.querySelector("#sj-plik").files || [])];
+      // wgraj WSZYSTKIE skumulowane pliki (strony dokumentu)
       const nowePliki = [];
-      for (const plik of wybrane) {
+      for (const plik of wybranePliki) {
         const ext = (plik.name.split(".").pop() || "bin").toLowerCase();
         const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
         const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, plik, { contentType: plik.type || undefined, upsert: false });
