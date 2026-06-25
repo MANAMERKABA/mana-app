@@ -1467,16 +1467,21 @@ $("trzos-dodaj-koszt").addEventListener("click", () => kartaTrzos("koszt", null)
    ==================================================================== */
 const SEJF_PRZEKLADKI = ["Pojazd", "Dom / Mieszkanie", "Ubezpieczenia", "Umowy", "Zdrowie", "Finanse", "Inne"];
 let sejfSzukaj = "";
+let SEJF_PLEMIE_MAP = {};
 function otworzSejf() { pokazWidok("sejf"); renderSejf(); }
 
 async function renderSejf() {
   const lista = $("sejf-lista");
   lista.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
-  const { data = [], error } = await supabase.from("dokumenty").select("*")
-    .eq("traveler_id", TRAVELER.id).eq("kontekst", "sejf")
-    .order("data_utworzenia", { ascending: false });
-  if (error) { lista.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(error.message)}</div>`; return; }
-  let docs = data || [];
+  // bez filtra traveler_id — RLS zwraca własne + wspólne (plemię/firma)
+  const [rDoc, rPl] = await Promise.all([
+    supabase.from("dokumenty").select("*").eq("kontekst", "sejf").order("data_utworzenia", { ascending: false }),
+    supabase.rpc("moje_plemiona_full"),
+  ]);
+  if (rDoc.error) { lista.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(rDoc.error.message)}</div>`; return; }
+  SEJF_PLEMIE_MAP = {};
+  (rPl.data || []).forEach((p) => { SEJF_PLEMIE_MAP[p.id] = p.nazwa; });
+  let docs = rDoc.data || [];
   if (sejfSzukaj) {
     const q = sejfSzukaj.toLowerCase();
     docs = docs.filter((d) => [d.tytul, d.opis, d.kategoria, d.typ].some((x) => (x || "").toLowerCase().includes(q)));
@@ -1503,15 +1508,19 @@ function kartaDokSejf(d) {
   }
   const pl = plikiZDok(d);
   const n = pl.length;
+  const moje = d.traveler_id === (TRAVELER && TRAVELER.id);
+  const zakres = d.plemie_id ? ("👥 " + escP(SEJF_PLEMIE_MAP[d.plemie_id] || "plemię")) : (d.org_id ? "🏢 firma" : "🔒 tylko ja");
+  const udost = moje ? "" : " · udostępniony Tobie";
   const w = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
     <div style="font-size:15px;font-weight:500;">${esc(d.tytul || "(bez tytułu)")}</div>
     <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${esc(d.rodzaj || "dokument")}${d.data_dokumentu ? " · " + esc(fmtData(d.data_dokumentu, { day: "numeric", month: "short", year: "numeric" })) : ""}${n ? " · 📎 " + n + (n === 1 ? " plik" : " str.") : ""}</div>
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${zakres}${udost}</div>
     ${waznHtml}
     ${d.opis ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;white-space:pre-wrap;">${esc(d.opis)}</div>` : ""}
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
       <span class="sj-otw-box" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"></span>
-      <button class="sj-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
-      <button class="sj-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
+      ${moje ? `<button class="sj-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
+      <button class="sj-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>` : ""}
     </div></div>`);
   const otwBox = w.querySelector(".sj-otw-box");
   if (n === 1) {
@@ -1526,8 +1535,8 @@ function kartaDokSejf(d) {
       otwBox.appendChild(b);
     });
   }
-  w.querySelector(".sj-edit").addEventListener("click", () => kartaSejf(d));
-  w.querySelector(".sj-usun").addEventListener("click", () => usunSejf(d));
+  const bEdit = w.querySelector(".sj-edit"); if (bEdit) bEdit.addEventListener("click", () => kartaSejf(d));
+  const bUsun = w.querySelector(".sj-usun"); if (bUsun) bUsun.addEventListener("click", () => usunSejf(d));
   return w;
 }
 
@@ -1562,6 +1571,8 @@ function kartaSejf(d) {
         <div><label>Data dokumentu</label><input type="date" id="sj-data" value="${edycja && d.data_dokumentu ? d.data_dokumentu : ""}"></div>
         <div><label>Ważny do (opcjonalnie)</label><input type="date" id="sj-waznosc" value="${edycja && d.data_waznosci ? d.data_waznosci : ""}"></div>
       </div>
+      <label>Kto widzi</label>
+      <select id="sj-kto"><option value="">🔒 Tylko ja (prywatny)</option></select>
       <label>Notatki / kontakt (telefon, osoba, miejsce)</label>
       <textarea id="sj-opis">${edycja ? esc(d.opis || "") : ""}</textarea>
       ${edycja ? `<label>Strony dokumentu (↑↓ kolejność · 👁 podgląd · × usuń)</label><div id="sj-strony"></div>` : ""}
@@ -1610,6 +1621,13 @@ function kartaSejf(d) {
     });
   }
   if (edycja) renderStrony();
+  // "Kto widzi" — opcje plemion (rodzina/firma); domyślnie prywatny
+  (async () => {
+    const { data: pls } = await supabase.rpc("moje_plemiona_full");
+    const sel = ov.querySelector("#sj-kto");
+    (pls || []).forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
+    if (edycja && d.plemie_id) sel.value = d.plemie_id;
+  })();
   ov.querySelector("#sj-zapisz").addEventListener("click", async () => {
     const tytul = ov.querySelector("#sj-tytul").value.trim();
     if (!tytul) { ov.querySelector("#sj-tytul").focus(); return; }
@@ -1618,6 +1636,7 @@ function kartaSejf(d) {
     const dataDok = ov.querySelector("#sj-data").value || null;
     const waznosc = ov.querySelector("#sj-waznosc").value || null;
     const opis = ov.querySelector("#sj-opis").value.trim() || null;
+    const plemieId = ov.querySelector("#sj-kto").value || null;
     const btn = ov.querySelector("#sj-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
     try {
       let docId = d && d.id;
@@ -1632,7 +1651,7 @@ function kartaSejf(d) {
       }
       if (edycja) {
         const pliki = [...pracujPliki, ...nowePliki];   // kolejność po reorderze + nowe na końcu, minus usunięte
-        const patch = { tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis, pliki };
+        const patch = { tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis, pliki, plemie_id: plemieId };
         patch.plik_url = pliki[0] ? pliki[0].sciezka : null;
         patch.mime = pliki[0] ? (pliki[0].mime || null) : null;
         if (pliki.length && !d.zrodlo) { patch.zrodlo = "plik"; patch.ocr_status = "oczekuje"; }
@@ -1643,7 +1662,7 @@ function kartaSejf(d) {
       } else {
         const first = nowePliki[0] || null;
         const { data: ins, error } = await supabase.from("dokumenty").insert({
-          traveler_id: TRAVELER.id, org_id: null, typ: "inne", kontekst: "sejf",
+          traveler_id: TRAVELER.id, org_id: null, plemie_id: plemieId, typ: "inne", kontekst: "sejf",
           plik_url: first ? first.sciezka : null, mime: first ? first.mime : null, pliki: nowePliki,
           zrodlo: nowePliki.length ? "plik" : "reczne", ocr_status: nowePliki.length ? "oczekuje" : "pominiete",
           tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis,
