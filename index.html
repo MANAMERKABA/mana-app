@@ -1501,26 +1501,37 @@ function kartaDokSejf(d) {
     const txt = dni < 0 ? `ważność minęła · ${fmtData(d.data_waznosci, { day: "numeric", month: "short", year: "numeric" })}` : `ważne do ${fmtData(d.data_waznosci, { day: "numeric", month: "short", year: "numeric" })}`;
     waznHtml = `<div style="font-size:11.5px;color:${kolor};margin-top:2px;">⏳ ${esc(txt)}</div>`;
   }
+  const pl = plikiZDok(d);
+  const n = pl.length;
   const w = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
     <div style="font-size:15px;font-weight:500;">${esc(d.tytul || "(bez tytułu)")}</div>
-    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${esc(d.rodzaj || "dokument")}${d.data_dokumentu ? " · " + esc(fmtData(d.data_dokumentu, { day: "numeric", month: "short", year: "numeric" })) : ""}${d.plik_url ? " · 📎 plik" : ""}</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${esc(d.rodzaj || "dokument")}${d.data_dokumentu ? " · " + esc(fmtData(d.data_dokumentu, { day: "numeric", month: "short", year: "numeric" })) : ""}${n ? " · 📎 " + n + (n === 1 ? " plik" : " str.") : ""}</div>
     ${waznHtml}
     ${d.opis ? `<div style="font-size:12.5px;color:var(--ink);margin-top:4px;white-space:pre-wrap;">${esc(d.opis)}</div>` : ""}
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-      ${d.plik_url ? `<button class="sj-otw" style="${BG}font-size:12px;padding:5px 10px;">📄 Otwórz</button>` : ""}
+      ${n ? `<button class="sj-otw" style="${BG}font-size:12px;padding:5px 10px;">📄 Otwórz${n > 1 ? " (" + n + ")" : ""}</button>` : ""}
       <button class="sj-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
       <button class="sj-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
     </div></div>`);
-  if (d.plik_url) w.querySelector(".sj-otw").addEventListener("click", () => otworzDokSejf(d.plik_url));
+  if (n) w.querySelector(".sj-otw").addEventListener("click", () => otworzPlikiSejf(pl));
   w.querySelector(".sj-edit").addEventListener("click", () => kartaSejf(d));
   w.querySelector(".sj-usun").addEventListener("click", () => usunSejf(d));
   return w;
 }
 
-async function otworzDokSejf(sciezka) {
-  const { data, error } = await supabase.storage.from("dokumenty").createSignedUrl(sciezka, 300);
-  if (error || !data) { trzosToast("Nie udało się otworzyć dokumentu."); return; }
-  window.open(data.signedUrl, "_blank");
+function plikiZDok(d) {
+  if (Array.isArray(d.pliki) && d.pliki.length) return d.pliki;
+  if (d.plik_url) return [{ sciezka: d.plik_url, mime: d.mime || null }];
+  return [];
+}
+function liczbaPlikow(d) { return plikiZDok(d).length; }
+async function otworzPlikiSejf(pliki) {
+  if (!pliki || !pliki.length) return;
+  for (const p of pliki) {
+    const { data, error } = await supabase.storage.from("dokumenty").createSignedUrl(p.sciezka, 300);
+    if (error || !data) { trzosToast("Nie udało się otworzyć pliku."); continue; }
+    window.open(data.signedUrl, "_blank");
+  }
 }
 
 function kartaSejf(d) {
@@ -1541,7 +1552,9 @@ function kartaSejf(d) {
       </div>
       <label>Notatki / kontakt (telefon, osoba, miejsce)</label>
       <textarea id="sj-opis">${edycja ? esc(d.opis || "") : ""}</textarea>
-      ${edycja ? "" : `<label>Plik (skan / zdjęcie / PDF) — opcjonalnie</label><input type="file" id="sj-plik" accept="image/*,application/pdf">`}
+      <label>${edycja ? "Dodaj kolejne strony/pliki (opcjonalnie)" : "Pliki — strony dokumentu (możesz wybrać kilka)"}</label>
+      <input type="file" id="sj-plik" accept="image/*,application/pdf" multiple>
+      ${edycja ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">Już dołączone: ${liczbaPlikow(d)} — nowe dojdą do istniejących.</div>` : ""}
       <div style="font-size:11.5px;color:var(--ink-soft);margin-top:4px;">„Ważny do" doda przypomnienie do Horyzontu (2 tyg. wcześniej).</div>
     </div>
     <div class="m-modal__akcje"><button class="m-btn m-btn--zapisz" id="sj-zapisz">Zapisz</button></div>
@@ -1561,22 +1574,29 @@ function kartaSejf(d) {
     const btn = ov.querySelector("#sj-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
     try {
       let docId = d && d.id;
+      // wgraj WSZYSTKIE wybrane pliki (strony dokumentu)
+      const wybrane = [...(ov.querySelector("#sj-plik").files || [])];
+      const nowePliki = [];
+      for (const plik of wybrane) {
+        const ext = (plik.name.split(".").pop() || "bin").toLowerCase();
+        const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
+        const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, plik, { contentType: plik.type || undefined, upsert: false });
+        if (upErr) throw upErr;
+        nowePliki.push({ sciezka, mime: plik.type || null, nazwa: plik.name });
+      }
       if (edycja) {
-        const { error } = await supabase.from("dokumenty").update({ tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis }).eq("id", d.id);
+        const istn = plikiZDok(d);
+        const pliki = [...istn, ...nowePliki];
+        const patch = { tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis, pliki };
+        if (!d.plik_url && pliki[0]) { patch.plik_url = pliki[0].sciezka; patch.mime = pliki[0].mime; patch.zrodlo = "plik"; patch.ocr_status = "oczekuje"; }
+        const { error } = await supabase.from("dokumenty").update(patch).eq("id", d.id);
         if (error) throw error;
       } else {
-        let plik_url = null, mime = null;
-        const plik = ov.querySelector("#sj-plik").files[0] || null;
-        if (plik) {
-          const ext = (plik.name.split(".").pop() || "bin").toLowerCase();
-          const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
-          const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, plik, { contentType: plik.type || undefined, upsert: false });
-          if (upErr) throw upErr;
-          plik_url = sciezka; mime = plik.type || null;
-        }
+        const first = nowePliki[0] || null;
         const { data: ins, error } = await supabase.from("dokumenty").insert({
           traveler_id: TRAVELER.id, org_id: null, typ: "inne", kontekst: "sejf",
-          plik_url, mime, zrodlo: plik ? "plik" : "reczne", ocr_status: plik ? "oczekuje" : "pominiete",
+          plik_url: first ? first.sciezka : null, mime: first ? first.mime : null, pliki: nowePliki,
+          zrodlo: nowePliki.length ? "plik" : "reczne", ocr_status: nowePliki.length ? "oczekuje" : "pominiete",
           tytul, kategoria, rodzaj, data_dokumentu: dataDok, data_waznosci: waznosc, opis,
         }).select("id").single();
         if (error) throw error;
@@ -1614,9 +1634,10 @@ function kartaSejf(d) {
 
 async function usunSejf(d) {
   if (!confirm(`Usunąć „${d.tytul || "dokument"}" z Sejfu?`)) return;
-  // zasada integralności: kasujemy też powiązane wydarzenie-przypomnienie i plik
+  // zasada integralności: kasujemy też powiązane wydarzenie-przypomnienie i WSZYSTKIE pliki
   if (d.event_id) { try { await supabase.from("events").delete().eq("id", d.event_id); } catch (e) {} }
-  if (d.plik_url) { try { await supabase.storage.from("dokumenty").remove([d.plik_url]); } catch (e) {} }
+  const sciezki = plikiZDok(d).map((p) => p.sciezka).filter(Boolean);
+  if (sciezki.length) { try { await supabase.storage.from("dokumenty").remove(sciezki); } catch (e) {} }
   const { error } = await supabase.from("dokumenty").delete().eq("id", d.id);
   if (error) { trzosToast("Błąd: " + error.message); return; }
   trzosToast("Usunięto (z terminem).");
