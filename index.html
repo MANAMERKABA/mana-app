@@ -1732,7 +1732,7 @@ $("sejf-szukaj").addEventListener("input", (e) => { sejfSzukaj = e.target.value.
 /* ====================================================================
    KONTAKTY — książka adresowa (kafel fundament; dom w Sejfie)
    ==================================================================== */
-const KON_TYPY = ["rodzina", "serwis", "zdrowie", "firma", "znajomy", "inne"];
+const KON_TYPY = [["znajomy", "Znajomy / rodzina"], ["uslugodawca", "Usługodawca (serwis)"], ["terapeuta", "Terapeuta / zdrowie"], ["klient", "Klient"], ["dostawca", "Dostawca"], ["kontrahent", "Kontrahent"], ["inny", "Inny"]];
 let KON_PLEMIE_MAP = {};
 function przelaczSejfSekcja(seg) {
   document.querySelectorAll(".sejf-seg").forEach((b) => {
@@ -1787,7 +1787,7 @@ function kartaKontakt(k) {
 }
 function formKontakt(k) {
   const edycja = !!k;
-  const opcjeTyp = KON_TYPY.map((t) => `<option value="${t}"${k && k.typ === t ? " selected" : ""}>${t}</option>`).join("");
+  const opcjeTyp = KON_TYPY.map(([v, l]) => `<option value="${v}"${k && k.typ === v ? " selected" : ""}>${escP(l)}</option>`).join("");
   const ov = el(`<div class="m-overlay"><div class="m-modal">
     <div class="m-modal__head"><span class="m-modal__tytul">${edycja ? "Kontakt" : "Nowy kontakt"}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
     <div class="m-form">
@@ -1861,7 +1861,7 @@ async function dodajZPlemienia() {
   ov.querySelector("#kp-ok").addEventListener("click", async () => {
     const wybr = [...ov.querySelectorAll('input[type="checkbox"]:checked')].map((i) => kandydaci[Number(i.dataset.i)]);
     if (!wybr.length) { alert("Zaznacz kogoś."); return; }
-    const rows = wybr.map((c) => ({ owner_traveler_id: TRAVELER.id, imie: c.nick || "uczestnik", target_traveler_id: c.traveler_id, typ: "rodzina", polaczenie_status: "polaczony", aktywny: true }));
+    const rows = wybr.map((c) => ({ owner_traveler_id: TRAVELER.id, imie: c.nick || "uczestnik", target_traveler_id: c.traveler_id, polaczenie_status: "aktywne", aktywny: true }));
     const { error } = await supabase.from("kontakty").insert(rows);
     if (error) { trzosToast("Błąd: " + error.message); return; }
     zamknij(); trzosToast(`Dodano ${rows.length} ✓`); renderKontakty();
