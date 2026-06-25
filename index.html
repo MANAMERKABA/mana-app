@@ -635,11 +635,25 @@
       <input type="search" id="sejf-szukaj" class="m-szukaj" placeholder="Szukaj w sejfie…" aria-label="Szukaj">
       <span class="m-user"></span>
     </div>
-    <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-      <button id="sejf-dodaj" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Dokument</button>
-      <span style="font-size:12px;color:var(--ink-soft);">umowy · dowód rej. · polisy — pod kluczem</span>
+    <div style="display:flex;gap:6px;padding:4px 16px 2px;">
+      <button class="sejf-seg sejf-seg--on" data-seg="dok" style="flex:1;background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📄 Dokumenty</button>
+      <button class="sejf-seg" data-seg="kon" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📇 Kontakty</button>
     </div>
-    <div id="sejf-lista" style="padding:6px 16px 30px;"></div>
+    <div id="sejf-sekcja-dok">
+      <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button id="sejf-dodaj" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Dokument</button>
+        <span style="font-size:12px;color:var(--ink-soft);">umowy · dowód rej. · polisy — pod kluczem</span>
+      </div>
+      <div id="sejf-lista" style="padding:6px 16px 30px;"></div>
+    </div>
+    <div id="sejf-sekcja-kon" style="display:none">
+      <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <button id="kon-dodaj" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Kontakt</button>
+        <button id="kon-z-plemienia" style="background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">👥 Dodaj z plemienia</button>
+        <span style="font-size:12px;color:var(--ink-soft);">rodzina · serwis · firma</span>
+      </div>
+      <div id="sejf-kontakty" style="padding:6px 16px 30px;"></div>
+    </div>
     <div class="m-stopka"></div>
   </div>
 
@@ -1468,7 +1482,7 @@ $("trzos-dodaj-koszt").addEventListener("click", () => kartaTrzos("koszt", null)
 const SEJF_PRZEKLADKI = ["Pojazd", "Dom / Mieszkanie", "Ubezpieczenia", "Umowy", "Zdrowie", "Finanse", "Inne"];
 let sejfSzukaj = "";
 let SEJF_PLEMIE_MAP = {};
-function otworzSejf() { pokazWidok("sejf"); renderSejf(); }
+function otworzSejf() { pokazWidok("sejf"); przelaczSejfSekcja("dok"); }
 
 async function renderSejf() {
   const lista = $("sejf-lista");
@@ -1714,6 +1728,147 @@ async function usunSejf(d) {
 
 $("sejf-dodaj").addEventListener("click", () => kartaSejf(null));
 $("sejf-szukaj").addEventListener("input", (e) => { sejfSzukaj = e.target.value.trim(); renderSejf(); });
+
+/* ====================================================================
+   KONTAKTY — książka adresowa (kafel fundament; dom w Sejfie)
+   ==================================================================== */
+const KON_TYPY = ["rodzina", "serwis", "zdrowie", "firma", "znajomy", "inne"];
+let KON_PLEMIE_MAP = {};
+function przelaczSejfSekcja(seg) {
+  document.querySelectorAll(".sejf-seg").forEach((b) => {
+    const on = b.dataset.seg === seg;
+    b.style.background = on ? "#1a7158" : "#efece3";
+    b.style.color = on ? "#fff" : "var(--ink)";
+  });
+  $("sejf-sekcja-dok").style.display = seg === "dok" ? "" : "none";
+  $("sejf-sekcja-kon").style.display = seg === "kon" ? "" : "none";
+  if (seg === "kon") renderKontakty(); else renderSejf();
+}
+document.querySelectorAll(".sejf-seg").forEach((b) => b.addEventListener("click", () => przelaczSejfSekcja(b.dataset.seg)));
+
+async function renderKontakty() {
+  const box = $("sejf-kontakty");
+  if (!box) return;
+  box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
+  const [rK, rPl] = await Promise.all([
+    supabase.from("kontakty").select("*").order("imie", { ascending: true }),
+    supabase.rpc("moje_plemiona_full"),
+  ]);
+  if (rK.error) { box.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(rK.error.message)}</div>`; return; }
+  KON_PLEMIE_MAP = {};
+  (rPl.data || []).forEach((p) => { KON_PLEMIE_MAP[p.id] = p.nazwa; });
+  const kon = (rK.data || []).filter((k) => k.owner_org_id == null); // prywatne/rodzinne; firmowe (CRM) to gospodarz
+  box.innerHTML = "";
+  if (!kon.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Brak kontaktów — dodaj pierwszy albo „Dodaj z plemienia".</div>`)); return; }
+  for (const k of kon) box.appendChild(kartaKontakt(k));
+}
+function kartaKontakt(k) {
+  const moje = k.owner_traveler_id === (TRAVELER && TRAVELER.id);
+  const konto = k.target_traveler_id ? " · 🟢 konto MANA" : "";
+  const zakres = k.plemie_id ? ("👥 " + escP(KON_PLEMIE_MAP[k.plemie_id] || "plemię")) : "🔒 tylko ja";
+  const linie = [k.telefon, k.email].filter(Boolean).map(escP).join(" · ");
+  const w = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
+    <div style="font-size:15px;font-weight:500;">${esc(k.imie || "(bez imienia)")}${konto}</div>
+    ${linie ? `<div style="font-size:12.5px;color:var(--ink);margin-top:2px;">${linie}</div>` : ""}
+    ${k.typ ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${escP(k.typ)}</div>` : ""}
+    ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:3px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${zakres}${moje ? "" : " · udostępniony Tobie"}</div>
+    ${moje ? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+      ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;">📞 Zadzwoń</a>` : ""}
+      ${(!k.target_traveler_id && k.email) ? `<button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś do MANA</button>` : ""}
+      <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
+      <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
+    </div>` : ""}
+  </div>`);
+  const be = w.querySelector(".kn-edit"); if (be) be.addEventListener("click", () => formKontakt(k));
+  const bu = w.querySelector(".kn-usun"); if (bu) bu.addEventListener("click", () => usunKontakt(k));
+  const bz = w.querySelector(".kn-zapros"); if (bz) bz.addEventListener("click", () => zaprosKontakt(k));
+  return w;
+}
+function formKontakt(k) {
+  const edycja = !!k;
+  const opcjeTyp = KON_TYPY.map((t) => `<option value="${t}"${k && k.typ === t ? " selected" : ""}>${t}</option>`).join("");
+  const ov = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">${edycja ? "Kontakt" : "Nowy kontakt"}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form">
+      <label>Imię / nazwa</label>
+      <input type="text" id="kn-imie" maxlength="120" value="${edycja ? esc(k.imie || "") : ""}" placeholder="np. Mechanik EKO-GUM / Patrycja">
+      <div class="m-form__row">
+        <div><label>Telefon</label><input type="tel" id="kn-tel" maxlength="40" value="${edycja ? esc(k.telefon || "") : ""}"></div>
+        <div><label>E-mail</label><input type="email" id="kn-email" maxlength="120" value="${edycja ? esc(k.email || "") : ""}"></div>
+      </div>
+      <div class="m-form__row">
+        <div><label>Rodzaj</label><select id="kn-typ"><option value="">—</option>${opcjeTyp}</select></div>
+        <div><label>Kto widzi</label><select id="kn-kto"><option value="">🔒 Tylko ja</option></select></div>
+      </div>
+      <label>Notatka</label>
+      <textarea id="kn-notatka">${edycja ? esc(k.notatka || "") : ""}</textarea>
+    </div>
+    <div class="m-modal__akcje"><button class="m-btn m-btn--zapisz" id="kn-zapisz">Zapisz</button></div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zamknij = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  (async () => {
+    const { data: pls } = await supabase.rpc("moje_plemiona_full");
+    const sel = ov.querySelector("#kn-kto");
+    (pls || []).forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
+    if (edycja && k.plemie_id) sel.value = k.plemie_id;
+  })();
+  ov.querySelector("#kn-zapisz").addEventListener("click", async () => {
+    const imie = ov.querySelector("#kn-imie").value.trim();
+    if (!imie) { ov.querySelector("#kn-imie").focus(); return; }
+    const payload = {
+      imie,
+      telefon: ov.querySelector("#kn-tel").value.trim() || null,
+      email: ov.querySelector("#kn-email").value.trim() || null,
+      typ: ov.querySelector("#kn-typ").value || null,
+      notatka: ov.querySelector("#kn-notatka").value.trim() || null,
+      plemie_id: ov.querySelector("#kn-kto").value || null,
+    };
+    let error;
+    if (edycja) ({ error } = await supabase.from("kontakty").update(payload).eq("id", k.id));
+    else ({ error } = await supabase.from("kontakty").insert({ ...payload, owner_traveler_id: TRAVELER.id, polaczenie_status: "brak", aktywny: true }));
+    if (error) { trzosToast("Błąd: " + error.message); return; }
+    zamknij(); trzosToast("Zapisano ✓"); renderKontakty();
+  });
+}
+async function usunKontakt(k) {
+  if (!confirm(`Usunąć kontakt „${k.imie || ""}"?`)) return;
+  const { error } = await supabase.from("kontakty").delete().eq("id", k.id);
+  if (error) { trzosToast("Błąd: " + error.message); return; }
+  trzosToast("Usunięto."); renderKontakty();
+}
+function zaprosKontakt(k) {
+  alert(`Zaproszenie e-mailem z linkiem rejestracji uruchomimy po podpięciu wysyłki poczty (to następny krok). Jeśli „${k.imie || "ta osoba"}" ma już konto MANA, dodasz ją do plemienia przez kafel Plemię.`);
+}
+async function dodajZPlemienia() {
+  const [{ data: pls }, { data: istn = [] }] = await Promise.all([
+    supabase.rpc("moje_plemiona_full"),
+    supabase.from("kontakty").select("target_traveler_id").eq("owner_traveler_id", TRAVELER.id).not("target_traveler_id", "is", null),
+  ]);
+  const maja = new Set((istn || []).map((x) => x.target_traveler_id));
+  const kandydaci = [];
+  (pls || []).forEach((p) => { (p.czlonkowie || []).forEach((c) => { if (c.traveler_id !== TRAVELER.id && !maja.has(c.traveler_id) && !kandydaci.some((x) => x.traveler_id === c.traveler_id)) kandydaci.push({ traveler_id: c.traveler_id, nick: c.nick, plemie: p.nazwa }); }); });
+  if (!kandydaci.length) { alert("Wszyscy członkowie Twoich plemion są już w kontaktach."); return; }
+  const opcje = kandydaci.map((c, i) => `<label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:14px;"><input type="checkbox" data-i="${i}" checked style="width:16px;height:16px;"> ${escP(c.nick || "uczestnik")} <span style="color:var(--ink-soft);font-size:12px;">· ${escP(c.plemie)}</span></label>`).join("");
+  const ov = el(`<div class="m-overlay"><div class="m-modal"><div class="m-modal__head"><span class="m-modal__tytul">Dodaj z plemienia</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div><div class="m-form">${opcje}<div style="font-size:11.5px;color:var(--ink-soft);margin-top:6px;">Dodani jako kontakty powiązane z kontem (z ID).</div></div><div class="m-modal__akcje"><button class="m-btn m-btn--zapisz" id="kp-ok">Dodaj zaznaczonych</button></div></div></div>`);
+  document.body.appendChild(ov);
+  const zamknij = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  ov.querySelector("#kp-ok").addEventListener("click", async () => {
+    const wybr = [...ov.querySelectorAll('input[type="checkbox"]:checked')].map((i) => kandydaci[Number(i.dataset.i)]);
+    if (!wybr.length) { alert("Zaznacz kogoś."); return; }
+    const rows = wybr.map((c) => ({ owner_traveler_id: TRAVELER.id, imie: c.nick || "uczestnik", target_traveler_id: c.traveler_id, typ: "rodzina", polaczenie_status: "polaczony", aktywny: true }));
+    const { error } = await supabase.from("kontakty").insert(rows);
+    if (error) { trzosToast("Błąd: " + error.message); return; }
+    zamknij(); trzosToast(`Dodano ${rows.length} ✓`); renderKontakty();
+  });
+}
+$("kon-dodaj").addEventListener("click", () => formKontakt(null));
+$("kon-z-plemienia").addEventListener("click", dodajZPlemienia);
 
 /* klikalne nagłówki sekcji na ekranie startowym — wchodzą w Horyzont */
 function wpinajKlik(elem, fn) {
