@@ -1562,11 +1562,26 @@ function plikiZDok(d) {
 function liczbaPlikow(d) { return plikiZDok(d).length; }
 async function otworzPlikiSejf(pliki) {
   if (!pliki || !pliki.length) return;
-  for (const p of pliki) {
-    const { data, error } = await supabase.storage.from("dokumenty").createSignedUrl(p.sciezka, 300);
-    if (error || !data) { trzosToast("Nie udało się otworzyć pliku."); continue; }
-    window.open(data.signedUrl, "_blank");
-  }
+  const p = pliki[0]; // jeden plik na raz (przyciski stron wołają pojedynczo)
+  const { data, error } = await supabase.storage.from("dokumenty").createSignedUrl(p.sciezka, 300);
+  if (error || !data) { trzosToast("Nie udało się otworzyć pliku."); return; }
+  pokazPlikOverlay(data.signedUrl, p.mime);
+}
+/* podgląd pliku W APLIKACJI (nakładka) — działa na mobile, bez blokady wyskakujących okien */
+function pokazPlikOverlay(url, mime) {
+  const isImg = (mime || "").startsWith("image/") || /\.(jpe?g|png|gif|webp)$/i.test((url.split("?")[0] || ""));
+  const tresc = isImg
+    ? `<img src="${url}" style="max-width:100%;max-height:82vh;border-radius:8px;display:block;margin:0 auto;">`
+    : `<iframe src="${url}" style="width:88vw;height:82vh;border:none;border-radius:8px;background:#fff;"></iframe>`;
+  const ov = el(`<div class="m-overlay" style="z-index:10000;"><div style="position:relative;max-width:96vw;max-height:92vh;background:#1a1a1a;border-radius:12px;padding:10px;">
+    <button class="pv-x" style="position:absolute;top:-12px;right:-12px;width:32px;height:32px;border-radius:50%;border:none;background:#fff;cursor:pointer;font-size:16px;box-shadow:0 2px 8px rgba(0,0,0,.3);">✕</button>
+    <a href="${url}" target="_blank" rel="noopener" style="position:absolute;top:-12px;left:-12px;background:#fff;border-radius:16px;padding:4px 11px;font-size:12px;text-decoration:none;color:#111;box-shadow:0 2px 8px rgba(0,0,0,.3);">otwórz ↗</a>
+    ${tresc}
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zamknij = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
+  ov.querySelector(".pv-x").addEventListener("click", zamknij);
 }
 
 function kartaSejf(d) {
