@@ -1277,7 +1277,7 @@ $("m-back-egzamin").addEventListener("click", () => pokazWidok("ekran"));
 const KAT_TRZOS = ["dom", "jedzenie", "transport", "zdrowie", "rozrywka", "rachunki", "oszczędności", "inne"];
 const KAT_POZ_TRZOS = ["", "paliwo", "spożywka", "jedzenie", "higiena", "kosmetyki", "suplementy", "leki", "zdrowie", "transport", "inne"];
 const METODY_TRZOS = ["", "gotówka", "karta", "przelew", "BLIK"];
-let TRZOS_PLEMIE_MAP = {}, TRZOS_OSOBA_MAP = {};
+let TRZOS_PLEMIE_MAP = {}, TRZOS_OSOBA_MAP = {}, TRZOS_PLEMIONA = [], TRZOS_ZAKRES = null;
 const fmtZl = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " zł";
 
 function trzosToast(t) {
@@ -1302,22 +1302,72 @@ async function renderTrzos() {
     supabase.rpc("moje_plemiona_full"),
   ]);
   const { data: txy = [], error } = rTx;
-  TRZOS_PLEMIE_MAP = {}; TRZOS_OSOBA_MAP = {};
-  (rPl.data || []).forEach((p) => { TRZOS_PLEMIE_MAP[p.id] = p.nazwa; (p.czlonkowie || []).forEach((c) => { if (c.nick) TRZOS_OSOBA_MAP[c.traveler_id] = c.nick; }); });
+  TRZOS_PLEMIE_MAP = {}; TRZOS_OSOBA_MAP = {}; TRZOS_PLEMIONA = rPl.data || [];
+  TRZOS_PLEMIONA.forEach((p) => { TRZOS_PLEMIE_MAP[p.id] = p.nazwa; (p.czlonkowie || []).forEach((c) => { if (c.nick) TRZOS_OSOBA_MAP[c.traveler_id] = c.nick; }); });
   if (error) { lista.innerHTML = `<div style="color:#c4513a;font-size:14px;">Błąd: ${esc(error.message)}</div>`; return; }
 
-  const przychod = txy.filter((t) => t.typ === "przychod").reduce((s, t) => s + Number(t.kwota || 0), 0);
-  const koszt = txy.filter((t) => t.typ === "koszt").reduce((s, t) => s + Number(t.kwota || 0), 0);
-  const bilans = przychod - koszt;
-  pod.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;">
-    <div style="flex:1;min-width:90px;background:#eef7f3;border:1px solid #cfe7df;border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:#1a7158;">Przychód</div><div style="font-size:16px;font-weight:600;color:#1a7158;">${fmtZl(przychod)}</div></div>
-    <div style="flex:1;min-width:90px;background:#fbeeea;border:1px solid #f0d3ca;border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:#c4513a;">Koszt</div><div style="font-size:16px;font-weight:600;color:#c4513a;">${fmtZl(koszt)}</div></div>
-    <div style="flex:1;min-width:90px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:var(--ink-soft);">Bilans</div><div style="font-size:16px;font-weight:600;color:${bilans >= 0 ? "#1a7158" : "#c4513a"};">${fmtZl(bilans)}</div></div>
-  </div>`;
+  // Zakres: "moj" = prywatne (plemie_id null) + chip na każde plemię/zespół. Domyślnie tylko "moj".
+  if (!TRZOS_ZAKRES) TRZOS_ZAKRES = new Set(["moj"]);
+  // odsiej zakresy do nieistniejących już plemion
+  [...TRZOS_ZAKRES].forEach((k) => { if (k !== "moj" && !TRZOS_PLEMIE_MAP[k]) TRZOS_ZAKRES.delete(k); });
+  if (!TRZOS_ZAKRES.size) TRZOS_ZAKRES.add("moj");
 
-  if (!txy.length) { lista.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:14px 0;">Pusto. Dodaj pierwszy przychód lub koszt — paragon zrobisz zdjęciem (na telefonie) albo wybierzesz plik.</div>`; return; }
-  lista.innerHTML = "";
-  txy.forEach((t) => lista.appendChild(wierszTrzos(t)));
+  const chipStyl = (on) => `border-radius:999px;padding:6px 13px;font-size:13px;cursor:pointer;border:1px solid ${on ? "#1a7158" : "var(--line)"};background:${on ? "#1a7158" : "var(--surface)"};color:${on ? "#fff" : "var(--ink)"};`;
+
+  function rysuj() {
+    const sel = TRZOS_ZAKRES;
+    const widoczne = txy.filter((t) => (t.plemie_id ? sel.has(t.plemie_id) : sel.has("moj")));
+    const wybranePlem = TRZOS_PLEMIONA.filter((p) => sel.has(p.id));
+
+    const przychod = widoczne.filter((t) => t.typ === "przychod").reduce((s, t) => s + Number(t.kwota || 0), 0);
+    const koszt = widoczne.filter((t) => t.typ === "koszt").reduce((s, t) => s + Number(t.kwota || 0), 0);
+    const bilans = przychod - koszt;
+
+    // chipy
+    const chipy = [`<button class="trz-chip" data-key="moj" style="${chipStyl(sel.has("moj"))}">🙋 Mój</button>`]
+      .concat(TRZOS_PLEMIONA.map((p) => `<button class="trz-chip" data-key="${p.id}" style="${chipStyl(sel.has(p.id))}">👥 ${escP(p.nazwa)}</button>`))
+      .join("");
+
+    // rozbicie per osoba + per kategoria (tylko gdy w zakresie jest plemię/zespół)
+    let rozbicie = "";
+    if (wybranePlem.length) {
+      const plemRows = widoczne.filter((t) => t.plemie_id);
+      const perOsoba = {};
+      plemRows.forEach((t) => {
+        const k = t.traveler_id; perOsoba[k] = perOsoba[k] || { p: 0, k: 0 };
+        if (t.typ === "przychod") perOsoba[k].p += Number(t.kwota || 0); else perOsoba[k].k += Number(t.kwota || 0);
+      });
+      const perKat = {};
+      plemRows.filter((t) => t.typ === "koszt").forEach((t) => { const k = t.kategoria || "bez kategorii"; perKat[k] = (perKat[k] || 0) + Number(t.kwota || 0); });
+      const osobaHtml = Object.entries(perOsoba).sort((a, b) => (b[1].k + b[1].p) - (a[1].k + a[1].p)).map(([tid, v]) =>
+        `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${escP(TRZOS_OSOBA_MAP[tid] || (tid === (TRAVELER && TRAVELER.id) ? "Ja" : "—"))}</span><span style="color:var(--ink-soft);">${v.p ? `<span style='color:#1a7158;'>+${fmtZl(v.p)}</span> ` : ""}<span style="color:#c4513a;">−${fmtZl(v.k)}</span></span></div>`).join("");
+      const katHtml = Object.entries(perKat).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
+        `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${escP(k)}</span><span style="color:#c4513a;">−${fmtZl(v)}</span></div>`).join("");
+      rozbicie = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+        <div style="flex:1;min-width:150px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px;"><div style="font-size:11px;color:var(--ink-soft);margin-bottom:3px;">Kto ile dołożył</div>${osobaHtml || '<div style="font-size:12px;color:var(--ink-soft);">—</div>'}</div>
+        <div style="flex:1;min-width:150px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px 12px;"><div style="font-size:11px;color:var(--ink-soft);margin-bottom:3px;">Koszty wg kategorii</div>${katHtml || '<div style="font-size:12px;color:var(--ink-soft);">—</div>'}</div>
+      </div>`;
+    }
+
+    pod.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${chipy}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:90px;background:#eef7f3;border:1px solid #cfe7df;border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:#1a7158;">Przychód</div><div style="font-size:16px;font-weight:600;color:#1a7158;">${fmtZl(przychod)}</div></div>
+        <div style="flex:1;min-width:90px;background:#fbeeea;border:1px solid #f0d3ca;border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:#c4513a;">Koszt</div><div style="font-size:16px;font-weight:600;color:#c4513a;">${fmtZl(koszt)}</div></div>
+        <div style="flex:1;min-width:90px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;"><div style="font-size:11px;color:var(--ink-soft);">Bilans</div><div style="font-size:16px;font-weight:600;color:${bilans >= 0 ? "#1a7158" : "#c4513a"};">${fmtZl(bilans)}</div></div>
+      </div>${rozbicie}`;
+
+    pod.querySelectorAll(".trz-chip").forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.key;
+      if (TRZOS_ZAKRES.has(k)) TRZOS_ZAKRES.delete(k); else TRZOS_ZAKRES.add(k);
+      if (!TRZOS_ZAKRES.size) TRZOS_ZAKRES.add("moj"); // nigdy pusto
+      rysuj();
+    }));
+
+    if (!widoczne.length) { lista.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:14px 0;">${txy.length ? "Brak wpisów w tym zakresie." : "Pusto. Dodaj pierwszy przychód lub koszt — paragon zrobisz zdjęciem (na telefonie) albo wybierzesz plik."}</div>`; return; }
+    lista.innerHTML = "";
+    widoczne.forEach((t) => lista.appendChild(wierszTrzos(t)));
+  }
+  rysuj();
 }
 
 function wierszPozTrzos(p) {
