@@ -1277,6 +1277,7 @@ $("m-back-egzamin").addEventListener("click", () => pokazWidok("ekran"));
 const KAT_TRZOS = ["dom", "jedzenie", "transport", "zdrowie", "rozrywka", "rachunki", "oszczędności", "inne"];
 const KAT_POZ_TRZOS = ["", "paliwo", "spożywka", "jedzenie", "higiena", "kosmetyki", "suplementy", "leki", "zdrowie", "transport", "inne"];
 const METODY_TRZOS = ["", "gotówka", "karta", "przelew", "BLIK"];
+let TRZOS_PLEMIE_MAP = {}, TRZOS_OSOBA_MAP = {};
 const fmtZl = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " zł";
 
 function trzosToast(t) {
@@ -1291,12 +1292,18 @@ function otworzTrzos() { pokazWidok("trzos"); renderTrzos(); }
 async function renderTrzos() {
   const lista = $("trzos-lista"), pod = $("trzos-podsum");
   lista.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję Trzos…</div>`;
-  const { data: txy = [], error } = await supabase
-    .from("transakcje")
-    .select("*, dokumenty(id, plik_url, mime, ocr_status), transakcja_pozycje(id, nazwa, ilosc, cena_jedn, kwota, kategoria)")
-    .eq("traveler_id", TRAVELER.id)
-    .order("data", { ascending: false })
-    .order("data_utworzenia", { ascending: false });
+  // org_id null = osobiste + rodzinne (RLS zwraca własne + plemienne); firmowe (org) to gospodarz
+  const [rTx, rPl] = await Promise.all([
+    supabase.from("transakcje")
+      .select("*, dokumenty(id, plik_url, mime, ocr_status), transakcja_pozycje(id, nazwa, ilosc, cena_jedn, kwota, kategoria)")
+      .is("org_id", null)
+      .order("data", { ascending: false })
+      .order("data_utworzenia", { ascending: false }),
+    supabase.rpc("moje_plemiona_full"),
+  ]);
+  const { data: txy = [], error } = rTx;
+  TRZOS_PLEMIE_MAP = {}; TRZOS_OSOBA_MAP = {};
+  (rPl.data || []).forEach((p) => { TRZOS_PLEMIE_MAP[p.id] = p.nazwa; (p.czlonkowie || []).forEach((c) => { if (c.nick) TRZOS_OSOBA_MAP[c.traveler_id] = c.nick; }); });
   if (error) { lista.innerHTML = `<div style="color:#c4513a;font-size:14px;">Błąd: ${esc(error.message)}</div>`; return; }
 
   const przychod = txy.filter((t) => t.typ === "przychod").reduce((s, t) => s + Number(t.kwota || 0), 0);
@@ -1341,7 +1348,7 @@ function wierszTrzos(t) {
   const row = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);${bezKat ? "border-left:4px solid #e0a020;" : ""}border-radius:12px;padding:10px 12px;flex-wrap:wrap;">
     <div style="flex:1;min-width:150px;">
       <div style="font-size:14px;">${esc(t.opis || t.kategoria || (dodatnia ? "Przychód" : "Koszt"))}</div>
-      <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}${poz.length ? " · " + poz.length + " poz." : ""}${bezKat ? ` · <span style="color:#b8842a;font-weight:600;">⚠ ${bezKat} bez kategorii</span>` : ""}</div>
+      <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}${poz.length ? " · " + poz.length + " poz." : ""}${t.plemie_id ? ` · <span style="color:#1a7158;">👥 ${escP(TRZOS_PLEMIE_MAP[t.plemie_id] || "rodzina")}</span>` : ""}${(t.plemie_id && t.traveler_id !== (TRAVELER && TRAVELER.id)) ? " · od " + escP(TRZOS_OSOBA_MAP[t.traveler_id] || "kogoś") : ""}${bezKat ? ` · <span style="color:#b8842a;font-weight:600;">⚠ ${bezKat} bez kategorii</span>` : ""}</div>
     </div>
     <div style="font-size:15px;font-weight:600;color:${kolor};white-space:nowrap;">${znak} ${fmtZl(t.kwota)}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;justify-content:flex-end;"></div>
@@ -1383,6 +1390,8 @@ function kartaTrzos(typ, t) {
       <select id="tx-metoda">${metOpts}</select>
       <label>Opis</label>
       <input type="text" id="tx-opis" maxlength="200" value="${t ? esc(t.opis || "") : ""}">
+      <label>Kto widzi (wspólny budżet rodziny)</label>
+      <select id="tx-kto"><option value="">🔒 Tylko ja (prywatne)</option></select>
       <label>📷 Paragon / faktura — na telefonie „Zrób zdjęcie", na komputerze wybierz plik / PDF</label>
       <input id="tx-plik" type="file" accept="image/*,application/pdf" style="font-size:13px;">
       ${t && t.paragon_url ? `<div style="font-size:11px;color:#1a7158;">Załączono dokument ✓ — po zapisie kliknij OCR, by odczytać.</div>` : ""}
@@ -1395,6 +1404,12 @@ function kartaTrzos(typ, t) {
   const zamknij = () => ov.remove();
   ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
   ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  (async () => {
+    const { data: pls } = await supabase.rpc("moje_plemiona_full");
+    const sel = ov.querySelector("#tx-kto");
+    (pls || []).forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
+    if (t && t.plemie_id) sel.value = t.plemie_id;
+  })();
 
   ov.querySelector("#tx-zapisz").addEventListener("click", async () => {
     const kwota = Number(ov.querySelector("#tx-kwota").value);
@@ -1403,11 +1418,12 @@ function kartaTrzos(typ, t) {
     const kategoria = ov.querySelector("#tx-kat").value || null;
     const metoda = ov.querySelector("#tx-metoda").value || null;
     const opis = ov.querySelector("#tx-opis").value.trim() || null;
+    const plemieId = ov.querySelector("#tx-kto").value || null;
     const plik = ov.querySelector("#tx-plik").files[0] || null;
     const btn = ov.querySelector("#tx-zapisz");
     btn.disabled = true; btn.textContent = "Zapisuję…";
 
-    const payload = { typ, kwota, data: dataVal, kategoria, metoda_platnosci: metoda, opis, traveler_id: TRAVELER.id, org_id: null };
+    const payload = { typ, kwota, data: dataVal, kategoria, metoda_platnosci: metoda, opis, traveler_id: TRAVELER.id, org_id: null, plemie_id: plemieId };
     let txId = t && t.id;
     try {
       if (edycja) {
@@ -1425,7 +1441,7 @@ function kartaTrzos(typ, t) {
         if (upErr) throw upErr;
         await supabase.from("transakcje").update({ paragon_url: sciezka }).eq("id", txId);
         const { error: dErr } = await supabase.from("dokumenty").insert({
-          traveler_id: TRAVELER.id, org_id: null, typ: "paragon", kontekst: "trzos",
+          traveler_id: TRAVELER.id, org_id: null, plemie_id: plemieId, typ: "paragon", kontekst: "trzos",
           plik_url: sciezka, mime: plik.type || null, zrodlo: "plik", ocr_status: "oczekuje",
           transakcja_id: txId, data_dokumentu: dataVal,
         });
