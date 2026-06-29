@@ -1275,7 +1275,7 @@ $("m-back-egzamin").addEventListener("click", () => pokazWidok("ekran"));
    tą samą tabelą przez plemie_id — kolejny krok.
    ════════════════════════════════════════════════════════════════════ */
 const KAT_TRZOS = ["dom", "jedzenie", "transport", "zdrowie", "rozrywka", "rachunki", "oszczędności", "inne"];
-const KAT_POZ_TRZOS = ["", "spożywka", "higiena", "kosmetyki", "suplementy", "leki", "zdrowie", "inne"];
+const KAT_POZ_TRZOS = ["", "paliwo", "spożywka", "jedzenie", "higiena", "kosmetyki", "suplementy", "leki", "zdrowie", "transport", "inne"];
 const METODY_TRZOS = ["", "gotówka", "karta", "przelew", "BLIK"];
 const fmtZl = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " zł";
 
@@ -1314,10 +1314,14 @@ async function renderTrzos() {
 }
 
 function wierszPozTrzos(p) {
-  const katOpts = KAT_POZ_TRZOS.map((k) => `<option value="${k}"${(p.kategoria || "") === k ? " selected" : ""}>${k || "— kategoria —"}</option>`).join("");
-  const r = el(`<div style="display:flex;gap:6px;align-items:center;margin:5px 0;flex-wrap:wrap;">
+  const cur = p.kategoria || "";
+  const lista = KAT_POZ_TRZOS.slice();
+  if (cur && !lista.includes(cur)) lista.splice(1, 0, cur); // wartość z OCR spoza listy — pokaż, nie gub
+  const katOpts = lista.map((k) => `<option value="${k}"${cur === k ? " selected" : ""}>${k || "— kategoria? —"}</option>`).join("");
+  const brak = !cur;
+  const r = el(`<div style="display:flex;gap:6px;align-items:center;margin:5px 0;flex-wrap:wrap;${brak ? "background:#fff7e6;border-radius:8px;padding:3px 5px;" : ""}">
     <input class="pz-nazwa" value="${esc(p.nazwa || "")}" style="flex:2;min-width:120px;padding:6px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:#fff;">
-    <select class="pz-kat" style="padding:6px;border:1px solid var(--line);border-radius:7px;font-size:12px;background:#fff;">${katOpts}</select>
+    <select class="pz-kat" style="padding:6px;border:1px solid ${brak ? "#e0a020" : "var(--line)"};border-radius:7px;font-size:12px;background:#fff;${brak ? "color:#b8842a;font-weight:600;" : ""}">${katOpts}</select>
     <span style="font-size:12px;color:var(--ink-soft);white-space:nowrap;">${p.kwota != null ? fmtZl(p.kwota) : ""}</span>
   </div>`);
   const zapisz = async (patch) => { const { error } = await supabase.from("transakcja_pozycje").update(patch).eq("id", p.id); trzosToast(error ? "Błąd zapisu" : "Zapisano ✓"); };
@@ -1329,14 +1333,15 @@ function wierszPozTrzos(p) {
 function wierszTrzos(t) {
   const dok = (t.dokumenty && t.dokumenty[0]) || null;
   const poz = t.transakcja_pozycje || [];
+  const bezKat = poz.filter((p) => !p.kategoria).length;
   const dodatnia = t.typ === "przychod";
   const kolor = dodatnia ? "#1a7158" : "#c4513a";
   const znak = dodatnia ? "+" : "−";
   const wrap = el(`<div style="margin-bottom:8px;"></div>`);
-  const row = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;flex-wrap:wrap;">
+  const row = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);${bezKat ? "border-left:4px solid #e0a020;" : ""}border-radius:12px;padding:10px 12px;flex-wrap:wrap;">
     <div style="flex:1;min-width:150px;">
       <div style="font-size:14px;">${esc(t.opis || t.kategoria || (dodatnia ? "Przychód" : "Koszt"))}</div>
-      <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}${poz.length ? " · " + poz.length + " poz." : ""}</div>
+      <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}${poz.length ? " · " + poz.length + " poz." : ""}${bezKat ? ` · <span style="color:#b8842a;font-weight:600;">⚠ ${bezKat} bez kategorii</span>` : ""}</div>
     </div>
     <div style="font-size:15px;font-weight:600;color:${kolor};white-space:nowrap;">${znak} ${fmtZl(t.kwota)}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;justify-content:flex-end;"></div>
