@@ -1376,38 +1376,69 @@ function wierszPozTrzos(p) {
   if (cur && !lista.includes(cur)) lista.splice(1, 0, cur); // wartość z OCR spoza listy — pokaż, nie gub
   const katOpts = lista.map((k) => `<option value="${k}"${cur === k ? " selected" : ""}>${k || "— kategoria? —"}</option>`).join("");
   const brak = !cur;
+  const JEDN_TRZOS = ["szt", "l", "kg", "opak", "godz"];
+  const jmOpts = JEDN_TRZOS.map((j) => `<option value="${j}">${j}</option>`).join("");
   const r = el(`<div style="display:flex;gap:6px;align-items:center;margin:5px 0;flex-wrap:wrap;${brak ? "background:#fff7e6;border-radius:8px;padding:3px 5px;" : ""}">
-    <input class="pz-nazwa" value="${esc(p.nazwa || "")}" style="flex:2;min-width:120px;padding:6px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:#fff;">
+    <input class="pz-nazwa" value="${esc(p.nazwa || "")}" style="flex:2;min-width:110px;padding:6px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:#fff;">
+    <input class="pz-ilosc" type="text" inputmode="decimal" placeholder="ile" value="${p.ilosc != null ? esc(p.ilosc) : ""}" style="width:40px;padding:6px;border:1px solid var(--line);border-radius:7px;font-size:13px;background:#fff;">
+    <select class="pz-jm" title="jednostka" style="padding:6px;border:1px solid var(--line);border-radius:7px;font-size:12px;background:#fff;">${jmOpts}</select>
     <select class="pz-kat" style="padding:6px;border:1px solid ${brak ? "#e0a020" : "var(--line)"};border-radius:7px;font-size:12px;background:#fff;${brak ? "color:#b8842a;font-weight:600;" : ""}">${katOpts}</select>
     <span style="font-size:12px;color:var(--ink-soft);white-space:nowrap;">${p.kwota != null ? fmtZl(p.kwota) : ""}</span>
   </div>`);
+  r.querySelector(".pz-jm").value = p.jednostka || "szt";
   const zapisz = async (patch) => { const { error } = await supabase.from("transakcja_pozycje").update(patch).eq("id", p.id); trzosToast(error ? "Błąd zapisu" : "Zapisano ✓"); };
   r.querySelector(".pz-kat").addEventListener("change", (e) => zapisz({ kategoria: e.target.value || null }));
+  r.querySelector(".pz-jm").addEventListener("change", (e) => zapisz({ jednostka: e.target.value || "szt" }));
+  const ilEl = r.querySelector(".pz-ilosc");
+  ilEl.addEventListener("change", () => { const v = String(ilEl.value || "").replace(",", ".").trim(); const n = v === "" ? 1 : Number(v); zapisz({ ilosc: isFinite(n) ? n : 1 }); });
   const nz = r.querySelector(".pz-nazwa");
   nz.addEventListener("change", () => { const v = nz.value.trim(); if (v && v !== (p.nazwa || "")) zapisz({ nazwa: v }); });
   return r;
+}
+async function dodajPozTrzos(transakcja_id, kwota, nazwa, kategoria) {
+  const { error } = await supabase.from("transakcja_pozycje").insert({ transakcja_id, nazwa: nazwa || "Nowa pozycja", kwota: kwota != null ? kwota : null, kategoria: kategoria || null, typ: "inne" });
+  if (error) { trzosToast("Błąd: " + error.message); return; }
+  trzosToast("Dodano pozycję ✓"); renderTrzos();
 }
 function wierszTrzos(t) {
   const dok = (t.dokumenty && t.dokumenty[0]) || null;
   const poz = t.transakcja_pozycje || [];
   const bezKat = poz.filter((p) => !p.kategoria).length;
+  // Uzgodnienie: suma pozycji musi = kwota paragonu (kwota całości jest pewna; pozycje z OCR bywają dziurawe)
+  const sumPoz = poz.reduce((s, p) => s + Number(p.kwota || 0), 0);
+  const rozjazd = poz.length ? Math.round((Number(t.kwota || 0) - sumPoz) * 100) / 100 : 0;
+  const niezgodne = Math.abs(rozjazd) > 0.02;
   const dodatnia = t.typ === "przychod";
   const kolor = dodatnia ? "#1a7158" : "#c4513a";
   const znak = dodatnia ? "+" : "−";
   const wrap = el(`<div style="margin-bottom:8px;"></div>`);
-  const row = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);${bezKat ? "border-left:4px solid #e0a020;" : ""}border-radius:12px;padding:10px 12px;flex-wrap:wrap;">
+  const row = el(`<div style="display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);${niezgodne ? "border-left:4px solid #c4513a;" : bezKat ? "border-left:4px solid #e0a020;" : ""}border-radius:12px;padding:10px 12px;flex-wrap:wrap;">
     <div style="flex:1;min-width:150px;">
       <div style="font-size:14px;">${esc(t.opis || t.kategoria || (dodatnia ? "Przychód" : "Koszt"))}</div>
-      <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}${poz.length ? " · " + poz.length + " poz." : ""}${t.plemie_id ? ` · <span style="color:#1a7158;">👥 ${escP(TRZOS_PLEMIE_MAP[t.plemie_id] || "rodzina")}</span>` : ""}${(t.plemie_id && t.traveler_id !== (TRAVELER && TRAVELER.id)) ? " · od " + escP(TRZOS_OSOBA_MAP[t.traveler_id] || "kogoś") : ""}${bezKat ? ` · <span style="color:#b8842a;font-weight:600;">⚠ ${bezKat} bez kategorii</span>` : ""}</div>
+      <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}${poz.length ? " · " + poz.length + " poz." : ""}${t.plemie_id ? ` · <span style="color:#1a7158;">👥 ${escP(TRZOS_PLEMIE_MAP[t.plemie_id] || "rodzina")}</span>` : ""}${(t.plemie_id && t.traveler_id !== (TRAVELER && TRAVELER.id)) ? " · od " + escP(TRZOS_OSOBA_MAP[t.traveler_id] || "kogoś") : ""}${niezgodne ? ` · <span style="color:#c4513a;font-weight:600;">⚠ pozycje nie sumują się do kwoty (${rozjazd > 0 ? "brakuje " : "nadwyżka "}${fmtZl(Math.abs(rozjazd))})</span>` : bezKat ? ` · <span style="color:#b8842a;font-weight:600;">⚠ ${bezKat} bez kategorii</span>` : ""}</div>
     </div>
     <div style="font-size:15px;font-weight:600;color:${kolor};white-space:nowrap;">${znak} ${fmtZl(t.kwota)}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;justify-content:flex-end;"></div>
   </div>`);
   const akcje = row.lastElementChild;
   const pozBox = el(`<div style="display:none;background:#faf8f2;border:1px solid var(--line);border-top:none;border-radius:0 0 12px 12px;padding:6px 12px 10px;"></div>`);
+  if (poz.length) {
+    const sumBox = el(`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0 6px;border-bottom:1px dashed var(--line);margin-bottom:6px;color:${niezgodne ? "#c4513a" : "var(--ink-soft)"};"><span>Suma pozycji: <b>${fmtZl(sumPoz)}</b> / paragon <b>${fmtZl(t.kwota)}</b></span><span>${niezgodne ? (rozjazd > 0 ? "brakuje " : "nadwyżka ") + fmtZl(Math.abs(rozjazd)) : "zgadza się ✓"}</span></div>`);
+    pozBox.appendChild(sumBox);
+  }
   poz.forEach((p) => pozBox.appendChild(wierszPozTrzos(p)));
+  const dolBtny = el(`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>`);
+  if (niezgodne && rozjazd > 0) {
+    const bMiss = el(`<button style="background:#c4513a;color:#fff;border:none;border-radius:7px;padding:6px 11px;font-size:12px;cursor:pointer;">+ Dodaj brakującą pozycję (${fmtZl(rozjazd)})</button>`);
+    bMiss.addEventListener("click", () => dodajPozTrzos(t.id, rozjazd, "", ""));
+    dolBtny.appendChild(bMiss);
+  }
+  const bAdd = el(`<button style="background:#8c887e;color:#fff;border:none;border-radius:7px;padding:6px 11px;font-size:12px;cursor:pointer;">+ Pozycja</button>`);
+  bAdd.addEventListener("click", () => dodajPozTrzos(t.id, null, "", ""));
+  dolBtny.appendChild(bAdd);
+  pozBox.appendChild(dolBtny);
   const mkBtn = (txt, bg, fn) => { const b = el(`<button style="background:${bg};color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">${txt}</button>`); b.addEventListener("click", fn); return b; };
-  if (poz.length) akcje.appendChild(mkBtn("Pozycje", "#1f9e8f", () => { pozBox.style.display = pozBox.style.display === "none" ? "block" : "none"; }));
+  if (poz.length || niezgodne) akcje.appendChild(mkBtn(niezgodne ? "⚠ Pozycje" : "Pozycje", niezgodne ? "#c4513a" : "#1f9e8f", () => { pozBox.style.display = pozBox.style.display === "none" ? "block" : "none"; }));
   if (dok) {
     if (dok.ocr_status !== "gotowe") akcje.appendChild(mkBtn("OCR", "#5b8def", () => wykonajOcrTrzos(t)));
     akcje.appendChild(mkBtn("📎 Podgląd", "#8c887e", () => otworzDokTrzos(dok.plik_url)));
@@ -2841,7 +2872,14 @@ async function wyslij() {
   dodajWiadomosc("ja", tekst);
   const mysl = dodajWiadomosc("mysli", "Asystent myśli…");
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    let { data: { session } } = await supabase.auth.getSession();
+    if (!session) { const r = await supabase.auth.refreshSession(); session = r.data ? r.data.session : null; }
+    if (!session || !session.access_token) {
+      mysl.remove();
+      dodajWiadomosc("asystent", "Twoja sesja wygasła — zaloguj się ponownie (odśwież stronę i wejdź przez logowanie), a potem wróć do rozmowy.");
+      trwaRozmowa = false;
+      return;
+    }
     const res = await fetch(`${SUPABASE_URL}/functions/v1/call-serce`, {
       method: "POST",
       headers: {
@@ -2932,7 +2970,7 @@ async function asystentParagon(file) {
         if (tx.error) throw tx.error;
         await supabase.from("dokumenty").update({ transakcja_id: tx.data.id }).eq("id", dok.data.id);
         if (poz.length) {
-          const rows = poz.map((p) => ({ transakcja_id: tx.data.id, typ: "zakup", nazwa: String(p.nazwa), ilosc: p.ilosc != null ? p.ilosc : 1, cena_jedn: p.cena_jedn != null ? p.cena_jedn : null, kwota: p.kwota != null ? p.kwota : null, kategoria: p.kategoria || null }));
+          const rows = poz.map((p) => ({ transakcja_id: tx.data.id, typ: "zakup", nazwa: String(p.nazwa), ilosc: p.ilosc != null ? p.ilosc : 1, jednostka: p.jednostka || "szt", cena_jedn: p.cena_jedn != null ? p.cena_jedn : null, kwota: p.kwota != null ? p.kwota : null, kategoria: p.kategoria || null }));
           await supabase.from("transakcja_pozycje").insert(rows);
         }
         bubel.querySelector("div:last-child").remove();
