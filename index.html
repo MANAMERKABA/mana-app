@@ -2591,8 +2591,8 @@ async function renderPlemieKalendarz() {
       const calodz = evs.filter((e) => {
         if (!e.caly_dzien) return false;
         const sISO = czesciWarszawy(e.data_czas).dataISO;
-        const eISO = e.koniec ? czesciWarszawy(e.koniec).dataISO : dataKalISO(new Date(new Date(e.data_czas).getTime() + 86400000));
-        if (!(dISO >= sISO && dISO < eISO)) return false;
+        if (e.koniec) { const eISO = czesciWarszawy(e.koniec).dataISO; if (!(dISO >= sISO && dISO <= eISO)) return false; } // wielodniowe: oba końce włącznie
+        else if (dISO !== sISO) return false; // jednodniowe całodniowe: tylko dzień startu
         return ja ? (e.traveler_id === mojeId) : (e.traveler_id === c.traveler_id && e.plemie_id === p.id);
       });
       calodz.forEach((e) => {
