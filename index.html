@@ -4642,10 +4642,10 @@ async function wczytajZadaniaHoryzont() {
   if (zapytanieSzukaj) aktywneWyd = aktywneWyd.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj));
 
   // INBOX: moje zadania czekające na przyjęcie (zlecenia)
-  const propozycje = (moje || []).filter((z) => z.status === "proponowane");
-  // MOJE ZADANIA = czysto osobiste (bez plemienia); plemienne idą do grup plemion
-  let mojeBez = (moje || []).filter((z) => !z.plemie_id && z.status !== "zrobione" && z.status !== "proponowane");
-  let mojeBezZrob = (moje || []).filter((z) => !z.plemie_id && z.status === "zrobione").slice(0, 30);
+  const propozycje = (moje || []).filter((z) => z.status === "proponowane" && !z.parent_id);
+  // MOJE ZADANIA = czysto osobiste (bez plemienia); plemienne idą do grup plemion; działania (parent_id) tylko w dzienniku
+  let mojeBez = (moje || []).filter((z) => !z.plemie_id && !z.parent_id && z.status !== "zrobione" && z.status !== "proponowane");
+  let mojeBezZrob = (moje || []).filter((z) => !z.plemie_id && !z.parent_id && z.status === "zrobione").slice(0, 30);
   if (zapytanieSzukaj) {
     mojeBez = mojeBez.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj));
     mojeBezZrob = mojeBezZrob.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj));
@@ -4726,7 +4726,7 @@ function renderPlemieGrupy(plemiona, perPlemie) {
   box.innerHTML = "";
   const me = TRAVELER && TRAVELER.id;
   for (const p of (plemiona || [])) {
-    let tasks = (perPlemie[p.id] || []).filter((z) => z.kategoria !== "zakupy"); // zakupy mają osobną zakładkę
+    let tasks = (perPlemie[p.id] || []).filter((z) => z.kategoria !== "zakupy" && !z.parent_id); // zakupy mają osobną zakładkę; działania tylko w dzienniku
     if (zapytanieSzukaj) tasks = tasks.filter((z) => pasujeDoSzukania(z, zapytanieSzukaj));
     const kolor = p.kolor || "#1f9e8f";
     const aktywne = tasks.filter((z) => z.status !== "zrobione");
@@ -5015,6 +5015,14 @@ function oknoZadania(z) {
       </div>
       <label>Opis</label>
       <textarea id="z-opis">${esc(z.opis || "")}</textarea>
+      <label style="margin-top:8px;">📓 Działania / dziennik${z.plemie_id ? ` <span style="font-weight:400;color:#1a7158;font-size:11px;">— widzi plemię</span>` : ""}</label>
+      <div id="z-dzialania" style="font-size:13px;color:var(--ink-soft);">Wczytuję…</div>
+      <div style="display:flex;flex-direction:column;gap:5px;margin-top:6px;background:#f7f5ef;border-radius:10px;padding:8px;">
+        <input type="text" id="z-dz-tytul" maxlength="200" placeholder="Działanie (np. telefon do architekta)" style="padding:8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+        <input type="datetime-local" id="z-dz-termin" style="padding:8px;border:1px solid var(--line);border-radius:7px;font-size:13px;">
+        <textarea id="z-dz-notatka" placeholder="Co ustaliłeś / notatka" style="padding:8px;border:1px solid var(--line);border-radius:7px;font-size:13px;font-family:inherit;min-height:44px;"></textarea>
+        <button type="button" id="z-dz-add" class="m-btn m-btn--zapisz" style="align-self:flex-start;">+ Dodaj działanie</button>
+      </div>
     </div>
     <div class="m-modal__akcje">
       <button class="m-btn m-btn--usun" id="z-usun">Usuń</button>
@@ -5026,6 +5034,51 @@ function oknoZadania(z) {
   const zamknij = () => overlay.remove();
   overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
   overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+
+  // DZIENNIK DZIAŁAŃ — działania = dzieci (parent_id), chronologicznie; dziedziczą plemię (Patrycja czyta)
+  const dzBox = overlay.querySelector("#z-dzialania");
+  async function wczytajDzialania() {
+    const { data: dzieci = [], error } = await supabase.from("events").select("*").eq("parent_id", z.id).order("data_czas", { ascending: true, nullsFirst: true }).order("created_at", { ascending: true });
+    if (error) { dzBox.innerHTML = `<div style="color:#c4513a;">Błąd: ${esc(error.message)}</div>`; return; }
+    if (!dzieci.length) { dzBox.innerHTML = `<div style="color:var(--ink-soft);font-size:12px;padding:4px 0;">Brak działań. Każdy telefon/ustalenie dodaj poniżej — złoży się z tego dziennik.</div>`; return; }
+    const autorzy = [...new Set(dzieci.map((d) => d.utworzony_przez || d.traveler_id).filter(Boolean))];
+    const nickMap = {};
+    if (autorzy.length) { const { data: tt = [] } = await supabase.from("travels").select("id, nick").in("id", autorzy); (tt || []).forEach((t) => { nickMap[t.id] = t.nick; }); }
+    dzBox.innerHTML = "";
+    dzieci.forEach((d) => {
+      const done = d.status === "zrobione";
+      const kiedy = d.data_czas ? fmtData(d.data_czas, { day: "numeric", month: "short", year: "numeric" }) + (d.caly_dzien ? "" : " · " + fmtGodz(d.data_czas)) : (d.created_at ? "dodano " + fmtData(d.created_at, { day: "numeric", month: "short" }) : "");
+      const kto = nickMap[d.utworzony_przez || d.traveler_id] || ((d.traveler_id === (TRAVELER && TRAVELER.id)) ? "Ja" : "");
+      const row = el(`<div style="display:flex;gap:8px;align-items:flex-start;border-top:1px solid var(--line);padding:7px 0;">
+        <button class="dz-box" aria-label="Odhacz" style="flex:none;width:20px;height:20px;border-radius:5px;border:2px solid ${done ? "#1a7158" : "var(--line)"};background:${done ? "#1a7158" : "transparent"};color:#fff;font-size:12px;line-height:16px;cursor:pointer;">${done ? "✓" : ""}</button>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13.5px;${done ? "text-decoration:line-through;color:var(--ink-soft);" : ""}">${esc(d.tytul)}</div>
+          <div style="font-size:11px;color:var(--ink-soft);margin-top:1px;">${esc(kiedy)}${kto ? " · " + esc(kto) : ""}${done && d.zrobione_kiedy ? " · ✓ " + fmtData(d.zrobione_kiedy, { day: "numeric", month: "short" }) : ""}</div>
+          ${d.opis ? `<div style="font-size:12.5px;margin-top:3px;white-space:pre-wrap;color:var(--ink);">${esc(d.opis)}</div>` : ""}
+        </div></div>`);
+      row.querySelector(".dz-box").addEventListener("click", async () => {
+        const nowy = done ? "planowane" : "zrobione";
+        const patch = { status: nowy, zrobione_kiedy: nowy === "zrobione" ? new Date().toISOString() : null, zrobione_przez: nowy === "zrobione" ? TRAVELER.id : null };
+        const { error: e2 } = await supabase.from("events").update(patch).eq("id", d.id);
+        if (e2) { alert("Nie zapisano: " + e2.message); return; }
+        wczytajDzialania();
+      });
+      dzBox.appendChild(row);
+    });
+  }
+  wczytajDzialania();
+  overlay.querySelector("#z-dz-add").addEventListener("click", async () => {
+    const tytul = overlay.querySelector("#z-dz-tytul").value.trim();
+    if (!tytul) { overlay.querySelector("#z-dz-tytul").focus(); return; }
+    const terminStr = overlay.querySelector("#z-dz-termin").value;
+    let terminISO = null;
+    if (terminStr) { const [dCz, gCz] = terminStr.split("T"); terminISO = isoZWarszawy(dCz, gCz || "09:00"); }
+    const rekord = { traveler_id: TRAVELER.id, typ: "zadanie", tytul, data_czas: terminISO, opis: overlay.querySelector("#z-dz-notatka").value.trim() || null, parent_id: z.id, plemie_id: z.plemie_id || null, org_id: z.org_id || null, kategoria: z.kategoria || null, status: "planowane", utworzony_przez: TRAVELER.id, wspolne: !!z.plemie_id };
+    const { error } = await supabase.from("events").insert(rekord);
+    if (error) { alert("Nie dodano działania: " + error.message); return; }
+    overlay.querySelector("#z-dz-tytul").value = ""; overlay.querySelector("#z-dz-termin").value = ""; overlay.querySelector("#z-dz-notatka").value = "";
+    wczytajDzialania();
+  });
 
   // zmień zadanie → wydarzenie (ląduje na kalendarzu); wymaga terminu
   overlay.querySelector("#z-na-wyd").addEventListener("click", async () => {
