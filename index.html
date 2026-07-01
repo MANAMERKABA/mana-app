@@ -2129,7 +2129,7 @@ function kartaPlemienia(p) {
   zz.addEventListener("click", () => formZadajZadanie(p, card));
   akcje.appendChild(zz);
   if (jaZalozyciel) {
-    const inv = el(`<div style="display:flex;gap:6px;flex:1;min-width:200px;"><input class="pl-mail" type="email" placeholder="e-mail osoby z MANY" style="flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;"><button class="pl-zapros" style="${BT}">Zaproś</button></div>`);
+    const inv = el(`<div style="display:flex;gap:6px;flex:1;min-width:200px;"><input class="pl-mail" type="email" placeholder="e-mail osoby do zaproszenia" style="flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;"><button class="pl-zapros" style="${BT}">Zaproś</button></div>`);
     inv.querySelector(".pl-zapros").addEventListener("click", () => { const m = inv.querySelector(".pl-mail").value.trim(); if (m) zaprosDoPlemienia(p.id, m); });
     akcje.appendChild(inv);
     const dz = el(`<button style="${BG}">+ Dodaj dziecko</button>`);
@@ -2383,7 +2383,13 @@ async function zaprosDoPlemienia(plemie, email) {
   const { data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: plemie, p_email: email });
   if (error) { alert("Błąd: " + error.message); return; }
   if (!data || !data.ok) { alert((data && data.error) || "Nie wysłano."); return; }
-  alert("Zaproszenie wysłane ✓"); renderPlemie();
+  if (data.ma_juz_konto) {
+    alert("Zaproszenie wysłane ✓ — pojawi się u tej osoby po zalogowaniu.");
+  } else {
+    const link = location.origin + "/?zaproszenie=" + data.zaproszenie_id;
+    prompt("Ta osoba nie ma jeszcze konta. Wyślij jej ten link (SMS / e-mail / czat) — po rejestracji tym samym adresem e-mail dołączy do plemienia:", link);
+  }
+  renderPlemie();
 }
 async function odpowiedzZapro(id, przyjmij) {
   const { data, error } = await supabase.rpc("odpowiedz_na_zaproszenie", { p_zapro: id, p_przyjmij: przyjmij });
