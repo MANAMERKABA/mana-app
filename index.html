@@ -1992,8 +1992,34 @@ async function usunKontakt(k) {
   if (error) { trzosToast("Błąd: " + error.message); return; }
   trzosToast("Usunięto."); renderKontakty();
 }
-function zaprosKontakt(k) {
-  alert(`Zaproszenie e-mailem z linkiem rejestracji uruchomimy po podpięciu wysyłki poczty (to następny krok). Jeśli „${k.imie || "ta osoba"}" ma już konto MANA, dodasz ją do plemienia przez kafel Plemię.`);
+async function zaprosKontakt(k) {
+  const email = ((k && k.email) || "").trim();
+  if (!email) { alert(`Dodaj e-mail do kontaktu „${k.imie || "ta osoba"}", żeby wysłać zaproszenie.`); return; }
+  const { data: pls } = await supabase.rpc("moje_plemiona_full");
+  const moje = pls || [];
+  if (!moje.length) { alert("Najpierw załóż grupę / wyjazd (kafel Plemię), do której chcesz zaprosić."); return; }
+  const lista = moje.map((p) => `<button class="m-btn zk-do" data-id="${p.id}" style="width:100%;text-align:left;margin-bottom:6px;">👥 ${escP(p.nazwa)}</button>`).join("");
+  const ov = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">Zaproś: ${escP(k.imie || email)}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form"><label>Do której grupy?</label>${lista}</div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zamknij = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  ov.querySelectorAll(".zk-do").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    const { data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: b.dataset.id, p_email: email });
+    if (error) { trzosToast("Błąd: " + error.message); b.disabled = false; return; }
+    if (!data || !data.ok) { trzosToast((data && data.error) || "Nie wysłano."); b.disabled = false; return; }
+    zamknij();
+    if (data.ma_juz_konto) {
+      trzosToast("Zaproszenie wysłane ✓");
+    } else {
+      const link = location.origin + "/?zaproszenie=" + data.zaproszenie_id;
+      prompt(`Wyślij ten link do „${k.imie || email}" (SMS / e-mail / czat) — po rejestracji tym adresem dołączy:`, link);
+    }
+  }));
 }
 async function dodajZPlemienia() {
   const [{ data: pls }, { data: istn = [] }] = await Promise.all([
