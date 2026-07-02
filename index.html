@@ -60,9 +60,10 @@
   .m-user__nick { overflow:hidden; text-overflow:ellipsis; }
 
   /* ---- KAFLE POKOI ---- */
-  .m-rooms { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 4px 16px 14px; }
+  .m-rooms { display: flex; gap: 8px; padding: 4px 16px 14px; overflow-x: auto; scrollbar-width: none; }
+  .m-rooms::-webkit-scrollbar { display: none; }
   .m-room {
-    background: none; border: none; cursor: pointer;
+    background: none; border: none; cursor: pointer; flex: 0 0 auto; min-width: 64px; touch-action: pan-x;
     display: flex; flex-direction: column; align-items: center; gap: 6px;
     padding: 6px 2px; font-family: var(--font-body);
   }
@@ -485,8 +486,8 @@
   <div id="m-widok-ekran">
     <header class="m-header">
       <div class="m-brand">
-        <div class="m-brand__name">MANA</div>
         <div class="m-brand__date" id="m-data">—</div>
+        <button class="m-brand__name" id="m-mana-btn" style="background:none;border:none;padding:0;font:inherit;letter-spacing:inherit;color:inherit;cursor:pointer;text-align:left;">MANA <span style="font-size:0.55em;color:#8c887e;vertical-align:middle;">▾</span></button>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="m-user"></span>
@@ -1250,7 +1251,7 @@ function pokazLogowanie() {
 async function wejdz() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: trav } = await supabase
-    .from("travels").select("id, nick").eq("auth_user_id", session.user.id).maybeSingle();
+    .from("travels").select("id, nick, uklad_pokoi").eq("auth_user_id", session.user.id).maybeSingle();
   if (!trav) { $("m-loader").textContent = "Nie znaleziono profilu podróżnika."; return; }
   TRAVELER = trav;
   $("m-loader").style.display = "none";
@@ -2741,7 +2742,9 @@ document.addEventListener("keydown", (ev) => {
 function renderPokoje() {
   const wrap = $("m-rooms");
   wrap.innerHTML = "";
-  for (const p of POKOJE) {
+  for (const _n of przypietePokoje()) {
+    const p = POKOJE.find((x) => x.nazwa === _n);
+    if (!p) continue;
     const badge = (p.akcja === "horyzont") ? `<span id="hyz-badge" style="display:none;position:absolute;top:6px;right:8px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#d98324;color:#fff;font-size:11px;font-weight:700;align-items:center;justify-content:center;line-height:1;"></span>` : "";
     const btn = el(`<button class="m-room ${p.zywy ? "" : "m-room--soon"}" style="position:relative;">
       <span class="m-room__icon">
@@ -2751,9 +2754,95 @@ function renderPokoje() {
     if (p.akcja === "trzos") btn.addEventListener("click", otworzTrzos);
     if (p.akcja === "sejf") btn.addEventListener("click", otworzSejf);
     if (p.akcja === "egzamin") btn.addEventListener("click", otworzEgzamin);
+    btn.dataset.key = p.nazwa;
+    ukladDraggable(btn, wrap);
     wrap.appendChild(btn);
   }
 }
+
+const POKOJE_META = {
+  "Horyzont": { opis: "Kalendarz i zadania — Twój czas w jednym miejscu.", sub: "" },
+  "Trzos": { opis: "Wydatki, przychody, paragony i wspólny budżet.", sub: "" },
+  "Sejf": { opis: "Dokumenty i kontakty — umowy, polisy, ludzie pod ręką.", sub: "" },
+  "Egzamin": { opis: "Plan nauki rozłożony w czasie plus fiszki.", sub: "" },
+  "Puls": { opis: "Ciało: samopoczucie, badania, nawyki.", sub: "wkrótce" },
+  "Gawęda": { opis: "Rozmowa z Mędrcem — wsparcie i mądrość społeczności.", sub: "wkrótce" }
+};
+function przypietePokoje() {
+  const u = (TRAVELER && TRAVELER.uklad_pokoi && TRAVELER.uklad_pokoi.mana) || null;
+  const wszystkie = POKOJE.map((p) => p.nazwa);
+  if (u && Array.isArray(u.przypiete)) return u.przypiete.filter((n) => wszystkie.includes(n));
+  return POKOJE.filter((p) => p.zywy).map((p) => p.nazwa);
+}
+async function zapiszUklad(przypiete) {
+  try {
+    if (!TRAVELER || !TRAVELER.id) return;
+    const u = { ...((TRAVELER && TRAVELER.uklad_pokoi) || {}), mana: { przypiete } };
+    TRAVELER.uklad_pokoi = u;
+    await supabase.from("travels").update({ uklad_pokoi: u }).eq("id", TRAVELER.id);
+  } catch (e) {}
+}
+function ukladDraggable(btn, wrap) {
+  let timer = null, dragging = false;
+  btn.addEventListener("pointerdown", (e) => {
+    if (e.button && e.button !== 0) return;
+    const sx = e.clientX, sy = e.clientY;
+    timer = setTimeout(() => {
+      dragging = true;
+      btn.style.opacity = "0.6"; btn.style.transform = "scale(1.08)"; btn.style.zIndex = "50";
+      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+    }, 220);
+    const onMove = (ev) => {
+      if (!dragging) { if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 8) clearTimeout(timer); return; }
+      const els = [...wrap.querySelectorAll(".m-room")].filter((x) => x !== btn);
+      const t = els.find((x) => { const r = x.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX <= r.right; });
+      if (t) { const r = t.getBoundingClientRect(); wrap.insertBefore(btn, ev.clientX < r.left + r.width / 2 ? t : t.nextSibling); }
+    };
+    const onUp = async () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp);
+      if (dragging) {
+        dragging = false; btn._dragged = true;
+        btn.style.opacity = ""; btn.style.transform = ""; btn.style.zIndex = "";
+        const order = [...wrap.querySelectorAll(".m-room")].map((x) => x.dataset.key).filter(Boolean);
+        await zapiszUklad(order);
+      }
+    };
+    document.addEventListener("pointermove", onMove); document.addEventListener("pointerup", onUp);
+  });
+  btn.addEventListener("click", (e) => { if (btn._dragged) { e.stopImmediatePropagation(); e.preventDefault(); btn._dragged = false; } }, true);
+}
+function otworzSzuflada() {
+  const przyp = przypietePokoje();
+  const wiersze = POKOJE.map((p) => {
+    const meta = POKOJE_META[p.nazwa] || {};
+    const jest = przyp.includes(p.nazwa);
+    const subB = meta.sub ? ` <span style="font-size:10px;color:#b5651d;border:1px solid #e4c9a0;border-radius:6px;padding:1px 6px;">${esc(meta.sub)}</span>` : "";
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;background:#faf8f2;margin-bottom:6px;">
+      <div style="flex:1;min-width:0;"><div style="font-size:13px;font-weight:600;color:#26241f;">${esc(p.nazwa)}${subB}</div><div style="font-size:11.5px;color:#8c887e;">${esc(meta.opis || "")}</div></div>
+      <button class="szuf-wiecej" data-n="${esc(p.nazwa)}" style="background:none;border:none;color:#8c887e;font-size:12px;cursor:pointer;white-space:nowrap;">ⓘ więcej</button>
+      <button class="szuf-pin" data-n="${esc(p.nazwa)}" style="background:none;border:none;color:${jest ? "#8c887e" : "#1a7158"};font-size:12px;cursor:pointer;white-space:nowrap;">${jest ? "✓ odepnij" : "📌 przypnij"}</button>
+    </div>`;
+  }).join("");
+  const ov = el(`<div class="m-overlay" style="align-items:flex-start;"><div class="m-modal" style="max-width:460px;margin-top:8vh;">
+    <div class="m-modal__head"><span class="m-modal__tytul">Wszystkie pokoje</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div style="max-height:62vh;overflow-y:auto;padding:4px;">${wiersze}</div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zamk = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zamk(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zamk);
+  ov.querySelectorAll(".szuf-pin").forEach((b) => b.addEventListener("click", async () => {
+    const n = b.dataset.n; let np = przypietePokoje();
+    np = np.includes(n) ? np.filter((x) => x !== n) : [...np, n];
+    await zapiszUklad(np); renderPokoje(); zamk(); otworzSzuflada();
+  }));
+  ov.querySelectorAll(".szuf-wiecej").forEach((b) => b.addEventListener("click", () => {
+    const meta = POKOJE_META[b.dataset.n] || {};
+    alert(`${b.dataset.n}\n\n${meta.opis || "Opis wkrótce."}${meta.sub ? "\n\nDostęp: " + meta.sub : ""}\n\n(Funkcje, instrukcja i film poglądowy — wkrótce.)`);
+  }));
+}
+{ const _mb = document.getElementById("m-mana-btn"); if (_mb) _mb.addEventListener("click", otworzSzuflada); }
 
 /* ====================================================================
    EKRAN STARTOWY — dane dnia
