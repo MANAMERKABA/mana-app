@@ -964,6 +964,11 @@ function montujEkranLogowania(kontener, opcje) {
         <button type="button" class="mlog-link" id="mlog-do-dziecko" hidden style="margin-left:14px;">Dziecko — zaloguj PIN-em</button>
       </form>
       <form id="mlog-v-rejestracja" class="mlog-v" hidden>
+        <div id="mlog-r-wybor" style="display:flex;gap:6px;margin-bottom:12px;">
+          <button type="button" class="mlog-typ mlog-typ--on" data-typ="pryw" style="flex:1;padding:9px;border:1px solid #e5e5e0;border-radius:8px;font-size:13px;cursor:pointer;background:#1a7158;color:#fff;">🏠 Prywatne</button>
+          <button type="button" class="mlog-typ" data-typ="firm" style="flex:1;padding:9px;border:1px solid #e5e5e0;border-radius:8px;font-size:13px;cursor:pointer;background:#efece3;color:#2a2a28;">💼 Firmowe</button>
+        </div>
+        <div id="mlog-r-prywatne">
         <div class="mlog-pole"><label>Email</label>
           <input type="email" id="mlog-r-email" autocomplete="email" required></div>
         <div class="mlog-pole"><label>Nick</label>
@@ -979,6 +984,11 @@ function montujEkranLogowania(kontener, opcje) {
         <label class="mlog-zgoda"><input type="checkbox" id="mlog-r-rodo">
           <span>Zgoda na przetwarzanie danych zgodnie z RODO</span></label>
         <button type="submit" class="mlog-przycisk" id="mlog-r-btn">Zarejestruj się</button>
+        </div>
+        <div id="mlog-r-firmowe" hidden>
+          <div class="mlog-opis" style="margin-bottom:12px;">Konto firmowe zakładasz w <b>gospodarz.app</b> — panel biznesowy dla profesjonalistów (gabinety, trenerzy, dietetycy). Rejestrujesz się kartą firmy, najlepiej OSOBNYM e-mailem niż prywatny. W pakiecie firmowym dostajesz też prywatną MANA.</div>
+          <button type="button" class="mlog-przycisk" id="mlog-do-firma">Przejdź do rejestracji firmowej →</button>
+        </div>
       </form>
       <form id="mlog-v-reset" class="mlog-v" hidden>
         <div class="mlog-naglowek">Odzyskiwanie hasła</div>
@@ -1030,6 +1040,18 @@ function montujEkranLogowania(kontener, opcje) {
   });
   kontener.querySelector("#mlog-do-reset").addEventListener("click", () => pokazWidok("reset"));
   kontener.querySelector("#mlog-do-login").addEventListener("click", () => pokazWidok("login"));
+  kontener.querySelectorAll(".mlog-typ").forEach((b) => b.addEventListener("click", () => {
+    const firm = b.dataset.typ === "firm";
+    kontener.querySelectorAll(".mlog-typ").forEach((x) => {
+      const on = x === b;
+      x.classList.toggle("mlog-typ--on", on);
+      x.style.background = on ? "#1a7158" : "#efece3";
+      x.style.color = on ? "#fff" : "#2a2a28";
+    });
+    kontener.querySelector("#mlog-r-prywatne").hidden = firm;
+    kontener.querySelector("#mlog-r-firmowe").hidden = !firm;
+  }));
+  { const df = kontener.querySelector("#mlog-do-firma"); if (df) df.addEventListener("click", () => window.open("https://gospodarz-app-krok1.vercel.app", "_blank")); }
   widoki.login.addEventListener("submit", async (e) => {
     e.preventDefault(); czyscMsg();
     const btn = kontener.querySelector("#mlog-l-btn");
