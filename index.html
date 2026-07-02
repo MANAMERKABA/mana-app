@@ -2203,8 +2203,9 @@ function kartaPlemienia(p) {
   zz.addEventListener("click", () => formZadajZadanie(p, card));
   akcje.appendChild(zz);
   if (jaZalozyciel) {
-    const inv = el(`<div style="display:flex;gap:6px;flex:1;min-width:200px;"><input class="pl-mail" type="email" placeholder="e-mail osoby do zaproszenia" style="flex:1;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;"><button class="pl-zapros" style="${BT}">Zaproś</button></div>`);
+    const inv = el(`<div style="display:flex;gap:6px;flex:1;min-width:200px;flex-wrap:wrap;"><input class="pl-mail" type="email" placeholder="e-mail osoby do zaproszenia" style="flex:1;min-width:150px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;font-size:13px;"><button class="pl-zapros" style="${BT}">Zaproś</button><button class="pl-zkontaktow" style="${BT}">📇 Z kontaktów</button></div>`);
     inv.querySelector(".pl-zapros").addEventListener("click", () => { const m = inv.querySelector(".pl-mail").value.trim(); if (m) zaprosDoPlemienia(p.id, m); });
+    inv.querySelector(".pl-zkontaktow").addEventListener("click", () => zaprosZKontaktow(p.id, p.nazwa));
     akcje.appendChild(inv);
     const dz = el(`<button style="${BG}">+ Dodaj dziecko</button>`);
     dz.addEventListener("click", () => formDodajDziecko(p, card));
@@ -2452,6 +2453,41 @@ async function utworzPlemie(nazwa, polityka, kolor) {
   const { error } = await supabase.from("plemiona").insert({ nazwa, owner_traveler_id: TRAVELER.id, polityka_edycji: polityka, kolor });
   if (error) { alert("Nie utworzono: " + error.message); return; }
   renderPlemie();
+}
+async function zaprosZKontaktow(plemieId, plemieNazwa) {
+  const { data: kon } = await supabase.from("kontakty").select("*").eq("owner_traveler_id", TRAVELER.id).is("target_traveler_id", null).eq("aktywny", true).order("imie");
+  const lista = (kon || []).filter((k) => k.owner_org_id == null);
+  if (!lista.length) { alert("Brak kontaktów bez konta MANA do zaproszenia. Dodaj kontakt w Sejf → Kontakty."); return; }
+  const wiersze = lista.map((k) => {
+    const sub = k.email ? escP(k.email) : (k.telefon ? escP(k.telefon) + " (link)" : "brak kontaktu");
+    return `<button class="zk-osoba" data-id="${escP(k.id)}" style="width:100%;text-align:left;margin-bottom:6px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#faf8f2;font-size:13px;">${esc(k.imie || "(bez imienia)")} <span style="color:var(--ink-soft);font-size:11.5px;">· ${sub}</span></button>`;
+  }).join("");
+  const ov = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">Zaproś do: ${escP(plemieNazwa)}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form" style="max-height:60vh;overflow-y:auto;"><label>Wybierz osobę z kontaktów</label>${wiersze}</div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zamknij = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  ov.querySelectorAll(".zk-osoba").forEach((b) => b.addEventListener("click", async () => {
+    const k = lista.find((x) => x.id === b.dataset.id); if (!k) return;
+    b.disabled = true;
+    const email = (k.email || "").trim();
+    let data, error;
+    if (email) ({ data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: plemieId, p_email: email }));
+    else ({ data, error } = await supabase.rpc("zapros_link", { p_plemie: plemieId }));
+    if (error) { trzosToast("Błąd: " + error.message); b.disabled = false; return; }
+    if (!data || !data.ok) { trzosToast((data && data.error) || "Nie wysłano."); b.disabled = false; return; }
+    zamknij();
+    if (email && data.ma_juz_konto) { trzosToast("Zaproszenie wysłane ✓"); renderPlemie(); }
+    else {
+      const link = location.origin + "/?zaproszenie=" + data.zaproszenie_id;
+      const kanal = k.telefon ? "SMS / WhatsApp" : "e-mail / czat";
+      prompt(`Wyślij ten link do „${k.imie || email || k.telefon}" (${kanal}):`, link);
+      renderPlemie();
+    }
+  }));
 }
 async function zaprosDoPlemienia(plemie, email) {
   const { data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: plemie, p_email: email });
