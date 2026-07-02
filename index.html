@@ -636,17 +636,17 @@
       <span class="m-user"></span>
     </div>
     <div style="display:flex;gap:6px;padding:4px 16px 2px;">
-      <button class="sejf-seg sejf-seg--on" data-seg="dok" style="flex:1;background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📄 Dokumenty</button>
-      <button class="sejf-seg" data-seg="kon" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📇 Kontakty</button>
+      <button class="sejf-seg sejf-seg--on" data-seg="kon" style="flex:1;background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📇 Kontakty</button>
+      <button class="sejf-seg" data-seg="dok" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📄 Dokumenty</button>
     </div>
-    <div id="sejf-sekcja-dok">
+    <div id="sejf-sekcja-dok" style="display:none">
       <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <button id="sejf-dodaj" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Dokument</button>
         <span style="font-size:12px;color:var(--ink-soft);">umowy · dowód rej. · polisy — pod kluczem</span>
       </div>
       <div id="sejf-lista" style="padding:6px 16px 30px;"></div>
     </div>
-    <div id="sejf-sekcja-kon" style="display:none">
+    <div id="sejf-sekcja-kon">
       <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <button id="kon-dodaj" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Kontakt</button>
         <button id="kon-z-plemienia" style="background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">👥 Dodaj z plemienia</button>
@@ -1584,7 +1584,7 @@ $("trzos-dodaj-koszt").addEventListener("click", () => kartaTrzos("koszt", null)
 const SEJF_PRZEKLADKI = ["Pojazd", "Dom / Mieszkanie", "Ubezpieczenia", "Umowy", "Zdrowie", "Finanse", "Inne"];
 let sejfSzukaj = "";
 let SEJF_PLEMIE_MAP = {};
-function otworzSejf() { pokazWidok("sejf"); przelaczSejfSekcja("dok"); }
+function otworzSejf() { pokazWidok("sejf"); przelaczSejfSekcja("kon"); }
 
 async function renderSejf() {
   const lista = $("sejf-lista");
