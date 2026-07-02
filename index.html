@@ -955,6 +955,11 @@ function montujEkranLogowania(kontener, opcje) {
         <button type="button" class="mlog-tab" data-tab="rejestracja">Rejestracja</button>
       </div>
       <form id="mlog-v-login" class="mlog-v">
+        <div id="mlog-l-wybor" style="display:flex;gap:6px;margin-bottom:12px;">
+          <button type="button" class="mlog-ltyp mlog-ltyp--on" data-typ="pryw" style="flex:1;padding:9px;border:1px solid #e5e5e0;border-radius:8px;font-size:13px;cursor:pointer;background:#1a7158;color:#fff;">🏠 Prywatne</button>
+          <button type="button" class="mlog-ltyp" data-typ="firm" style="flex:1;padding:9px;border:1px solid #e5e5e0;border-radius:8px;font-size:13px;cursor:pointer;background:#efece3;color:#2a2a28;">💼 Firmowe</button>
+        </div>
+        <div id="mlog-l-prywatne">
         <div class="mlog-pole"><label>Email</label>
           <input type="email" id="mlog-l-email" autocomplete="email" required></div>
         <div class="mlog-pole"><label>Hasło</label>
@@ -962,6 +967,11 @@ function montujEkranLogowania(kontener, opcje) {
         <button type="submit" class="mlog-przycisk" id="mlog-l-btn">Zaloguj się</button>
         <button type="button" class="mlog-link" id="mlog-do-reset">Nie pamiętasz hasła?</button>
         <button type="button" class="mlog-link" id="mlog-do-dziecko" hidden style="margin-left:14px;">Dziecko — zaloguj PIN-em</button>
+        </div>
+        <div id="mlog-l-firmowe" hidden>
+          <div class="mlog-opis" style="margin-bottom:12px;">Logujesz się firmowo? Panel biznesowy jest w <b>gospodarz.app</b>.</div>
+          <button type="button" class="mlog-przycisk" id="mlog-l-do-firma">Przejdź do gospodarz.app →</button>
+        </div>
       </form>
       <form id="mlog-v-rejestracja" class="mlog-v" hidden>
         <div id="mlog-r-wybor" style="display:flex;gap:6px;margin-bottom:12px;">
@@ -1052,6 +1062,18 @@ function montujEkranLogowania(kontener, opcje) {
     kontener.querySelector("#mlog-r-firmowe").hidden = !firm;
   }));
   { const df = kontener.querySelector("#mlog-do-firma"); if (df) df.addEventListener("click", () => window.open("https://gospodarz-app-krok1.vercel.app", "_blank")); }
+  kontener.querySelectorAll(".mlog-ltyp").forEach((b) => b.addEventListener("click", () => {
+    const firm = b.dataset.typ === "firm";
+    kontener.querySelectorAll(".mlog-ltyp").forEach((x) => {
+      const on = x === b;
+      x.classList.toggle("mlog-ltyp--on", on);
+      x.style.background = on ? "#1a7158" : "#efece3";
+      x.style.color = on ? "#fff" : "#2a2a28";
+    });
+    kontener.querySelector("#mlog-l-prywatne").hidden = firm;
+    kontener.querySelector("#mlog-l-firmowe").hidden = !firm;
+  }));
+  { const lf = kontener.querySelector("#mlog-l-do-firma"); if (lf) lf.addEventListener("click", () => window.open("https://gospodarz-app-krok1.vercel.app", "_blank")); }
   widoki.login.addEventListener("submit", async (e) => {
     e.preventDefault(); czyscMsg();
     const btn = kontener.querySelector("#mlog-l-btn");
