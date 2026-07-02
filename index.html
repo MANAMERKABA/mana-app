@@ -1968,7 +1968,7 @@ function kartaKontakt(k) {
     <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${zakres}${moje ? "" : " · udostępniony Tobie"}</div>
     ${moje ? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
       ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;">📞 Zadzwoń</a>` : ""}
-      ${(!k.target_traveler_id && k.email) ? `<button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś do MANA</button>` : ""}
+      ${(!k.target_traveler_id) ? `<button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>` : ""}
       <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
       <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
     </div>` : ""}
@@ -2039,14 +2039,14 @@ async function usunKontakt(k) {
 }
 async function zaprosKontakt(k) {
   const email = ((k && k.email) || "").trim();
-  if (!email) { alert(`Dodaj e-mail do kontaktu „${k.imie || "ta osoba"}", żeby wysłać zaproszenie.`); return; }
   const { data: pls } = await supabase.rpc("moje_plemiona_full");
   const moje = pls || [];
   if (!moje.length) { alert("Najpierw załóż grupę / wyjazd (kafel Plemię), do której chcesz zaprosić."); return; }
   const lista = moje.map((p) => `<button class="m-btn zk-do" data-id="${p.id}" style="width:100%;text-align:left;margin-bottom:6px;">👥 ${escP(p.nazwa)}</button>`).join("");
+  const sposob = email ? `mailem na ${escP(email)}` : (k.telefon ? `linkiem (wyślesz SMS-em / WhatsAppem)` : `linkiem`);
   const ov = el(`<div class="m-overlay"><div class="m-modal">
-    <div class="m-modal__head"><span class="m-modal__tytul">Zaproś: ${escP(k.imie || email)}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
-    <div class="m-form"><label>Do której grupy?</label>${lista}</div>
+    <div class="m-modal__head"><span class="m-modal__tytul">Zaproś: ${escP(k.imie || email || k.telefon || "kontakt")}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form"><label>Do której grupy?</label>${lista}<div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">Zaproszenie ${sposob}.</div></div>
   </div></div>`);
   document.body.appendChild(ov);
   const zamknij = () => ov.remove();
@@ -2054,15 +2054,18 @@ async function zaprosKontakt(k) {
   ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
   ov.querySelectorAll(".zk-do").forEach((b) => b.addEventListener("click", async () => {
     b.disabled = true;
-    const { data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: b.dataset.id, p_email: email });
+    let data, error;
+    if (email) ({ data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: b.dataset.id, p_email: email }));
+    else ({ data, error } = await supabase.rpc("zapros_link", { p_plemie: b.dataset.id }));
     if (error) { trzosToast("Błąd: " + error.message); b.disabled = false; return; }
     if (!data || !data.ok) { trzosToast((data && data.error) || "Nie wysłano."); b.disabled = false; return; }
     zamknij();
-    if (data.ma_juz_konto) {
+    if (email && data.ma_juz_konto) {
       trzosToast("Zaproszenie wysłane ✓");
     } else {
       const link = location.origin + "/?zaproszenie=" + data.zaproszenie_id;
-      prompt(`Wyślij ten link do „${k.imie || email}" (SMS / e-mail / czat) — po rejestracji tym adresem dołączy:`, link);
+      const kanal = k.telefon ? "SMS / WhatsApp" : "e-mail / czat";
+      prompt(`Wyślij ten link do „${k.imie || email || k.telefon}" (${kanal}) — po rejestracji dołączy do grupy:`, link);
     }
   }));
 }
