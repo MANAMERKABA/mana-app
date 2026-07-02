@@ -2787,21 +2787,21 @@ function ukladDraggable(btn, wrap) {
     if (e.button && e.button !== 0) return;
     const sx = e.clientX, sy = e.clientY;
     let dragging = false;
-    try { btn.setPointerCapture(e.pointerId); } catch (_) {}
     const onMove = (ev) => {
       if (!dragging) {
         if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 6) return;
         dragging = true;
         btn.style.opacity = "0.6"; btn.style.transform = "scale(1.08)"; btn.style.zIndex = "50";
       }
+      if (ev.cancelable) ev.preventDefault();
       const els = [...wrap.querySelectorAll(".m-room")].filter((x) => x !== btn);
       const t = els.find((x) => { const r = x.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX <= r.right; });
       if (t) { const r = t.getBoundingClientRect(); wrap.insertBefore(btn, ev.clientX < r.left + r.width / 2 ? t : t.nextSibling); }
     };
     const onUp = async () => {
-      btn.removeEventListener("pointermove", onMove);
-      btn.removeEventListener("pointerup", onUp);
-      btn.removeEventListener("pointercancel", onUp);
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+      document.removeEventListener("pointercancel", onUp);
       if (dragging) {
         btn._dragged = true;
         btn.style.opacity = ""; btn.style.transform = ""; btn.style.zIndex = "";
@@ -2809,9 +2809,9 @@ function ukladDraggable(btn, wrap) {
         await zapiszUklad(order);
       }
     };
-    btn.addEventListener("pointermove", onMove);
-    btn.addEventListener("pointerup", onUp);
-    btn.addEventListener("pointercancel", onUp);
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+    document.addEventListener("pointercancel", onUp);
   });
   btn.addEventListener("click", (e) => { if (btn._dragged) { e.stopImmediatePropagation(); e.preventDefault(); btn._dragged = false; } }, true);
 }
