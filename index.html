@@ -63,7 +63,7 @@
   .m-rooms { display: flex; gap: 8px; padding: 4px 16px 14px; overflow-x: auto; scrollbar-width: none; }
   .m-rooms::-webkit-scrollbar { display: none; }
   .m-room {
-    background: none; border: none; cursor: pointer; flex: 0 0 auto; min-width: 64px; touch-action: pan-x;
+    background: none; border: none; cursor: pointer; flex: 0 0 auto; min-width: 64px; touch-action: none;
     display: flex; flex-direction: column; align-items: center; gap: 6px;
     padding: 6px 2px; font-family: var(--font-body);
   }
@@ -2783,32 +2783,35 @@ async function zapiszUklad(przypiete) {
   } catch (e) {}
 }
 function ukladDraggable(btn, wrap) {
-  let timer = null, dragging = false;
   btn.addEventListener("pointerdown", (e) => {
     if (e.button && e.button !== 0) return;
     const sx = e.clientX, sy = e.clientY;
-    timer = setTimeout(() => {
-      dragging = true;
-      btn.style.opacity = "0.6"; btn.style.transform = "scale(1.08)"; btn.style.zIndex = "50";
-      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
-    }, 220);
+    let dragging = false;
+    try { btn.setPointerCapture(e.pointerId); } catch (_) {}
     const onMove = (ev) => {
-      if (!dragging) { if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) > 8) clearTimeout(timer); return; }
+      if (!dragging) {
+        if (Math.abs(ev.clientX - sx) + Math.abs(ev.clientY - sy) < 6) return;
+        dragging = true;
+        btn.style.opacity = "0.6"; btn.style.transform = "scale(1.08)"; btn.style.zIndex = "50";
+      }
       const els = [...wrap.querySelectorAll(".m-room")].filter((x) => x !== btn);
       const t = els.find((x) => { const r = x.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX <= r.right; });
       if (t) { const r = t.getBoundingClientRect(); wrap.insertBefore(btn, ev.clientX < r.left + r.width / 2 ? t : t.nextSibling); }
     };
     const onUp = async () => {
-      clearTimeout(timer);
-      document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", onUp);
+      btn.removeEventListener("pointermove", onMove);
+      btn.removeEventListener("pointerup", onUp);
+      btn.removeEventListener("pointercancel", onUp);
       if (dragging) {
-        dragging = false; btn._dragged = true;
+        btn._dragged = true;
         btn.style.opacity = ""; btn.style.transform = ""; btn.style.zIndex = "";
         const order = [...wrap.querySelectorAll(".m-room")].map((x) => x.dataset.key).filter(Boolean);
         await zapiszUklad(order);
       }
     };
-    document.addEventListener("pointermove", onMove); document.addEventListener("pointerup", onUp);
+    btn.addEventListener("pointermove", onMove);
+    btn.addEventListener("pointerup", onUp);
+    btn.addEventListener("pointercancel", onUp);
   });
   btn.addEventListener("click", (e) => { if (btn._dragged) { e.stopImmediatePropagation(); e.preventDefault(); btn._dragged = false; } }, true);
 }
