@@ -2760,6 +2760,7 @@ async function otworzRozmowe(p) {
   else { wiad.forEach(dodajWiersz); }
   doDolu();
   oznaczPrzeczytane();
+  const kropka = document.querySelector(`.pl-rozm-btn[data-plemie="${p.id}"] .rz-kropka`); if (kropka) kropka.remove();
   const znane = new Set(wiad.map((w) => w.id));
 
   // realtime — nowe wiadomości w tym plemieniu
