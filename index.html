@@ -3216,7 +3216,7 @@ function toastCofnij(text, cofnijFn) {
   const ist = $("mana-toast-cofnij"); if (ist) ist.remove();
   const b = el(`<div id="mana-toast-cofnij" style="position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2421;color:#fff;padding:9px 12px 9px 16px;border-radius:12px;font-size:14px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.25);display:flex;align-items:center;gap:14px;max-width:90%;"><span>${escP(text)}</span><button style="background:none;border:none;color:#7fd3c3;font-size:14px;font-weight:600;cursor:pointer;padding:2px 4px;flex:none;">Cofnij</button></div>`);
   document.body.appendChild(b);
-  const t = setTimeout(() => b.remove(), 5000);
+  const t = setTimeout(() => b.remove(), 9000);
   b.querySelector("button").addEventListener("click", async () => { clearTimeout(t); b.remove(); try { await cofnijFn(); } catch (e) {} });
 }
 function zadanieMenuStart(z) {
