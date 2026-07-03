@@ -3191,7 +3191,7 @@ let najblizszeRaw = [];
 /* ── Kłódki (blokada edycji per sekcja) + cofanie ── */
 let zamkiStart = { kal: false, zad: false };
 try { const _z = JSON.parse(localStorage.getItem("mana_zamki_start") || "{}"); zamkiStart = { kal: !!_z.kal, zad: !!_z.zad }; } catch (e) {}
-let zadaniaRaw = [];
+let zadaniaRaw = [], zadRollup = [], zadPlemiona = [];
 function zapiszZamki() { try { localStorage.setItem("mana_zamki_start", JSON.stringify(zamkiStart)); } catch (e) {} }
 function svgKlodka(zamkn) {
   const kol = zamkn ? "#c0392b" : "#1f9e8f";
@@ -3204,7 +3204,7 @@ function renderKlodki() {
   if (bk) { bk.innerHTML = tresc(zamkiStart.kal); bk.title = zamkiStart.kal ? "Zablokowane — dotknij, by edytować" : "Odblokowane — dotknij, by zablokować"; }
   if (bz) { bz.innerHTML = tresc(zamkiStart.zad); bz.title = zamkiStart.zad ? "Zablokowane — dotknij, by edytować" : "Odblokowane — dotknij, by zablokować"; }
 }
-function odswiezZadania() { renderZadaniaEkran(zadaniaRaw); }
+function odswiezZadania() { renderZadaniaEkran(zadaniaRaw, zadRollup, zadPlemiona); }
 {
   const bk = $("m-klodka-kal");
   if (bk) bk.addEventListener("click", (e) => { e.stopPropagation(); zamkiStart.kal = !zamkiStart.kal; zapiszZamki(); renderKlodki(); odswiezNajblizsze(); });
@@ -3291,9 +3291,11 @@ async function wczytajDzien() {
     .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie").eq("wspolne", false)
     .eq("status", "planowane")
     .order("pozycja", { ascending: true, nullsFirst: false });
-  // + wspólne zadania plemion (jedna pozycja u wszystkich) — żeby ekran startowy był spójny z Horyzontem
-  const { data: zadWsp = [] } = await supabase.rpc("wspolne_zadania");
-  const zadania = [...(zadaniaWlasne || []), ...((zadWsp || []).filter((z) => z.status !== "zrobione" && z.kategoria !== "zakupy"))];
+  // rollup otwartych zadań plemion (nie moich) + plemiona do nazw/kolorów
+  const [rollupRes, plemRes] = await Promise.all([
+    supabase.rpc("zadania_plemion_rollup"),
+    supabase.rpc("moje_plemiona_full"),
+  ]);
 
   const { data: caloDniowe = [] } = await supabase
     .from("events").select("tytul, data_czas")
@@ -3302,7 +3304,9 @@ async function wczytajDzien() {
     .order("data_czas", { ascending: true }).limit(1);
 
   najblizszeRaw = wydOkno || [];
-  zadaniaRaw = zadania || [];
+  zadaniaRaw = zadaniaWlasne || [];
+  zadRollup = rollupRes.data || [];
+  zadPlemiona = plemRes.data || [];
   const teraz = new Date();
   const nadchodzace = najblizszeRaw.filter((w) =>
     (w.caly_dzien || new Date(w.koniec || w.data_czas) >= teraz)
@@ -3310,9 +3314,9 @@ async function wczytajDzien() {
   const dzisISO = czesciWarszawy(teraz).dataISO;
   const dzisNadch = nadchodzace.filter((w) => czesciWarszawy(w.data_czas).dataISO === dzisISO);
 
-  renderBrief(dzisNadch.length, (zadania || []).length);
+  renderBrief(dzisNadch.length, (zadaniaWlasne || []).length);
   renderNajblizsze(nadchodzace, false);
-  renderZadaniaEkran(zadania || []);
+  renderZadaniaEkran(zadaniaWlasne || [], zadRollup, zadPlemiona);
   renderRocznica((caloDniowe || [])[0] || null, s);
   renderNieprzeczytaneStart();
 }
@@ -3425,15 +3429,12 @@ function renderNajblizsze(wyd, jestWiecej) {
 
 /* Ekran startowy: lista zadań jest INFORMACYJNA — bez checkboxów.
    Operacje (oznacz zrobione, usuń, dodaj) idą przez asystenta albo pokój Horyzont. */
-function renderZadaniaEkran(zad) {
+function renderZadaniaEkran(moje, rollup, plemiona) {
   const lista = $("m-zad-lista");
   lista.innerHTML = "";
-  if (!zad.length) {
-    lista.appendChild(el(`<div class="m-pusto">Lista zadań pusta — powiedz asystentowi co dodać, albo zrób to w Horyzoncie.</div>`));
-    return;
-  }
+  moje = moje || [];
   const teraz = new Date();
-  const posortowane = [...zad].sort((a, b) => {
+  const posortowane = [...moje].sort((a, b) => {
     const za = (a.data_czas && new Date(a.data_czas) < teraz) ? 0 : 1;
     const zb = (b.data_czas && new Date(b.data_czas) < teraz) ? 0 : 1;
     return za - zb;
@@ -3444,6 +3445,24 @@ function renderZadaniaEkran(zad) {
       <span class="m-zad__tytul">${esc(z.tytul)}</span></div>`);
     if (!zamkiStart.zad) { wier.classList.add("m-zad--klik"); wier.addEventListener("click", () => zadanieMenuStart(z)); }
     lista.appendChild(wier);
+  }
+  // Plemiona — tylko z otwartymi zadaniami (zero ukryte); licznik → tap do pokoju plemienia
+  const grupy = (rollup || []).filter((r) => r.liczba > 0);
+  if (grupy.length) {
+    if (posortowane.length) lista.appendChild(el(`<div style="border-top:1px solid #f0ece0;margin-top:6px;"></div>`));
+    for (const r of grupy) {
+      const p = (plemiona || []).find((x) => x.id === r.plemie_id);
+      if (!p) continue;
+      const row = el(`<div class="m-zad m-zad--klik" style="justify-content:flex-start;">
+        <span style="width:10px;height:10px;border-radius:50%;background:${p.kolor || "#1f9e8f"};flex:none;"></span>
+        <span class="m-zad__tytul" style="flex:1;">${escP(p.nazwa)}</span>
+        <span style="background:#e7f1ec;color:#1a7158;border-radius:10px;font-size:11px;padding:1px 8px;flex:none;">${r.liczba}</span></div>`);
+      row.addEventListener("click", () => otworzZadaniaPlemienia(p));
+      lista.appendChild(row);
+    }
+  }
+  if (!posortowane.length && !grupy.length) {
+    lista.appendChild(el(`<div class="m-pusto">Brak zadań — powiedz asystentowi co dodać, albo zrób to w Horyzoncie.</div>`));
   }
 }
 
