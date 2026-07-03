@@ -2742,10 +2742,43 @@ async function otworzRozmowe(p) {
     const czas = fmtGodz(w.created_at);
     const row = el(`<div style="display:flex;flex-direction:column;align-items:${moje ? "flex-end" : "flex-start"};">
       <div style="max-width:80%;background:${moje ? "var(--turkus,#1f9e8f)" : "#efece3"};color:${moje ? "#fff" : "var(--ink)"};border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;word-break:break-word;white-space:pre-wrap;">${escP(w.tresc)}</div>
-      <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;">${moje ? "" : escP(nickOf(w.traveler_id)) + " · "}${escP(czas)}</div>
+      <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;display:flex;gap:6px;align-items:center;">
+        <span>${moje ? "" : escP(nickOf(w.traveler_id)) + " · "}${escP(czas)}</span>
+        <button class="rz-flag" title="Przekaż asystentowi / zrób zadanie" style="border:none;background:none;cursor:pointer;color:var(--ink-soft);font-size:14px;line-height:1;padding:0 3px;">⋯</button>
+      </div>
     </div>`);
+    row.querySelector(".rz-flag").addEventListener("click", () => flagujWiadomosc(w));
     lista.appendChild(row);
   };
+  function flagujWiadomosc(w) {
+    const nick = nickOf(w.traveler_id);
+    const kontekst = `od ${nick}, plemię „${p.nazwa}"`;
+    const sheet = el(`<div class="m-overlay" style="align-items:flex-end;">
+      <div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:14px 16px 20px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Ta wiadomość (${escP(kontekst)}):</div>
+        <div style="background:#efece3;border-radius:10px;padding:8px 11px;font-size:13px;margin-bottom:12px;max-height:80px;overflow:auto;white-space:pre-wrap;word-break:break-word;">${escP(w.tresc)}</div>
+        <button class="fl-zad" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">📌 Zrób z tego zadanie</button>
+        <button class="fl-as" style="width:100%;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">🧠 Przekaż asystentowi</button>
+        <button class="fl-x" style="width:100%;border:none;background:none;color:var(--ink-soft);border-radius:12px;padding:9px;font-size:14px;cursor:pointer;">Anuluj</button>
+      </div></div>`);
+    document.body.appendChild(sheet);
+    const zamknijSheet = () => sheet.remove();
+    sheet.addEventListener("click", (e) => { if (e.target === sheet) zamknijSheet(); });
+    sheet.querySelector(".fl-x").addEventListener("click", zamknijSheet);
+    sheet.querySelector(".fl-zad").addEventListener("click", () => {
+      zamknijSheet(); zamknij(); pokazWidok("ekran");
+      const pole = $("m-pole");
+      pole.value = `Zrób zadanie z tej wiadomości (${kontekst}): „${w.tresc}"`;
+      wyslij();
+    });
+    sheet.querySelector(".fl-as").addEventListener("click", () => {
+      zamknijSheet(); zamknij(); pokazWidok("ekran");
+      const pole = $("m-pole");
+      pole.value = `„${w.tresc}" (${kontekst}) — `;
+      pole.style.height = "auto"; pole.style.height = Math.min(pole.scrollHeight, 120) + "px";
+      pole.focus();
+    });
+  }
   const doDolu = () => { lista.scrollTop = lista.scrollHeight; };
   const oznaczPrzeczytane = async () => {
     try { await supabase.from("plemie_przeczytane").upsert({ traveler_id: mojeId, plemie_id: p.id, ostatnio: new Date().toISOString() }, { onConflict: "traveler_id,plemie_id" }); } catch (e) {}
