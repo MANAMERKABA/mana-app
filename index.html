@@ -1396,7 +1396,7 @@ function pokazWidok(nazwa) {
   $("m-widok-trzos").style.display = nazwa === "trzos" ? "" : "none";
   $("m-widok-sejf").style.display = nazwa === "sejf" ? "" : "none";
   $("m-widok-egzamin").style.display = nazwa === "egzamin" ? "" : "none";
-  if (nazwa === "ekran" && typeof renderNieprzeczytaneStart === "function") renderNieprzeczytaneStart();
+  if (nazwa === "ekran" && typeof TRAVELER !== "undefined" && TRAVELER && typeof wczytajDzien === "function") wczytajDzien();
   window.scrollTo(0, 0);
 }
 $("m-back").addEventListener("click", () => pokazWidok("ekran"));
