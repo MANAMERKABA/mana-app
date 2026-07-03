@@ -2474,22 +2474,25 @@ async function zaprosZKontaktow(plemieId, plemieNazwa) {
   ov.querySelectorAll(".zk-osoba").forEach((b) => b.addEventListener("click", async () => {
     const k = lista.find((x) => x.id === b.dataset.id); if (!k) return;
     ov.querySelectorAll(".zk-osoba").forEach((x) => { x.disabled = true; });
-    const email = (k.email || "").trim();
-    let data, error;
-    if (email) ({ data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: plemieId, p_email: email }));
-    else ({ data, error } = await supabase.rpc("zapros_link", { p_plemie: plemieId }));
+    const { data, error } = await supabase.rpc("zapros_kontakt", { p_plemie: plemieId, p_kontakt_id: k.id });
     if (error) { trzosToast("Błąd: " + error.message); zamknij(); return; }
     if (!data || !data.ok) { trzosToast((data && data.error) || "Nie wysłano."); zamknij(); return; }
     renderPlemie();
+    const body = ov.querySelector("#zk-body");
+    if (data.sposob === "bezposrednio") {
+      body.innerHTML = `<div style="font-size:13px;line-height:1.5;">✓ „${esc(k.imie || "kontakt")}" jest już w MANA — zaproszenie do grupy poszło <b>bezpośrednio</b>. Pojawi się u niej do przyjęcia, nic nie musisz wysyłać.</div>`;
+      return;
+    }
     const link = location.origin + "/?zaproszenie=" + data.zaproszenie_id;
     const msg = `Zapraszam Cię do grupy „${plemieNazwa}" w MANA: ${link}`;
-    const tel = (k.telefon || "").replace(/[^\d]/g, "");
+    const telSur = data.telefon || k.telefon || "";
+    const tel = telSur.replace(/[^\d]/g, "");
+    const mail = data.email || k.email || "";
     const kanaly = [];
     if (tel) kanaly.push(`<a class="m-btn" href="https://wa.me/${tel}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener" style="${BT}text-decoration:none;display:inline-block;">📱 WhatsApp</a>`);
-    if (tel) kanaly.push(`<a class="m-btn" href="sms:${escP(k.telefon)}?body=${encodeURIComponent(msg)}" style="${BT}text-decoration:none;display:inline-block;">✉ SMS</a>`);
-    if (email) kanaly.push(`<a class="m-btn" href="mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent("Zaproszenie do MANA")}&body=${encodeURIComponent(msg)}" style="${BT}text-decoration:none;display:inline-block;">📧 E-mail</a>`);
+    if (tel) kanaly.push(`<a class="m-btn" href="sms:${escP(telSur)}?body=${encodeURIComponent(msg)}" style="${BT}text-decoration:none;display:inline-block;">✉ SMS</a>`);
+    if (mail) kanaly.push(`<a class="m-btn" href="mailto:${encodeURIComponent(mail)}?subject=${encodeURIComponent("Zaproszenie do MANA")}&body=${encodeURIComponent(msg)}" style="${BT}text-decoration:none;display:inline-block;">📧 E-mail</a>`);
     kanaly.push(`<button class="zk-kopiuj" style="${BT}">🔗 Kopiuj link</button>`);
-    const body = ov.querySelector("#zk-body");
     body.innerHTML = `<div style="font-size:13px;margin-bottom:10px;">Zaproszenie dla „${esc(k.imie || "kontakt")}" gotowe. Wyślij:</div><div style="display:flex;gap:8px;flex-wrap:wrap;">${kanaly.join("")}</div>`;
     const kb = body.querySelector(".zk-kopiuj");
     if (kb) kb.addEventListener("click", () => { try { navigator.clipboard.writeText(link); trzosToast("Skopiowano ✓"); } catch (_) { prompt("Link:", link); } });
