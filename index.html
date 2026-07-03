@@ -1276,6 +1276,15 @@ async function wejdz() {
   await wczytajDzien();
   await obsluzTokenZaproszenia();
   await pokazIndykatorZaproszen();
+  await pokazIndykatorRozjazdow();
+}
+async function pokazIndykatorRozjazdow() {
+  try {
+    if (!TRAVELER || !TRAVELER.id) return;
+    const { data } = await supabase.from("events").select("id").eq("traveler_id", TRAVELER.id).not("grupa_pending", "is", null);
+    const n = Array.isArray(data) ? data.length : 0;
+    if (n > 0) trzosToast("⚠ Grupa zmieniła " + n + (n === 1 ? " wspólne wydarzenie" : " wspólne wydarzenia") + " — otwórz w Horyzoncie, żeby zdecydować");
+  } catch (_) {}
 }
 async function obsluzTokenZaproszenia() {
   if (!_tokenZaproszenia) return;
@@ -4745,6 +4754,7 @@ function oknoWydarzenia(opcje) {
       <button class="m-modal__x" aria-label="Zamknij">&#10005;</button>
     </div>
     <div class="m-form">
+      <div id="w-rozjazd-banner"></div>
       <label>Tytuł</label>
       <input type="text" id="w-tytul" maxlength="200" value="${ev ? esc(ev.tytul) : ""}">
       <label>Kategoria</label>
@@ -4808,6 +4818,45 @@ function oknoWydarzenia(opcje) {
   const zamknij = () => overlay.remove();
   overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
   overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+
+  // ── Rozjazd / oczekująca zmiana grupy ──
+  if (ev && (ev.grupa_pending || ev.rozjazd)) {
+    const bn = overlay.querySelector("#w-rozjazd-banner");
+    const fmtT = (iso) => { try { return fmtData(iso, { day: "numeric", month: "short" }) + " " + fmtGodz(iso); } catch (e) { return ""; } };
+    const odswiezPo = () => { zamknij(); renderKalendarz(); if (PLEMIE_KAL) renderPlemieKalendarz(); };
+    if (ev.grupa_pending) {
+      const gp = ev.grupa_pending;
+      const nowy = gp.data_czas ? fmtT(gp.data_czas) : "(nowy termin)";
+      const moj = ev.data_czas ? fmtT(ev.data_czas) : "";
+      bn.innerHTML = `<div style="background:#fff4e5;border:1px solid #f0c088;border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+        <div style="font-size:13px;color:#8a5a12;font-weight:700;margin-bottom:2px;">⚠ Grupa zmieniła termin</div>
+        <div style="font-size:12.5px;color:#8a5a12;margin-bottom:9px;">Wspólne wydarzenie przeniesiono na <b>${escP(nowy)}</b>. Ty masz swój termin: <b>${escP(moj)}</b>. Co zrobić?</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="rj-przyjmij" style="border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer;">Przyjmij grupowy</button>
+          <button class="rj-zostaw" style="border:1px solid #f0c088;background:#fff;color:#8a5a12;border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer;">Zostaw mój</button>
+        </div></div>`;
+      bn.querySelector(".rj-przyjmij").addEventListener("click", async () => {
+        const r = await supabase.rpc("event_grupa_rejoin", { p_id: ev.id });
+        if (r.error || (r.data && r.data.ok === false)) { alert((r.data && r.data.error) || (r.error && r.error.message) || "Nie udało się."); return; }
+        trzosToast("Przyjęto termin grupy ✓"); odswiezPo();
+      });
+      bn.querySelector(".rj-zostaw").addEventListener("click", async () => {
+        const { error } = await supabase.from("events").update({ grupa_pending: null }).eq("id", ev.id);
+        if (error) { alert(error.message); return; }
+        trzosToast("Zostawiono Twój termin ✓"); odswiezPo();
+      });
+    } else if (ev.rozjazd) {
+      bn.innerHTML = `<div style="background:#eef2f7;border:1px solid var(--line);border-radius:10px;padding:9px 12px;margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:12.5px;color:var(--ink-soft);flex:1;min-width:150px;">To Twój własny termin — różni się od wspólnego terminu grupy.</span>
+        <button class="rj-przywroc" style="border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:9px;padding:7px 11px;font-size:12.5px;cursor:pointer;">↩ Przywróć do grupy</button>
+      </div>`;
+      bn.querySelector(".rj-przywroc").addEventListener("click", async () => {
+        const r = await supabase.rpc("event_grupa_rejoin", { p_id: ev.id });
+        if (r.error || (r.data && r.data.ok === false)) { alert((r.data && r.data.error) || (r.error && r.error.message) || "Nie udało się."); return; }
+        trzosToast("Przywrócono termin grupy ✓"); odswiezPo();
+      });
+    }
+  }
 
   const ktoSel = overlay.querySelector("#w-kto");
   const dlaBox = overlay.querySelector("#w-dla-box");
@@ -4993,7 +5042,7 @@ function oknoWydarzenia(opcje) {
           else if (rG.data && rG.data.ok === false) { alert(rG.data.error || "Nie udało się zmienić całej grupy."); return; }
           else { error = null; }
         } else {
-          ({ error } = await supabase.from("events").update(rekord).eq("id", ev.id));
+          ({ error } = await supabase.from("events").update({ ...rekord, rozjazd: true }).eq("id", ev.id));
         }
       } else {
         ({ error } = await supabase.from("events").update(rekord).eq("id", ev.id));
