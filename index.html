@@ -1295,15 +1295,20 @@ async function pokazIndykatorZaproszen() {
   } catch (_) {}
 }
 
-let _kanalRealtime = null, _odswiezTimer = null;
+let _kanalRealtime = null, _odswiezTimer = null, _zadaniaModalOdswiez = null;
 function odswiezKalendarzeLive() {
   clearTimeout(_odswiezTimer);
   _odswiezTimer = setTimeout(() => {
+    // otwarte okno Zadań plemienia — odśwież niezależnie od widoku
+    if (typeof _zadaniaModalOdswiez === "function") { try { _zadaniaModalOdswiez(); } catch (e) {} }
     const w = $("m-widok-horyzont");
     if (!w || w.style.display === "none") return;
     const tab = w.dataset.tab;
     if (tab === "plemie") { if (typeof PLEMIE_KAL !== "undefined" && PLEMIE_KAL) renderPlemieKalendarz(); }
-    else if (typeof renderKalendarz === "function") renderKalendarz();
+    else {
+      if (typeof renderKalendarz === "function") renderKalendarz();
+      if (typeof wczytajZadaniaHoryzont === "function") wczytajZadaniaHoryzont();
+    }
   }, 300);
 }
 function subskrybujRealtime() {
@@ -2372,11 +2377,12 @@ async function otworzZadaniaPlemienia(p) {
     <div class="m-form" id="zp-tresc"><div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div></div>
   </div></div>`);
   document.body.appendChild(overlay);
-  const zamknij = () => overlay.remove();
+  const zamknij = () => { _zadaniaModalOdswiez = null; overlay.remove(); };
   overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
   overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
 
   const nickOf = (id) => { const c = czl.find((x) => x.traveler_id === id); return c ? (c.nick || "uczestnik") : "ktoś"; };
+  _zadaniaModalOdswiez = () => { odswiez(); };
 
   async function odswiez() {
     const tresc = overlay.querySelector("#zp-tresc");
@@ -4977,14 +4983,29 @@ function oknoWydarzenia(opcje) {
     const dlaRaw = (dlaBox.style.display !== "none" && dlaSel.value) ? dlaSel.value : String(TRAVELER.id);
     let error;
     if (ev) {
-      ({ error } = await supabase.from("events").update(rekord).eq("id", ev.id));
+      if (ev.grupa_id) {
+        const zakres = await pytajZakresEdycji();
+        if (!zakres) return;
+        if (zakres === "grupa") {
+          const patch = { tytul, data_czas: dataCzas, koniec, caly_dzien: calyD, opis: rekord.opis, lokalizacja: rekord.lokalizacja };
+          const rG = await supabase.rpc("event_grupa_update", { p_id: ev.id, p_patch: patch, p_zakres: "grupa" });
+          if (rG.error) { error = rG.error; }
+          else if (rG.data && rG.data.ok === false) { alert(rG.data.error || "Nie udało się zmienić całej grupy."); return; }
+          else { error = null; }
+        } else {
+          ({ error } = await supabase.from("events").update(rekord).eq("id", ev.id));
+        }
+      } else {
+        ({ error } = await supabase.from("events").update(rekord).eq("id", ev.id));
+      }
     } else if (dlaRaw === "__wszyscy__") {
       // PROPOZYCJA dla całego plemienia — wpis u KAŻDEGO członka; twórca i dzieci bez loginu od razu przyjęte
       const pl = plemionaData.find((x) => x.id === ktoSel.value);
       const czl = (pl && pl.czlonkowie) || [];
+      const gid = (czl.length > 1 && typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : null;
       const rows = czl.map((c) => {
         const auto = c.traveler_id === TRAVELER.id || c.zarzadzany;
-        return { ...rekord, traveler_id: c.traveler_id, typ: "wydarzenie", utworzony_przez: TRAVELER.id, status: auto ? "planowane" : "proponowane" };
+        return { ...rekord, grupa_id: gid, traveler_id: c.traveler_id, typ: "wydarzenie", utworzony_przez: TRAVELER.id, status: auto ? "planowane" : "proponowane" };
       });
       ({ error } = await supabase.from("events").insert(rows));
     } else {
@@ -5005,6 +5026,27 @@ function oknoWydarzenia(opcje) {
     zamknij();
     renderKalendarz();
     if (PLEMIE_KAL) renderPlemieKalendarz();
+  });
+}
+
+/* Okno wyboru zakresu edycji wspólnego wydarzenia: cała grupa vs tylko mój wpis.
+   Zwraca Promise<'grupa' | 'moj' | null(anuluj)>. */
+function pytajZakresEdycji() {
+  return new Promise((resolve) => {
+    const ov = el(`<div class="m-overlay" style="align-items:center;z-index:10000;">
+      <div style="background:var(--surface);max-width:420px;width:92%;border-radius:16px;padding:18px 18px 16px;box-shadow:0 12px 40px rgba(0,0,0,.25);">
+        <div style="font-size:15px;font-weight:700;margin-bottom:6px;">To wspólne wydarzenie</div>
+        <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">Ta zmiana dotyczy też innych osób w plemieniu. Zapisać u wszystkich czy tylko u Ciebie?</div>
+        <button class="ze-wsz" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">U wszystkich (całe plemię)</button>
+        <button class="ze-moj" style="width:100%;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">Tylko u mnie</button>
+        <button class="ze-x" style="width:100%;border:none;background:none;color:var(--ink-soft);border-radius:12px;padding:8px;font-size:14px;cursor:pointer;">Anuluj</button>
+      </div></div>`);
+    document.body.appendChild(ov);
+    const done = (v) => { ov.remove(); resolve(v); };
+    ov.addEventListener("click", (e) => { if (e.target === ov) done(null); });
+    ov.querySelector(".ze-wsz").addEventListener("click", () => done("grupa"));
+    ov.querySelector(".ze-moj").addEventListener("click", () => done("moj"));
+    ov.querySelector(".ze-x").addEventListener("click", () => done(null));
   });
 }
 
