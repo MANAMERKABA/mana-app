@@ -48,15 +48,16 @@
     padding: 14px 18px 12px; gap: 10px;
   }
   .m-logo {
-    width: 46px; height: 46px; border-radius: 50%; flex: none; padding: 0;
+    width: 56px; height: 56px; border-radius: 50%; flex: none; padding: 0;
     background: var(--turkus, #1f9e8f); border: none; cursor: pointer;
     display: inline-flex; align-items: center; justify-content: center;
   }
-  .m-logo svg { width: 31px; height: 31px; }
+  .m-logo svg { width: 38px; height: 38px; }
   .m-logo:hover { filter: brightness(1.06); }
   .m-header__prawo { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: none; }
-  .m-brand__name { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: 0.06em; }
-  .m-brand__date { font-size: 13px; color: var(--ink-soft); text-transform: lowercase; text-align: center; flex: 1; min-width: 0; }
+  .m-brand__srodek { flex: 1; min-width: 0; text-align: center; }
+  .m-brand__name { font-family: var(--font-display); font-size: 24px; font-weight: 600; letter-spacing: 0.06em; line-height: 1.05; }
+  .m-brand__date { font-size: 13px; color: var(--ink-soft); text-transform: lowercase; margin-top: 2px; }
   .m-logout {
     background: none; border: 1px solid var(--line); cursor: pointer;
     font-size: 12.5px; color: var(--ink-soft); line-height: 1;
@@ -504,7 +505,10 @@
       <button class="m-logo" id="m-mana-btn" aria-label="Wszystkie pokoje MANA" title="Wszystkie pokoje MANA">
         <svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M24 34c-2.4-2-11-7-11-14 0-3.6 2.9-6 6-6 2.1 0 4 1.1 5 3 1-1.9 2.9-3 5-3 3.1 0 6 2.4 6 6 0 7-8.6 12-11 14z"/></svg>
       </button>
-      <div class="m-brand__date" id="m-data">—</div>
+      <div class="m-brand__srodek">
+        <div class="m-brand__name">MANA</div>
+        <div class="m-brand__date" id="m-data">—</div>
+      </div>
       <div class="m-header__prawo">
         <span class="m-user"></span>
         <button class="m-logout" id="m-logout" title="Wyloguj">Wyloguj</button>
