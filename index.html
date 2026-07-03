@@ -1978,7 +1978,7 @@ function kartaKontakt(k) {
   const bz = w.querySelector(".kn-zapros"); if (bz) bz.addEventListener("click", () => zaprosKontakt(k));
   return w;
 }
-function formKontakt(k) {
+function formKontakt(k, onSave) {
   const edycja = !!k;
   const opcjeTyp = KON_TYPY.map(([v, l]) => `<option value="${v}"${k && k.typ === v ? " selected" : ""}>${escP(l)}</option>`).join("");
   const ov = el(`<div class="m-overlay"><div class="m-modal">
@@ -2028,7 +2028,7 @@ function formKontakt(k) {
     if (edycja) ({ error } = await supabase.from("kontakty").update(payload).eq("id", k.id));
     else ({ error } = await supabase.from("kontakty").insert({ ...payload, owner_traveler_id: TRAVELER.id, polaczenie_status: "brak", aktywny: true }));
     if (error) { trzosToast("Błąd: " + error.message); return; }
-    zamknij(); trzosToast("Zapisano ✓"); renderKontakty();
+    zamknij(); trzosToast("Zapisano ✓"); renderKontakty(); if (typeof onSave === "function") onSave();
   });
 }
 async function usunKontakt(k) {
@@ -2471,7 +2471,7 @@ async function zaprosZKontaktow(plemieId, plemieNazwa) {
   const zamknij = () => ov.remove();
   ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
   ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
-  const bnowy = ov.querySelector(".zk-nowy"); if (bnowy) bnowy.addEventListener("click", () => { zamknij(); formKontakt(null); });
+  const bnowy = ov.querySelector(".zk-nowy"); if (bnowy) bnowy.addEventListener("click", () => { zamknij(); formKontakt(null, () => zaprosZKontaktow(plemieId, plemieNazwa)); });
   const szuk = ov.querySelector(".zk-szukaj");
   if (szuk) szuk.addEventListener("input", () => { const q = szuk.value.trim().toLowerCase(); ov.querySelectorAll(".zk-wiersz").forEach((el2) => { el2.style.display = (!q || (el2.dataset.szukaj || "").includes(q)) ? "" : "none"; }); });
   const bwyslij = ov.querySelector(".zk-wyslij");
