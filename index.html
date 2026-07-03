@@ -146,10 +146,18 @@
     font-size: 13px; color: var(--ink-soft); margin-bottom: 10px;
   }
   .m-sekcja__head svg { width: 15px; height: 15px; }
-  .m-sekcja__head--klik { cursor: pointer; user-select: none; }
-  .m-sekcja__head--klik:hover { color: var(--turkus); }
-  .m-sekcja__chev { margin-left: auto; font-size: 18px; line-height: 1; color: var(--ink-soft); }
-  .m-sekcja__head--klik:hover .m-sekcja__chev { color: var(--turkus); }
+  .m-sekcja__head--klik {
+    cursor: pointer; user-select: none;
+    background: #e7f3f0; color: var(--turkus);
+    border-radius: 10px; padding: 8px 12px; margin: -2px -4px 10px;
+  }
+  .m-sekcja__head--klik:hover { background: #dcece8; }
+  .m-sekcja__chev {
+    margin-left: auto; width: 24px; height: 24px; flex: none;
+    border-radius: 50%; background: var(--turkus); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 16px; line-height: 1;
+  }
   .m-poz { display: flex; gap: 12px; align-items: baseline; padding: 7px 0; }
   .m-poz + .m-poz { border-top: 1px solid #f0ece0; }
   .m-poz__czas { font-variant-numeric: tabular-nums; font-size: 14px; color: var(--turkus); flex: 0 0 46px; }
@@ -487,7 +495,7 @@
     <header class="m-header">
       <div class="m-brand">
         <div class="m-brand__date" id="m-data">—</div>
-        <button class="m-brand__name" id="m-mana-btn" style="background:none;border:none;padding:0;color:inherit;cursor:pointer;text-align:left;">MANA <span style="font-size:0.5em;font-weight:400;color:#8c887e;vertical-align:middle;letter-spacing:0;">▾</span></button>
+        <button class="m-brand__name" id="m-mana-btn" style="background:none;border:none;padding:0;color:inherit;cursor:pointer;text-align:left;">MANA <span style="font-size:0.5em;font-weight:400;color:var(--turkus,#1f9e8f);vertical-align:middle;letter-spacing:0;">▾</span></button>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="m-user"></span>
@@ -542,7 +550,7 @@
       <div class="m-sekcja__head m-sekcja__head--klik" id="m-glowa-wyd" role="button" tabindex="0">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
         <span id="m-kal-naglowek">Kalendarz</span>
-        <span class="m-sekcja__chev">›</span>
+        <span class="m-sekcja__chev">→</span>
       </div>
       <div id="m-kal-lista"></div>
     </section>
@@ -551,7 +559,7 @@
       <div class="m-sekcja__head m-sekcja__head--klik" id="m-glowa-zad" role="button" tabindex="0">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
         <span>Zadania</span>
-        <span class="m-sekcja__chev">›</span>
+        <span class="m-sekcja__chev">→</span>
       </div>
       <div id="m-zad-lista"></div>
     </section>
@@ -2765,43 +2773,80 @@ async function otworzRozmowe(p) {
   const dodajWiersz = (w) => {
     const moje = w.traveler_id === mojeId;
     const czas = fmtGodz(w.created_at);
-    const row = el(`<div style="display:flex;flex-direction:column;align-items:${moje ? "flex-end" : "flex-start"};">
-      <div style="max-width:80%;background:${moje ? "var(--turkus,#1f9e8f)" : "#efece3"};color:${moje ? "#fff" : "var(--ink)"};border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;word-break:break-word;white-space:pre-wrap;">${escP(w.tresc)}</div>
+    const row = el(`<div data-wid="${w.id}" style="display:flex;flex-direction:column;align-items:${moje ? "flex-end" : "flex-start"};">
+      <div class="rz-bubble" style="max-width:80%;background:${moje ? "var(--turkus,#1f9e8f)" : "#efece3"};color:${moje ? "#fff" : "var(--ink)"};border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;word-break:break-word;white-space:pre-wrap;">${escP(w.tresc)}</div>
       <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;display:flex;gap:6px;align-items:center;">
-        <span>${moje ? "" : escP(nickOf(w.traveler_id)) + " · "}${escP(czas)}</span>
-        <button class="rz-flag" title="Przekaż asystentowi / zrób zadanie" style="border:none;background:none;cursor:pointer;color:var(--ink-soft);font-size:14px;line-height:1;padding:0 3px;">⋯</button>
+        <span>${moje ? "" : escP(nickOf(w.traveler_id)) + " · "}${escP(czas)}<span class="rz-edyt">${w.edytowano ? " · edytowano" : ""}</span></span>
+        <button class="rz-flag" title="Akcje wiadomości" style="border:none;background:none;cursor:pointer;color:var(--ink-soft);font-size:14px;line-height:1;padding:0 3px;">⋯</button>
       </div>
     </div>`);
-    row.querySelector(".rz-flag").addEventListener("click", () => flagujWiadomosc(w));
+    row.querySelector(".rz-flag").addEventListener("click", () => flagujWiadomosc(w, row));
     lista.appendChild(row);
   };
-  function flagujWiadomosc(w) {
+  function flagujWiadomosc(w, row) {
+    const moje = w.traveler_id === mojeId;
     const nick = nickOf(w.traveler_id);
-    const kontekst = `od ${nick}, plemię „${p.nazwa}"`;
+    const kontekst = `od ${moje ? "Ciebie" : nick}, plemię „${p.nazwa}"`;
     const sheet = el(`<div class="m-overlay" style="align-items:flex-end;">
       <div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:14px 16px 20px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
-        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Ta wiadomość (${escP(kontekst)}):</div>
+        <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Wiadomość (${escP(kontekst)}):</div>
         <div style="background:#efece3;border-radius:10px;padding:8px 11px;font-size:13px;margin-bottom:12px;max-height:80px;overflow:auto;white-space:pre-wrap;word-break:break-word;">${escP(w.tresc)}</div>
-        <button class="fl-zad" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">📌 Zrób z tego zadanie</button>
-        <button class="fl-as" style="width:100%;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">🧠 Przekaż asystentowi</button>
+        <div class="fl-akcje"></div>
         <button class="fl-x" style="width:100%;border:none;background:none;color:var(--ink-soft);border-radius:12px;padding:9px;font-size:14px;cursor:pointer;">Anuluj</button>
       </div></div>`);
     document.body.appendChild(sheet);
     const zamknijSheet = () => sheet.remove();
     sheet.addEventListener("click", (e) => { if (e.target === sheet) zamknijSheet(); });
     sheet.querySelector(".fl-x").addEventListener("click", zamknijSheet);
-    sheet.querySelector(".fl-zad").addEventListener("click", () => {
-      zamknijSheet(); zamknij(); pokazWidok("ekran");
-      const pole = $("m-pole");
-      pole.value = `Zrób zadanie z tej wiadomości (${kontekst}): „${w.tresc}"`;
-      wyslij();
-    });
-    sheet.querySelector(".fl-as").addEventListener("click", () => {
+    const akc = sheet.querySelector(".fl-akcje");
+    const przycisk = (label, primary) => { const b = el(`<button style="width:100%;border:${primary ? "none" : "1px solid var(--line)"};background:${primary ? "var(--turkus,#1f9e8f)" : "var(--surface)"};color:${primary ? "#fff" : "var(--ink)"};border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">${label}</button>`); akc.appendChild(b); return b; };
+    if (moje) {
+      przycisk("✏️ Edytuj").addEventListener("click", () => { zamknijSheet(); edytujWiadomosc(w, row); });
+      przycisk("🗑 Usuń").addEventListener("click", async () => {
+        zamknijSheet();
+        if (!confirm("Usunąć tę wiadomość?")) return;
+        const { error } = await supabase.from("wiadomosci").delete().eq("id", w.id);
+        if (error) { trzosToast("Nie usunięto: " + error.message); return; }
+        if (row) row.remove();
+      });
+    } else {
+      przycisk("📌 Zrób z tego zadanie", true).addEventListener("click", () => {
+        zamknijSheet(); zamknij(); pokazWidok("ekran");
+        const pole = $("m-pole");
+        pole.value = `Zrób zadanie z tej wiadomości (${kontekst}): „${w.tresc}"`;
+        wyslij();
+      });
+    }
+    przycisk("🧠 Przekaż asystentowi").addEventListener("click", () => {
       zamknijSheet(); zamknij(); pokazWidok("ekran");
       const pole = $("m-pole");
       pole.value = `„${w.tresc}" (${kontekst}) — `;
       pole.style.height = "auto"; pole.style.height = Math.min(pole.scrollHeight, 120) + "px";
       pole.focus();
+    });
+  }
+  function edytujWiadomosc(w, row) {
+    const sheet = el(`<div class="m-overlay" style="align-items:flex-end;">
+      <div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:14px 16px 18px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Edytuj wiadomość</div>
+        <textarea class="fe-txt" rows="3" style="width:100%;resize:vertical;border:1px solid var(--line);border-radius:12px;padding:10px 11px;font:inherit;font-size:14px;background:var(--surface);color:var(--ink);margin-bottom:10px;"></textarea>
+        <div style="display:flex;gap:8px;">
+          <button class="fe-zapisz" style="flex:1;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:11px;font-size:15px;cursor:pointer;">Zapisz</button>
+          <button class="fe-x" style="flex:1;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:12px;padding:11px;font-size:15px;cursor:pointer;">Anuluj</button>
+        </div>
+      </div></div>`);
+    document.body.appendChild(sheet);
+    const txt = sheet.querySelector(".fe-txt"); txt.value = w.tresc; setTimeout(() => txt.focus(), 40);
+    const zam = () => sheet.remove();
+    sheet.addEventListener("click", (e) => { if (e.target === sheet) zam(); });
+    sheet.querySelector(".fe-x").addEventListener("click", zam);
+    sheet.querySelector(".fe-zapisz").addEventListener("click", async () => {
+      const nowa = txt.value.trim(); if (!nowa || nowa === w.tresc) { zam(); return; }
+      const { error } = await supabase.from("wiadomosci").update({ tresc: nowa, edytowano: true }).eq("id", w.id);
+      if (error) { trzosToast("Nie zapisano: " + error.message); return; }
+      w.tresc = nowa; w.edytowano = true;
+      if (row) { const b = row.querySelector(".rz-bubble"); if (b) b.textContent = nowa; const e = row.querySelector(".rz-edyt"); if (e) e.textContent = " · edytowano"; }
+      zam();
     });
   }
   const doDolu = () => { lista.scrollTop = lista.scrollHeight; };
@@ -2828,6 +2873,16 @@ async function otworzRozmowe(p) {
       const pusto = lista.querySelector("div[style*='text-align:center']"); if (pusto) pusto.remove();
       dodajWiersz(w); doDolu(); oznaczPrzeczytane();
       const b = document.querySelector(`.pl-rozm-btn[data-plemie="${p.id}"] .rz-kropka`); if (b) b.remove();
+    })
+    .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wiadomosci", filter: "plemie_id=eq." + p.id }, (payload) => {
+      const w = payload.new; if (!w) return;
+      const r = lista.querySelector(`[data-wid="${w.id}"]`); if (!r) return;
+      const b = r.querySelector(".rz-bubble"); if (b) b.textContent = w.tresc;
+      const e = r.querySelector(".rz-edyt"); if (e) e.textContent = w.edytowano ? " · edytowano" : "";
+    })
+    .on("postgres_changes", { event: "DELETE", schema: "public", table: "wiadomosci", filter: "plemie_id=eq." + p.id }, (payload) => {
+      const old = payload.old; if (!old) return;
+      const r = lista.querySelector(`[data-wid="${old.id}"]`); if (r) r.remove();
     }).subscribe();
 
   async function wyslij() {
@@ -3179,7 +3234,7 @@ async function renderNieprzeczytaneStart() {
         podglad = `<b style="color:var(--ink);font-weight:600;">${escP(nick)}:</b> ${escP(tekst.length > 46 ? tekst.slice(0, 46) + "…" : tekst)}`;
       }
       const row = el(`<button style="width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;${pokazano > 1 ? "border-top:1px solid var(--line);" : ""}padding:10px 4px;cursor:pointer;text-align:left;font:inherit;">
-        <span style="width:11px;height:11px;border-radius:50%;background:${p.kolor || "#1f9e8f"};flex:none;"></span>
+        <span style="width:11px;height:11px;border-radius:50%;background:var(--turkus,#1f9e8f);flex:none;"></span>
         <span style="flex:1;min-width:0;">
           <span style="font-size:14px;color:var(--ink);display:block;font-weight:600;">${escP(p.nazwa)}</span>
           <span style="font-size:12.5px;color:var(--ink-soft);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${podglad}</span>
@@ -3250,11 +3305,6 @@ function renderNajblizsze(wyd, jestWiecej) {
     lista.appendChild(el(`<div class="m-poz"><span class="m-poz__czas">${esc(czas)}</span>`
       + `<span class="m-poz__tytul"><span class="m-kat-kropka" style="background:${kolorKategorii(e)}"></span>${esc(e.tytul)}${obca ? ` <span class="m-poz__obca">${esc(obca)}</span>` : ""}</span></div>`));
   }
-  if (jestWiecej) {
-    const link = el(`<button class="m-wiecej">więcej w Horyzoncie →</button>`);
-    link.addEventListener("click", () => otworzHoryzont());
-    lista.appendChild(link);
-  }
 }
 
 /* Ekran startowy: lista zadań jest INFORMACYJNA — bez checkboxów.
@@ -3276,11 +3326,6 @@ function renderZadaniaEkran(zad) {
     lista.appendChild(el(`<div class="m-zad">
       <span class="m-zad__kropka" style="background:${KOLOR_PRIO[z.priorytet] || "#e0a020"}"></span>
       <span class="m-zad__tytul">${esc(z.tytul)}</span></div>`));
-  }
-  if (zad.length > 3) {
-    const link = el(`<button class="m-wiecej">więcej w Horyzoncie →</button>`);
-    link.addEventListener("click", () => otworzHoryzont({ skok: "zadania" }));
-    lista.appendChild(link);
   }
 }
 
