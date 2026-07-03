@@ -1968,7 +1968,7 @@ function kartaKontakt(k) {
     <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${zakres}${moje ? "" : " · udostępniony Tobie"}</div>
     ${moje ? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
       ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;">📞 Zadzwoń</a>` : ""}
-      ${(!k.target_traveler_id) ? `<button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>` : ""}
+      <button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
       <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
       <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
     </div>` : ""}
@@ -2454,7 +2454,7 @@ async function utworzPlemie(nazwa, polityka, kolor) {
   renderPlemie();
 }
 async function zaprosZKontaktow(plemieId, plemieNazwa) {
-  const { data: kon } = await supabase.from("kontakty").select("*").eq("owner_traveler_id", TRAVELER.id).is("target_traveler_id", null).eq("aktywny", true).order("imie");
+  const { data: kon } = await supabase.from("kontakty").select("*").eq("owner_traveler_id", TRAVELER.id).eq("aktywny", true).order("imie");
   const lista = (kon || []).filter((k) => k.owner_org_id == null);
   const wiersze = lista.length ? lista.map((k) => {
     const sub = k.email ? escP(k.email) : (k.telefon ? escP(k.telefon) : "brak e-maila i telefonu");
