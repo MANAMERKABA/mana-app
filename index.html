@@ -1227,7 +1227,9 @@ function pinLockDodajBlad(id) {
 }
 function pinLockReset(id) { localStorage.removeItem("mana_pinlock_" + id); }
 
+let _tokenZaproszenia = null;
 async function start() {
+  try { _tokenZaproszenia = new URLSearchParams(location.search).get("zaproszenie"); } catch (_) {}
   let recovery = false;
   nasluchujOdzyskiwania(() => {
     recovery = true;
@@ -1247,6 +1249,18 @@ function pokazLogowanie() {
   $("m-app").style.display = "none";
   $("m-login").style.display = "block";
   montujEkranLogowania($("m-login"), { onZalogowano: () => location.reload() });
+  if (_tokenZaproszenia) pokazBannerZaproszenia();
+}
+async function pokazBannerZaproszenia() {
+  try {
+    const { data } = await supabase.rpc("zaproszenie_podglad", { p_token: _tokenZaproszenia });
+    if (!data || !data.ok) return;
+    const cont = $("m-login"); if (!cont) return;
+    const b = document.createElement("div");
+    b.style.cssText = "max-width:360px;margin:12px auto 0;padding:12px 14px;background:#e8f3ee;border:1px solid #bcdccb;border-radius:10px;font-size:13px;color:#1a5c44;text-align:center;line-height:1.5;";
+    b.innerHTML = "<b>" + esc(data.zapraszajacy || "Ktoś") + "</b> zaprasza Cię do „<b>" + esc(data.plemie || "grupy") + "</b>”" + (data.wiadomosc ? "<br><i>„" + esc(data.wiadomosc) + "”</i>" : "") + "<br><span style=\"color:#4a7c65;\">Zaloguj się lub zarejestruj, żeby dołączyć.</span>";
+    cont.insertBefore(b, cont.firstChild);
+  } catch (_) {}
 }
 async function wejdz() {
   const { data: { session } } = await supabase.auth.getSession();
@@ -1260,6 +1274,25 @@ async function wejdz() {
   renderPokoje();
   subskrybujRealtime();
   await wczytajDzien();
+  await obsluzTokenZaproszenia();
+  await pokazIndykatorZaproszen();
+}
+async function obsluzTokenZaproszenia() {
+  if (!_tokenZaproszenia) return;
+  const tok = _tokenZaproszenia; _tokenZaproszenia = null;
+  const { data, error } = await supabase.rpc("przyjmij_zaproszenie_token", { p_token: tok });
+  try { const u = new URL(location.href); u.searchParams.delete("zaproszenie"); history.replaceState(null, "", u.pathname + u.search + u.hash); } catch (_) {}
+  if (error) { trzosToast("Zaproszenie: " + error.message); return; }
+  if (!data || !data.ok) { trzosToast((data && data.error) || "Zaproszenie nieaktualne."); return; }
+  trzosToast("Dołączyłeś do grupy ✓");
+  if (typeof renderPlemie === "function") renderPlemie();
+}
+async function pokazIndykatorZaproszen() {
+  try {
+    const { data } = await supabase.rpc("moje_zaproszenia");
+    const n = Array.isArray(data) ? data.length : 0;
+    if (n > 0) trzosToast("📩 Masz " + n + (n === 1 ? " zaproszenie" : " zaproszenia") + " — otwórz Horyzont → Plemię");
+  } catch (_) {}
 }
 
 let _kanalRealtime = null, _odswiezTimer = null;
@@ -2151,6 +2184,18 @@ async function renderPlemie() {
   if (!plemiona.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Nie masz jeszcze plemion. Załóż pierwsze — np. „Rodzina".</div>`));
   plemiona.forEach((p) => wrap.appendChild(kartaPlemienia(p)));
   box.appendChild(wrap);
+  odswiezNieprzeczytaneRozmowy();
+}
+async function odswiezNieprzeczytaneRozmowy() {
+  try {
+    const { data = [] } = await supabase.rpc("nieprzeczytane_rozmowy");
+    (data || []).forEach((r) => {
+      const b = document.querySelector(`.pl-rozm-btn[data-plemie="${r.plemie_id}"]`);
+      if (b && !b.querySelector(".rz-kropka") && r.liczba > 0) {
+        b.appendChild(el(`<span class="rz-kropka" style="display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;margin-left:5px;padding:0 4px;">${r.liczba}</span>`));
+      }
+    });
+  } catch (e) {}
 }
 
 function kartaPlemienia(p) {
@@ -2198,6 +2243,10 @@ function kartaPlemienia(p) {
   const zadBtn = el(`<button style="${BG}">📋 Zadania</button>`);
   zadBtn.addEventListener("click", () => otworzZadaniaPlemienia(p));
   akcje.appendChild(zadBtn);
+  const rozmBtn = el(`<button style="${BG}" class="pl-rozm-btn">💬 Rozmowa</button>`);
+  rozmBtn.dataset.plemie = p.id;
+  rozmBtn.addEventListener("click", () => otworzRozmowe(p));
+  akcje.appendChild(rozmBtn);
   // ➕ Zadanie — dla KAŻDEGO członka (zlecenie wymaga praw, wspólne wymaga tylko członkostwa — RLS pilnuje)
   const zz = el(`<button style="${BG}">➕ Zadanie</button>`);
   zz.addEventListener("click", () => formZadajZadanie(p, card));
@@ -2656,6 +2705,86 @@ async function zmienRole(plemie, traveler, rola, nick) {
 /* ===== KALENDARZ PLEMIENIA (kolumny = członkowie) ===== */
 let PLEMIE_KAL = null;
 const inicjalyPl = (n) => { const cz = String(n || "").trim().split(/\s+/).filter(Boolean); return (((cz[0] || "")[0] || "") + ((cz[1] || "")[0] || "")).toUpperCase() || "?"; };
+/* ── KOMUNIKATOR — wątek rozmowy przy plemieniu ──
+   Ludzie piszą do siebie; asystent w przyszłości jako mediator (streszcza / zamienia w zadania).
+   MVP: wątek na żywo (realtime) + oznaczanie przeczytania. */
+let _kanalRozmowa = null;
+async function otworzRozmowe(p) {
+  const czl = p.czlonkowie || [];
+  const mojeId = TRAVELER && TRAVELER.id;
+  const nickOf = (id) => { const c = czl.find((x) => x.traveler_id === id); return c ? (c.nick || "uczestnik") : "ktoś"; };
+  const overlay = el(`<div class="m-overlay"><div class="m-modal" style="display:flex;flex-direction:column;max-height:82vh;">
+    <div class="m-modal__head">
+      <span class="m-modal__tytul"><span style="width:9px;height:9px;border-radius:50%;background:${p.kolor || "#1f9e8f"};display:inline-block;margin-right:6px;"></span>Rozmowa · ${escP(p.nazwa)}</span>
+      <button class="m-modal__x" aria-label="Zamknij">&#10005;</button>
+    </div>
+    <div class="rz-lista" style="flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px;min-height:180px;">
+      <div style="color:var(--ink-soft);font-size:14px;text-align:center;padding:16px 0;">Wczytuję…</div>
+    </div>
+    <div style="border-top:1px solid var(--line);padding:10px 12px;display:flex;gap:8px;align-items:flex-end;">
+      <textarea class="rz-input" rows="1" placeholder="Napisz wiadomość…" style="flex:1;resize:none;max-height:110px;border:1px solid var(--line);border-radius:12px;padding:9px 11px;font:inherit;font-size:14px;background:var(--surface);color:var(--ink);"></textarea>
+      <button class="rz-wyslij" style="border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:10px 15px;font-size:14px;cursor:pointer;flex:none;">Wyślij</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(overlay);
+  const lista = overlay.querySelector(".rz-lista");
+  const input = overlay.querySelector(".rz-input");
+  const btn = overlay.querySelector(".rz-wyslij");
+  const zamknij = () => {
+    if (_kanalRozmowa) { try { supabase.removeChannel(_kanalRozmowa); } catch (e) {} _kanalRozmowa = null; }
+    overlay.remove();
+  };
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
+  overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+
+  const dodajWiersz = (w) => {
+    const moje = w.traveler_id === mojeId;
+    const czas = fmtGodz(w.created_at);
+    const row = el(`<div style="display:flex;flex-direction:column;align-items:${moje ? "flex-end" : "flex-start"};">
+      <div style="max-width:80%;background:${moje ? "var(--turkus,#1f9e8f)" : "#efece3"};color:${moje ? "#fff" : "var(--ink)"};border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;word-break:break-word;white-space:pre-wrap;">${escP(w.tresc)}</div>
+      <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;">${moje ? "" : escP(nickOf(w.traveler_id)) + " · "}${escP(czas)}</div>
+    </div>`);
+    lista.appendChild(row);
+  };
+  const doDolu = () => { lista.scrollTop = lista.scrollHeight; };
+  const oznaczPrzeczytane = async () => {
+    try { await supabase.from("plemie_przeczytane").upsert({ traveler_id: mojeId, plemie_id: p.id, ostatnio: new Date().toISOString() }, { onConflict: "traveler_id,plemie_id" }); } catch (e) {}
+  };
+
+  const { data: wiad = [], error } = await supabase
+    .from("wiadomosci").select("id, traveler_id, tresc, created_at")
+    .eq("plemie_id", p.id).order("created_at", { ascending: true }).limit(300);
+  lista.innerHTML = "";
+  if (error) { lista.innerHTML = `<div style="color:#c4513a;font-size:13px;">Błąd: ${escP(error.message)}</div>`; }
+  else if (!wiad.length) { lista.appendChild(el(`<div style="color:var(--ink-soft);font-size:13px;text-align:center;padding:16px 0;">Brak wiadomości. Napisz pierwszą — zobaczą ją wszyscy w plemieniu.</div>`)); }
+  else { wiad.forEach(dodajWiersz); }
+  doDolu();
+  oznaczPrzeczytane();
+  const znane = new Set(wiad.map((w) => w.id));
+
+  // realtime — nowe wiadomości w tym plemieniu
+  _kanalRozmowa = supabase.channel("rozmowa-" + p.id)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "wiadomosci", filter: "plemie_id=eq." + p.id }, (payload) => {
+      const w = payload.new; if (!w || znane.has(w.id)) return; znane.add(w.id);
+      const pusto = lista.querySelector("div[style*='text-align:center']"); if (pusto) pusto.remove();
+      dodajWiersz(w); doDolu(); oznaczPrzeczytane();
+      const b = document.querySelector(`.pl-rozm-btn[data-plemie="${p.id}"] .rz-kropka`); if (b) b.remove();
+    }).subscribe();
+
+  async function wyslij() {
+    const tresc = input.value.trim(); if (!tresc) return;
+    input.value = ""; input.style.height = "auto"; input.focus();
+    const { data, error } = await supabase.from("wiadomosci")
+      .insert({ plemie_id: p.id, traveler_id: mojeId, tresc }).select("id, traveler_id, tresc, created_at").single();
+    if (error) { trzosToast("Nie wysłano: " + error.message); input.value = tresc; return; }
+    if (data && !znane.has(data.id)) { znane.add(data.id); const pusto = lista.querySelector("div[style*='text-align:center']"); if (pusto) pusto.remove(); dodajWiersz(data); doDolu(); }
+  }
+  btn.addEventListener("click", wyslij);
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); wyslij(); } });
+  input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 110) + "px"; });
+  setTimeout(() => input.focus(), 50);
+}
+
 function otworzKalendarzPlemienia(p) { PLEMIE_KAL = { p, dzien: new Date(), dni: 1 }; renderPlemieKalendarz(); }
 async function renderPlemieKalendarz() {
   const box = $("hyz-plemie"); if (!box || !PLEMIE_KAL) return;
