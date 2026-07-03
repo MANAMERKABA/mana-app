@@ -2458,11 +2458,14 @@ async function zaprosZKontaktow(plemieId, plemieNazwa) {
   const lista = (kon || []).filter((k) => k.owner_org_id == null);
   const wiersze = lista.length ? lista.map((k) => {
     const sub = k.email ? escP(k.email) : (k.telefon ? escP(k.telefon) : "brak e-maila i telefonu");
-    return `<button class="zk-osoba" data-id="${escP(k.id)}" data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "")).toLowerCase())}" style="width:100%;text-align:left;margin-bottom:6px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#faf8f2;font-size:13px;">${esc(k.imie || "(bez imienia)")} <span style="color:var(--ink-soft);font-size:11.5px;">· ${sub}</span></button>`;
+    return `<label class="zk-wiersz" data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "")).toLowerCase())}" style="display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#faf8f2;font-size:13px;cursor:pointer;">
+      <input type="checkbox" class="zk-check" data-id="${escP(k.id)}" style="width:18px;height:18px;flex:none;">
+      <span style="flex:1;min-width:0;">${esc(k.imie || "(bez imienia)")} <span style="color:var(--ink-soft);font-size:11.5px;">· ${sub}</span></span>
+    </label>`;
   }).join("") : `<div style="font-size:12.5px;color:var(--ink-soft);padding:6px 0;">Brak kontaktów jeszcze.</div>`;
   const ov = el(`<div class="m-overlay"><div class="m-modal">
     <div class="m-modal__head"><span class="m-modal__tytul">Zaproś do: ${escP(plemieNazwa)}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
-    <div class="m-form" id="zk-body" style="max-height:62vh;overflow-y:auto;"><button class="zk-nowy" style="${BT}margin-bottom:10px;">+ Nowy kontakt</button><input class="zk-szukaj" type="search" placeholder="Szukaj po imieniu…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:8px;"><label>Wybierz osobę</label>${wiersze}</div>
+    <div class="m-form" id="zk-body" style="max-height:62vh;overflow-y:auto;"><button class="zk-nowy" style="${BT}margin-bottom:10px;">+ Nowy kontakt</button><input class="zk-szukaj" type="search" placeholder="Szukaj po imieniu…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:8px;"><label>Zaznacz osoby</label>${wiersze}<button class="zk-wyslij" style="${BT}width:100%;margin-top:10px;">Zaproś zaznaczonych</button></div>
   </div></div>`);
   document.body.appendChild(ov);
   const zamknij = () => ov.remove();
@@ -2470,33 +2473,38 @@ async function zaprosZKontaktow(plemieId, plemieNazwa) {
   ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
   const bnowy = ov.querySelector(".zk-nowy"); if (bnowy) bnowy.addEventListener("click", () => { zamknij(); formKontakt(null); });
   const szuk = ov.querySelector(".zk-szukaj");
-  if (szuk) szuk.addEventListener("input", () => { const q = szuk.value.trim().toLowerCase(); ov.querySelectorAll(".zk-osoba").forEach((el2) => { el2.style.display = (!q || (el2.dataset.szukaj || "").includes(q)) ? "" : "none"; }); });
-  ov.querySelectorAll(".zk-osoba").forEach((b) => b.addEventListener("click", async () => {
-    const k = lista.find((x) => x.id === b.dataset.id); if (!k) return;
-    ov.querySelectorAll(".zk-osoba").forEach((x) => { x.disabled = true; });
-    const { data, error } = await supabase.rpc("zapros_kontakt", { p_plemie: plemieId, p_kontakt_id: k.id });
-    if (error) { trzosToast("Błąd: " + error.message); zamknij(); return; }
-    if (!data || !data.ok) { trzosToast((data && data.error) || "Nie wysłano."); zamknij(); return; }
-    renderPlemie();
-    const body = ov.querySelector("#zk-body");
-    if (data.sposob === "bezposrednio") {
-      body.innerHTML = `<div style="font-size:13px;line-height:1.5;">✓ „${esc(k.imie || "kontakt")}" jest już w MANA — zaproszenie do grupy poszło <b>bezpośrednio</b>. Pojawi się u niej do przyjęcia, nic nie musisz wysyłać.</div>`;
-      return;
+  if (szuk) szuk.addEventListener("input", () => { const q = szuk.value.trim().toLowerCase(); ov.querySelectorAll(".zk-wiersz").forEach((el2) => { el2.style.display = (!q || (el2.dataset.szukaj || "").includes(q)) ? "" : "none"; }); });
+  const bwyslij = ov.querySelector(".zk-wyslij");
+  if (bwyslij) bwyslij.addEventListener("click", async () => {
+    const wybrane = [...ov.querySelectorAll(".zk-check:checked")].map((c) => c.dataset.id);
+    if (!wybrane.length) { trzosToast("Zaznacz kogoś."); return; }
+    bwyslij.disabled = true; bwyslij.textContent = "Wysyłam…";
+    let bezp = 0; const linki = []; const bledy = [];
+    for (const id of wybrane) {
+      const k = lista.find((x) => x.id === id); if (!k) continue;
+      const { data, error } = await supabase.rpc("zapros_kontakt", { p_plemie: plemieId, p_kontakt_id: id });
+      if (error || !data || !data.ok) { bledy.push((k.imie || "kontakt") + ": " + ((data && data.error) || (error && error.message) || "błąd")); continue; }
+      if (data.sposob === "bezposrednio") bezp++;
+      else linki.push({ imie: k.imie, link: location.origin + "/?zaproszenie=" + data.zaproszenie_id, telefon: data.telefon || k.telefon || "", email: data.email || k.email || "" });
     }
-    const link = location.origin + "/?zaproszenie=" + data.zaproszenie_id;
-    const msg = `Zapraszam Cię do grupy „${plemieNazwa}" w MANA: ${link}`;
-    const telSur = data.telefon || k.telefon || "";
-    const tel = telSur.replace(/[^\d]/g, "");
-    const mail = data.email || k.email || "";
-    const kanaly = [];
-    if (tel) kanaly.push(`<a class="m-btn" href="https://wa.me/${tel}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener" style="${BT}text-decoration:none;display:inline-block;">📱 WhatsApp</a>`);
-    if (tel) kanaly.push(`<a class="m-btn" href="sms:${escP(telSur)}?body=${encodeURIComponent(msg)}" style="${BT}text-decoration:none;display:inline-block;">✉ SMS</a>`);
-    if (mail) kanaly.push(`<a class="m-btn" href="mailto:${encodeURIComponent(mail)}?subject=${encodeURIComponent("Zaproszenie do MANA")}&body=${encodeURIComponent(msg)}" style="${BT}text-decoration:none;display:inline-block;">📧 E-mail</a>`);
-    kanaly.push(`<button class="zk-kopiuj" style="${BT}">🔗 Kopiuj link</button>`);
-    body.innerHTML = `<div style="font-size:13px;margin-bottom:10px;">Zaproszenie dla „${esc(k.imie || "kontakt")}" gotowe. Wyślij:</div><div style="display:flex;gap:8px;flex-wrap:wrap;">${kanaly.join("")}</div>`;
-    const kb = body.querySelector(".zk-kopiuj");
-    if (kb) kb.addEventListener("click", () => { try { navigator.clipboard.writeText(link); trzosToast("Skopiowano ✓"); } catch (_) { prompt("Link:", link); } });
-  }));
+    renderPlemie();
+    let html = "";
+    if (bezp) html += `<div style="font-size:13px;margin-bottom:10px;">✓ ${bezp} ${bezp === 1 ? "osoba jest" : "osób jest"} w MANA — zaproszone bezpośrednio.</div>`;
+    if (linki.length) {
+      html += `<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Wyślij link tym, którzy nie mają jeszcze konta:</div>`;
+      html += linki.map((L) => {
+        const msg = `Zapraszam Cię do grupy „${plemieNazwa}" w MANA: ${L.link}`;
+        const tel = (L.telefon || "").replace(/[^\d]/g, "");
+        const b = [];
+        if (tel) b.push(`<a class="m-btn" href="https://wa.me/${tel}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener" style="${BT}text-decoration:none;font-size:11px;padding:3px 8px;">WhatsApp</a>`);
+        if (tel) b.push(`<a class="m-btn" href="sms:${escP(L.telefon)}?body=${encodeURIComponent(msg)}" style="${BT}text-decoration:none;font-size:11px;padding:3px 8px;">SMS</a>`);
+        if (L.email) b.push(`<a class="m-btn" href="mailto:${encodeURIComponent(L.email)}?subject=${encodeURIComponent("Zaproszenie do MANA")}&body=${encodeURIComponent(msg)}" style="${BT}text-decoration:none;font-size:11px;padding:3px 8px;">E-mail</a>`);
+        return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px;"><span style="font-size:12.5px;flex:1;min-width:90px;">${esc(L.imie || "kontakt")}</span>${b.join("")}</div>`;
+      }).join("");
+    }
+    if (bledy.length) html += `<div style="font-size:11.5px;color:#c0392b;margin-top:8px;">${bledy.map(esc).join("<br>")}</div>`;
+    ov.querySelector("#zk-body").innerHTML = html || "<div style='font-size:13px;'>Gotowe.</div>";
+  });
 }
 async function zaprosDoPlemienia(plemie, email) {
   const { data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: plemie, p_email: email });
