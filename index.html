@@ -541,7 +541,7 @@
     <section class="m-sekcja">
       <div class="m-sekcja__head m-sekcja__head--klik" id="m-glowa-wyd" role="button" tabindex="0">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        <span id="m-kal-naglowek">Najbliższe wydarzenia</span>
+        <span id="m-kal-naglowek">Kalendarz</span>
         <span class="m-sekcja__chev">›</span>
       </div>
       <div id="m-kal-lista"></div>
@@ -3158,16 +3158,33 @@ async function renderNieprzeczytaneStart() {
     ]);
     const nieprz = (rn.data || []).filter((x) => x.liczba > 0);
     if (!nieprz.length) { sek.style.display = "none"; return; }
+    const ids = nieprz.map((x) => x.plemie_id);
+    const { data: wiad = [] } = await supabase.from("wiadomosci")
+      .select("plemie_id, traveler_id, tresc, created_at")
+      .in("plemie_id", ids).order("created_at", { ascending: false }).limit(60);
+    const ostatnia = {};
+    for (const w of (wiad || [])) { if (!ostatnia[w.plemie_id]) ostatnia[w.plemie_id] = w; }
     const plemiona = rp.data || [];
+    const mojeId = TRAVELER && TRAVELER.id;
     const lista = $("m-wiad-lista"); lista.innerHTML = "";
     let pokazano = 0;
     for (const n of nieprz) {
       const p = plemiona.find((x) => x.id === n.plemie_id); if (!p) continue;
       pokazano++;
-      const row = el(`<button style="width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;${pokazano > 1 ? "border-top:1px solid var(--line);" : ""}padding:11px 4px;cursor:pointer;text-align:left;font:inherit;">
+      const ost = ostatnia[n.plemie_id];
+      let podglad = "";
+      if (ost) {
+        const nick = ost.traveler_id === mojeId ? "Ty" : (((p.czlonkowie || []).find((c) => c.traveler_id === ost.traveler_id) || {}).nick || "ktoś");
+        const tekst = String(ost.tresc || "").replace(/\s+/g, " ").trim();
+        podglad = `<b style="color:var(--ink);font-weight:600;">${escP(nick)}:</b> ${escP(tekst.length > 46 ? tekst.slice(0, 46) + "…" : tekst)}`;
+      }
+      const row = el(`<button style="width:100%;display:flex;align-items:center;gap:10px;background:none;border:none;${pokazano > 1 ? "border-top:1px solid var(--line);" : ""}padding:10px 4px;cursor:pointer;text-align:left;font:inherit;">
         <span style="width:11px;height:11px;border-radius:50%;background:${p.kolor || "#1f9e8f"};flex:none;"></span>
-        <span style="flex:1;font-size:14px;color:var(--ink);">${escP(p.nazwa)}</span>
-        <span style="background:#c0392b;color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;flex:none;">${n.liczba} ${n.liczba === 1 ? "nowa" : "nowe"}</span>
+        <span style="flex:1;min-width:0;">
+          <span style="font-size:14px;color:var(--ink);display:block;font-weight:600;">${escP(p.nazwa)}</span>
+          <span style="font-size:12.5px;color:var(--ink-soft);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${podglad}</span>
+        </span>
+        <span style="background:#c0392b;color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;flex:none;">${n.liczba}</span>
       </button>`);
       row.addEventListener("click", () => otworzRozmowe(p));
       lista.appendChild(row);
@@ -3214,7 +3231,7 @@ function etykietaDnia(iso) {
 }
 /* najbliższe wydarzenia — dziś + jutro, pogrupowane nagłówkami dni */
 function renderNajblizsze(wyd, jestWiecej) {
-  $("m-kal-naglowek").textContent = "Najbliższe wydarzenia";
+  $("m-kal-naglowek").textContent = "Kalendarz";
   const lista = $("m-kal-lista");
   lista.innerHTML = "";
   if (!wyd.length) {
@@ -4120,6 +4137,9 @@ async function otworzHoryzont(opcje) {
   pokazWidok("horyzont");
   kotwica = dzisWarszawa();
   widokKal = "3dni";
+  const tab = (opcje && opcje.skok === "zadania") ? "zadania" : "kalendarz";
+  const woH = $("m-widok-horyzont"); if (woH) woH.dataset.tab = tab;
+  const tabs = $("m-hyz-tabs"); if (tabs) tabs.querySelectorAll(".m-tab").forEach((b) => b.classList.toggle("m-tab--on", b.dataset.tab === tab));
   await Promise.all([renderKalendarz(), wczytajZadaniaHoryzont()]);
   if (opcje && opcje.skok === "zadania") {
     setTimeout(() => {
