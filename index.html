@@ -5064,7 +5064,7 @@ function oknoWydarzenia(opcje) {
   if (ev && (ev.grupa_pending || ev.rozjazd)) {
     const bn = overlay.querySelector("#w-rozjazd-banner");
     const fmtT = (iso) => { try { return fmtData(iso, { day: "numeric", month: "short" }) + " " + fmtGodz(iso); } catch (e) { return ""; } };
-    const odswiezPo = () => { zamknij(); renderKalendarz(); if (PLEMIE_KAL) renderPlemieKalendarz(); };
+    const odswiezPo = () => { zamknij(); renderKalendarz(); if (PLEMIE_KAL) renderPlemieKalendarz(); const wE = $("m-widok-ekran"); if (wE && wE.style.display !== "none" && typeof wczytajDzien === "function" && TRAVELER) wczytajDzien(); };
     if (ev.grupa_pending) {
       const gp = ev.grupa_pending;
       const nowy = gp.data_czas ? fmtT(gp.data_czas) : "(nowy termin)";
@@ -5307,6 +5307,7 @@ function oknoWydarzenia(opcje) {
     zamknij();
     renderKalendarz();
     if (PLEMIE_KAL) renderPlemieKalendarz();
+    { const wE = $("m-widok-ekran"); if (wE && wE.style.display !== "none" && typeof wczytajDzien === "function" && TRAVELER) wczytajDzien(); }
   });
   if (ev) overlay.querySelector("#w-usun").addEventListener("click", async () => {
     const seria = ev.powtarzalnosc && ev.powtarzalnosc !== "jednorazowe";
@@ -5316,6 +5317,7 @@ function oknoWydarzenia(opcje) {
     zamknij();
     renderKalendarz();
     if (PLEMIE_KAL) renderPlemieKalendarz();
+    { const wE = $("m-widok-ekran"); if (wE && wE.style.display !== "none" && typeof wczytajDzien === "function" && TRAVELER) wczytajDzien(); }
   });
 }
 
