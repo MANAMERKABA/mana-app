@@ -1763,16 +1763,21 @@ async function renderRozmowyInbox() {
   const plemiona = rp.data || [];
   const nieprzMap = {};
   (rn.data || []).forEach((x) => { nieprzMap[x.plemie_id] = x.liczba; });
-  if (!plemiona.length) { box.innerHTML = `<div style="padding:14px 16px;color:var(--ink-soft);font-size:14px;">Nie masz jeszcze plemion — załóż plemię w zakładce Plemiona, żeby rozmawiać.</div>`; return; }
   const ids = plemiona.map((p) => p.id);
-  const { data: wiad = [] } = await supabase.from("wiadomosci")
-    .select("plemie_id, traveler_id, tresc, created_at")
-    .in("plemie_id", ids).order("created_at", { ascending: false }).limit(120);
   const ostatnia = {};
-  for (const w of (wiad || [])) { if (!ostatnia[w.plemie_id]) ostatnia[w.plemie_id] = w; }
+  if (ids.length) {
+    const { data: wiad = [] } = await supabase.from("wiadomosci")
+      .select("plemie_id, traveler_id, tresc, created_at")
+      .in("plemie_id", ids).order("created_at", { ascending: false }).limit(120);
+    for (const w of (wiad || [])) { if (!ostatnia[w.plemie_id]) ostatnia[w.plemie_id] = w; }
+  }
   const mojeId = TRAVELER && TRAVELER.id;
   box.innerHTML = "";
   const wrap = el(`<div style="padding:8px 12px 24px;"></div>`);
+  const nowa = el(`<button style="width:100%;border:1px dashed var(--turkus,#1f9e8f);background:#eef6f3;color:#1a7158;border-radius:12px;padding:11px;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:10px;">＋ Nowa rozmowa</button>`);
+  nowa.addEventListener("click", nowaRozmowa);
+  wrap.appendChild(nowa);
+  if (!plemiona.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:13.5px;padding:6px 2px;">Zacznij pierwszą rozmowę — wybierz osoby z kontaktów.</div>`));
   for (const p of plemiona) {
     const n = nieprzMap[p.id] || 0;
     const ost = ostatnia[p.id];
@@ -1794,6 +1799,52 @@ async function renderRozmowyInbox() {
     wrap.appendChild(row);
   }
   box.appendChild(wrap);
+}
+/* Nowa rozmowa = nowa grupa: nazwa (opcjonalna) + wybór kontaktów → utwórz plemię + zaproś + otwórz wątek */
+async function nowaRozmowa() {
+  const { data: kon } = await supabase.from("kontakty").select("*").eq("owner_traveler_id", TRAVELER.id).eq("aktywny", true).order("imie");
+  const lista = (kon || []).filter((k) => k.owner_org_id == null);
+  const wiersze = lista.length ? lista.map((k) => {
+    const sub = k.email ? escP(k.email) : (k.telefon ? escP(k.telefon) : "brak e-maila i telefonu");
+    return `<label class="nr-wiersz" data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "")).toLowerCase())}" style="display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#faf8f2;font-size:13px;cursor:pointer;">
+      <input type="checkbox" class="nr-check" data-id="${escP(k.id)}" data-imie="${escP(k.imie || "")}" style="width:18px;height:18px;flex:none;">
+      <span style="flex:1;min-width:0;"><span style="font-weight:500;">${escP(k.imie || "(bez imienia)")}</span><br><span style="color:var(--ink-soft);font-size:11.5px;">${sub}</span></span>
+    </label>`;
+  }).join("") : `<div style="color:var(--ink-soft);font-size:13px;padding:6px 0;">Brak kontaktów — dodaj kontakty w zakładce Kontakty.</div>`;
+  const sheet = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">Nowa rozmowa</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form">
+      <input class="nr-nazwa" type="text" placeholder="Nazwa rozmowy (opcjonalnie)" maxlength="60" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+      <input class="nr-szukaj" type="search" placeholder="Szukaj kontaktu…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+      <div class="nr-lista" style="max-height:40vh;overflow:auto;margin-bottom:10px;">${wiersze}</div>
+      <button class="nr-utworz" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;">Utwórz rozmowę</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  const zamknij = () => sheet.remove();
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) zamknij(); });
+  sheet.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  const szukaj = sheet.querySelector(".nr-szukaj");
+  szukaj.addEventListener("input", () => {
+    const q = szukaj.value.trim().toLowerCase();
+    sheet.querySelectorAll(".nr-wiersz").forEach((w) => { w.style.display = (!q || (w.dataset.szukaj || "").includes(q)) ? "" : "none"; });
+  });
+  sheet.querySelector(".nr-utworz").addEventListener("click", async () => {
+    const zazn = [...sheet.querySelectorAll(".nr-check:checked")];
+    if (!zazn.length) { alert("Zaznacz co najmniej jedną osobę."); return; }
+    let nazwa = sheet.querySelector(".nr-nazwa").value.trim();
+    if (!nazwa) nazwa = zazn.slice(0, 3).map((c) => c.dataset.imie || "ktoś").join(", ") + (zazn.length > 3 ? " …" : "");
+    const btn = sheet.querySelector(".nr-utworz"); btn.disabled = true; btn.textContent = "Tworzę…";
+    const kolor = PLEMIE_KOLORY[Math.floor(Math.random() * PLEMIE_KOLORY.length)];
+    const { data: pl, error } = await supabase.from("plemiona").insert({ nazwa, owner_traveler_id: TRAVELER.id, polityka_edycji: "rowni", kolor }).select("id, nazwa, kolor").single();
+    if (error || !pl) { alert("Nie utworzono: " + (error ? error.message : "")); btn.disabled = false; btn.textContent = "Utwórz rozmowę"; return; }
+    for (const c of zazn) { try { await supabase.rpc("zapros_kontakt", { p_plemie: pl.id, p_kontakt_id: c.dataset.id }); } catch (e) {} }
+    zamknij();
+    const { data: pf } = await supabase.rpc("moje_plemiona_full");
+    const pObj = (pf || []).find((x) => x.id === pl.id) || { id: pl.id, nazwa: pl.nazwa, kolor: pl.kolor, czlonkowie: [] };
+    otworzRozmowe(pObj);
+    if (typeof renderRozmowyInbox === "function") renderRozmowyInbox();
+  });
 }
 
 async function renderSejf() {
