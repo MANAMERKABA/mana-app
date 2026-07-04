@@ -700,7 +700,7 @@
       <div id="sejf-kontakty" style="padding:6px 16px 30px;"></div>
     </div>
     <div id="wiezi-sekcja-ple" style="display:none"><div id="hyz-plemie"></div></div>
-    <div id="wiezi-sekcja-roz" style="display:none;padding:14px 16px;color:var(--ink-soft);font-size:14px;line-height:1.5;">Rozmowy dołączą tutaj wkrótce. Na razie: „💬 Rozmowa" na karcie plemienia.</div>
+    <div id="wiezi-sekcja-roz" style="display:none"></div>
     <div class="m-stopka"></div>
   </div>
 
@@ -1749,8 +1749,52 @@ function przelaczWiezi(seg) {
   if (r) r.style.display = seg === "roz" ? "" : "none";
   if (seg === "kon") renderKontakty();
   else if (seg === "ple") renderPlemie();
+  else if (seg === "roz") renderRozmowyInbox();
 }
 document.querySelectorAll(".wiezi-seg").forEach((b) => b.addEventListener("click", () => przelaczWiezi(b.dataset.seg)));
+/* Skrzynka Rozmów w Więziach — lista wątków plemion (podgląd + licznik nieprzeczytanych) → tap otwiera wątek */
+async function renderRozmowyInbox() {
+  const box = $("wiezi-sekcja-roz"); if (!box) return;
+  box.innerHTML = `<div style="padding:12px 16px;color:var(--ink-soft);font-size:14px;">Wczytuję…</div>`;
+  const [rp, rn] = await Promise.all([
+    supabase.rpc("moje_plemiona_full"),
+    supabase.rpc("nieprzeczytane_rozmowy"),
+  ]);
+  const plemiona = rp.data || [];
+  const nieprzMap = {};
+  (rn.data || []).forEach((x) => { nieprzMap[x.plemie_id] = x.liczba; });
+  if (!plemiona.length) { box.innerHTML = `<div style="padding:14px 16px;color:var(--ink-soft);font-size:14px;">Nie masz jeszcze plemion — załóż plemię w zakładce Plemiona, żeby rozmawiać.</div>`; return; }
+  const ids = plemiona.map((p) => p.id);
+  const { data: wiad = [] } = await supabase.from("wiadomosci")
+    .select("plemie_id, traveler_id, tresc, created_at")
+    .in("plemie_id", ids).order("created_at", { ascending: false }).limit(120);
+  const ostatnia = {};
+  for (const w of (wiad || [])) { if (!ostatnia[w.plemie_id]) ostatnia[w.plemie_id] = w; }
+  const mojeId = TRAVELER && TRAVELER.id;
+  box.innerHTML = "";
+  const wrap = el(`<div style="padding:8px 12px 24px;"></div>`);
+  for (const p of plemiona) {
+    const n = nieprzMap[p.id] || 0;
+    const ost = ostatnia[p.id];
+    let podglad = "Brak wiadomości — zacznij rozmowę";
+    if (ost) {
+      const nick = ost.traveler_id === mojeId ? "Ty" : (((p.czlonkowie || []).find((c) => c.traveler_id === ost.traveler_id) || {}).nick || "ktoś");
+      const tekst = String(ost.tresc || "").replace(/\s+/g, " ").trim();
+      podglad = `<b style="color:var(--ink);font-weight:600;">${escP(nick)}:</b> ${escP(tekst.length > 50 ? tekst.slice(0, 50) + "…" : tekst)}`;
+    }
+    const row = el(`<button style="width:100%;display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;text-align:left;font:inherit;">
+      <span style="width:12px;height:12px;border-radius:50%;background:${p.kolor || "#1f9e8f"};flex:none;"></span>
+      <span style="flex:1;min-width:0;">
+        <span style="font-size:15px;color:var(--ink);display:block;font-weight:500;">${escP(p.nazwa)}</span>
+        <span style="font-size:12.5px;color:var(--ink-soft);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${podglad}</span>
+      </span>
+      ${n > 0 ? `<span style="background:#c0392b;color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;flex:none;">${n}</span>` : ""}
+    </button>`);
+    row.addEventListener("click", () => otworzRozmowe(p));
+    wrap.appendChild(row);
+  }
+  box.appendChild(wrap);
+}
 
 async function renderSejf() {
   const lista = $("sejf-lista");
@@ -2823,6 +2867,7 @@ async function otworzRozmowe(p) {
     if (_kanalRozmowa) { try { supabase.removeChannel(_kanalRozmowa); } catch (e) {} _kanalRozmowa = null; }
     overlay.remove();
     if (typeof renderNieprzeczytaneStart === "function") renderNieprzeczytaneStart();
+    { const rz = $("wiezi-sekcja-roz"); if (rz && rz.style.display !== "none" && typeof renderRozmowyInbox === "function") renderRozmowyInbox(); }
   };
   overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
   overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
