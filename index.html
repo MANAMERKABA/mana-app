@@ -679,18 +679,28 @@
       <input type="search" id="sejf-szukaj" class="m-szukaj" placeholder="Szukaj w sejfie…" aria-label="Szukaj">
       <span class="m-user"></span>
     </div>
-    <div style="display:flex;gap:6px;padding:4px 16px 2px;">
-      <button class="sejf-seg sejf-seg--on" data-seg="kon" style="flex:1;background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📇 Kontakty</button>
-      <button class="sejf-seg" data-seg="dok" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📄 Dokumenty</button>
-    </div>
-    <div id="sejf-sekcja-dok" style="display:none">
+    <div id="sejf-sekcja-dok">
       <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <button id="sejf-dodaj" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Dokument</button>
         <span style="font-size:12px;color:var(--ink-soft);">umowy · dowód rej. · polisy — pod kluczem</span>
       </div>
       <div id="sejf-lista" style="padding:6px 16px 30px;"></div>
     </div>
-    <div id="sejf-sekcja-kon">
+    <div class="m-stopka"></div>
+  </div>
+
+  <div id="m-widok-wiezi" style="display:none">
+    <div class="m-hyz-bar">
+      <button class="m-back" id="m-back-wiezi">&#8592; Ekran startowy</button>
+      <span class="m-hyz-tytul">Więzi</span>
+      <span class="m-user"></span>
+    </div>
+    <div style="display:flex;gap:6px;padding:4px 16px 2px;">
+      <button class="wiezi-seg wiezi-seg--on" data-seg="kon" style="flex:1;background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📇 Kontakty</button>
+      <button class="wiezi-seg" data-seg="ple" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">👥 Plemiona</button>
+      <button class="wiezi-seg" data-seg="roz" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">💬 Rozmowy</button>
+    </div>
+    <div id="wiezi-sekcja-kon">
       <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
         <button id="kon-dodaj" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">+ Kontakt</button>
         <button id="kon-z-plemienia" style="background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">👥 Dodaj z plemienia</button>
@@ -698,6 +708,8 @@
       </div>
       <div id="sejf-kontakty" style="padding:6px 16px 30px;"></div>
     </div>
+    <div id="wiezi-sekcja-ple" style="display:none;padding:14px 16px;color:var(--ink-soft);font-size:14px;line-height:1.5;">Plemiona dołączą tutaj wkrótce. Na razie: Horyzont → Plemię.</div>
+    <div id="wiezi-sekcja-roz" style="display:none;padding:14px 16px;color:var(--ink-soft);font-size:14px;line-height:1.5;">Rozmowy dołączą tutaj wkrótce. Na razie: „💬 Rozmowa" na karcie plemienia.</div>
     <div class="m-stopka"></div>
   </div>
 
@@ -730,6 +742,8 @@ const POKOJE = [
     ikona: '<rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20M16 14h2"/>' },
   { nazwa: "Sejf", zywy: true, akcja: "sejf",
     ikona: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="12" r="3.5"/><path d="M12 8.5V6M15.5 12H18M12 15.5V18M8.5 12H6"/>' },
+  { nazwa: "Więzi", zywy: true, akcja: "wiezi",
+    ikona: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
   { nazwa: "Egzamin", zywy: true, akcja: "egzamin",
     ikona: '<path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5"/>' },
   { nazwa: "Puls", zywy: false,
@@ -1395,12 +1409,14 @@ function pokazWidok(nazwa) {
   $("m-widok-horyzont").style.display = nazwa === "horyzont" ? "" : "none";
   $("m-widok-trzos").style.display = nazwa === "trzos" ? "" : "none";
   $("m-widok-sejf").style.display = nazwa === "sejf" ? "" : "none";
+  $("m-widok-wiezi").style.display = nazwa === "wiezi" ? "" : "none";
   $("m-widok-egzamin").style.display = nazwa === "egzamin" ? "" : "none";
   if (nazwa === "ekran" && typeof TRAVELER !== "undefined" && TRAVELER && typeof wczytajDzien === "function") wczytajDzien();
   window.scrollTo(0, 0);
 }
 $("m-back").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-trzos").addEventListener("click", () => pokazWidok("ekran"));
+$("m-back-wiezi").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-sejf").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-egzamin").addEventListener("click", () => pokazWidok("ekran"));
 
@@ -1720,7 +1736,21 @@ $("trzos-dodaj-koszt").addEventListener("click", () => kartaTrzos("koszt", null)
 const SEJF_PRZEKLADKI = ["Pojazd", "Dom / Mieszkanie", "Ubezpieczenia", "Umowy", "Zdrowie", "Finanse", "Inne"];
 let sejfSzukaj = "";
 let SEJF_PLEMIE_MAP = {};
-function otworzSejf() { pokazWidok("sejf"); przelaczSejfSekcja("kon"); }
+function otworzSejf() { pokazWidok("sejf"); renderSejf(); }
+function otworzWiezi() { pokazWidok("wiezi"); przelaczWiezi("kon"); }
+function przelaczWiezi(seg) {
+  document.querySelectorAll(".wiezi-seg").forEach((b) => {
+    const on = b.dataset.seg === seg;
+    b.style.background = on ? "#1a7158" : "#efece3";
+    b.style.color = on ? "#fff" : "var(--ink)";
+  });
+  const k = $("wiezi-sekcja-kon"), p = $("wiezi-sekcja-ple"), r = $("wiezi-sekcja-roz");
+  if (k) k.style.display = seg === "kon" ? "" : "none";
+  if (p) p.style.display = seg === "ple" ? "" : "none";
+  if (r) r.style.display = seg === "roz" ? "" : "none";
+  if (seg === "kon") renderKontakty();
+}
+document.querySelectorAll(".wiezi-seg").forEach((b) => b.addEventListener("click", () => przelaczWiezi(b.dataset.seg)));
 
 async function renderSejf() {
   const lista = $("sejf-lista");
@@ -3079,6 +3109,7 @@ function renderPokoje() {
     if (p.akcja === "horyzont") { btn.addEventListener("click", otworzHoryzont); policzPropozycje(); }
     if (p.akcja === "trzos") btn.addEventListener("click", otworzTrzos);
     if (p.akcja === "sejf") btn.addEventListener("click", otworzSejf);
+    if (p.akcja === "wiezi") btn.addEventListener("click", otworzWiezi);
     if (p.akcja === "egzamin") btn.addEventListener("click", otworzEgzamin);
     btn.dataset.key = p.nazwa;
     ukladDraggable(btn, wrap);
@@ -3089,7 +3120,8 @@ function renderPokoje() {
 const POKOJE_META = {
   "Horyzont": { opis: "Kalendarz i zadania — Twój czas w jednym miejscu.", sub: "" },
   "Trzos": { opis: "Wydatki, przychody, paragony i wspólny budżet.", sub: "" },
-  "Sejf": { opis: "Dokumenty i kontakty — umowy, polisy, ludzie pod ręką.", sub: "" },
+  "Sejf": { opis: "Dokumenty pod kluczem — umowy, polisy, dowód rej.", sub: "" },
+  "Więzi": { opis: "Ludzie i grupy — kontakty, plemiona, rozmowy w jednym miejscu.", sub: "" },
   "Egzamin": { opis: "Plan nauki rozłożony w czasie plus fiszki.", sub: "" },
   "Puls": { opis: "Ciało: samopoczucie, badania, nawyki.", sub: "wkrótce" },
   "Gawęda": { opis: "Rozmowa z Mędrcem — wsparcie i mądrość społeczności.", sub: "wkrótce" }
