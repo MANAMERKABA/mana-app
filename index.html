@@ -610,7 +610,6 @@
     <div class="m-hyz-tabs" id="m-hyz-tabs" role="tablist">
       <button class="m-tab m-tab--on" data-tab="kalendarz" role="tab">Kalendarz</button>
       <button class="m-tab" data-tab="zadania" role="tab">Zadania</button>
-      <button class="m-tab" data-tab="plemie" role="tab">Plemię</button>
       <button class="m-tab" data-tab="zakupy" role="tab">Zakupy</button>
     </div>
     <div class="m-warstwa" data-typ="kalendarz">
@@ -637,14 +636,6 @@
       <div id="hyz-zad-wspolne"></div>
       <button class="m-zrob-naglowek" id="hyz-zrob-toggle"></button>
       <div id="hyz-zad-zrobione" style="display:none"></div>
-    </div>
-
-    <div class="m-warstwa" data-typ="plemie">
-      <div class="m-warstwa__head">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-        <span>Plemię</span>
-      </div>
-      <div id="hyz-plemie"></div>
     </div>
 
     <div class="m-warstwa" data-typ="zakupy">
@@ -708,7 +699,7 @@
       </div>
       <div id="sejf-kontakty" style="padding:6px 16px 30px;"></div>
     </div>
-    <div id="wiezi-sekcja-ple" style="display:none;padding:14px 16px;color:var(--ink-soft);font-size:14px;line-height:1.5;">Plemiona dołączą tutaj wkrótce. Na razie: Horyzont → Plemię.</div>
+    <div id="wiezi-sekcja-ple" style="display:none"><div id="hyz-plemie"></div></div>
     <div id="wiezi-sekcja-roz" style="display:none;padding:14px 16px;color:var(--ink-soft);font-size:14px;line-height:1.5;">Rozmowy dołączą tutaj wkrótce. Na razie: „💬 Rozmowa" na karcie plemienia.</div>
     <div class="m-stopka"></div>
   </div>
@@ -1367,6 +1358,14 @@ function odswiezKalendarzeLive() {
   _odswiezTimer = setTimeout(() => {
     // otwarte okno Zadań plemienia — odśwież niezależnie od widoku
     if (typeof _zadaniaModalOdswiez === "function") { try { _zadaniaModalOdswiez(); } catch (e) {} }
+    const wW = $("m-widok-wiezi");
+    if (wW && wW.style.display !== "none") {
+      const ple = $("wiezi-sekcja-ple");
+      if (ple && ple.style.display !== "none") {
+        if (typeof PLEMIE_KAL !== "undefined" && PLEMIE_KAL) renderPlemieKalendarz();
+        else if (typeof renderPlemie === "function") renderPlemie();
+      }
+    }
     const w = $("m-widok-horyzont");
     if (!w || w.style.display === "none") return;
     const tab = w.dataset.tab;
@@ -1749,6 +1748,7 @@ function przelaczWiezi(seg) {
   if (p) p.style.display = seg === "ple" ? "" : "none";
   if (r) r.style.display = seg === "roz" ? "" : "none";
   if (seg === "kon") renderKontakty();
+  else if (seg === "ple") renderPlemie();
 }
 document.querySelectorAll(".wiezi-seg").forEach((b) => b.addEventListener("click", () => przelaczWiezi(b.dataset.seg)));
 
