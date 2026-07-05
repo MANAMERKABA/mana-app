@@ -1800,24 +1800,24 @@ async function renderRozmowyInbox() {
   }
   box.appendChild(wrap);
 }
-/* Nowa rozmowa = nowa grupa: nazwa (opcjonalna) + wybór kontaktów → utwórz plemię + zaproś + otwórz wątek */
+/* Nowa rozmowa = INDYWIDUALNA (1:1): wybierz jedną osobę → dwuosobowe plemię + zaproszenie + wątek. Grupowe zakładasz w Plemionach. */
 async function nowaRozmowa() {
   const { data: kon } = await supabase.from("kontakty").select("*").eq("owner_traveler_id", TRAVELER.id).eq("aktywny", true).order("imie");
   const lista = (kon || []).filter((k) => k.owner_org_id == null);
   const wiersze = lista.length ? lista.map((k) => {
     const sub = k.email ? escP(k.email) : (k.telefon ? escP(k.telefon) : "brak e-maila i telefonu");
     return `<label class="nr-wiersz" data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "")).toLowerCase())}" style="display:flex;align-items:center;gap:10px;margin-bottom:6px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:#faf8f2;font-size:13px;cursor:pointer;">
-      <input type="checkbox" class="nr-check" data-id="${escP(k.id)}" data-imie="${escP(k.imie || "")}" style="width:18px;height:18px;flex:none;">
+      <input type="radio" name="nr-osoba" class="nr-radio" data-id="${escP(k.id)}" data-imie="${escP(k.imie || "")}" style="width:18px;height:18px;flex:none;">
       <span style="flex:1;min-width:0;"><span style="font-weight:500;">${escP(k.imie || "(bez imienia)")}</span><br><span style="color:var(--ink-soft);font-size:11.5px;">${sub}</span></span>
     </label>`;
   }).join("") : `<div style="color:var(--ink-soft);font-size:13px;padding:6px 0;">Brak kontaktów — dodaj kontakty w zakładce Kontakty.</div>`;
   const sheet = el(`<div class="m-overlay"><div class="m-modal">
     <div class="m-modal__head"><span class="m-modal__tytul">Nowa rozmowa</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
     <div class="m-form">
-      <input class="nr-nazwa" type="text" placeholder="Nazwa rozmowy (opcjonalnie)" maxlength="60" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;">Wybierz osobę — rozmowa indywidualna. Rozmowy grupowe zakładasz w zakładce Plemiona.</div>
       <input class="nr-szukaj" type="search" placeholder="Szukaj kontaktu…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
-      <div class="nr-lista" style="max-height:40vh;overflow:auto;margin-bottom:10px;">${wiersze}</div>
-      <button class="nr-utworz" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;">Utwórz rozmowę</button>
+      <div class="nr-lista" style="max-height:44vh;overflow:auto;margin-bottom:10px;">${wiersze}</div>
+      <button class="nr-utworz" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;">Rozpocznij rozmowę</button>
     </div>
   </div></div>`);
   document.body.appendChild(sheet);
@@ -1830,18 +1830,17 @@ async function nowaRozmowa() {
     sheet.querySelectorAll(".nr-wiersz").forEach((w) => { w.style.display = (!q || (w.dataset.szukaj || "").includes(q)) ? "" : "none"; });
   });
   sheet.querySelector(".nr-utworz").addEventListener("click", async () => {
-    const zazn = [...sheet.querySelectorAll(".nr-check:checked")];
-    if (!zazn.length) { alert("Zaznacz co najmniej jedną osobę."); return; }
-    let nazwa = sheet.querySelector(".nr-nazwa").value.trim();
-    if (!nazwa) nazwa = zazn.slice(0, 3).map((c) => c.dataset.imie || "ktoś").join(", ") + (zazn.length > 3 ? " …" : "");
+    const sel = sheet.querySelector(".nr-radio:checked");
+    if (!sel) { alert("Wybierz osobę."); return; }
+    const nazwa = (sel.dataset.imie || "").trim() || "Rozmowa";
     const btn = sheet.querySelector(".nr-utworz"); btn.disabled = true; btn.textContent = "Tworzę…";
     const kolor = PLEMIE_KOLORY[Math.floor(Math.random() * PLEMIE_KOLORY.length)];
-    const { data: pl, error } = await supabase.from("plemiona").insert({ nazwa, owner_traveler_id: TRAVELER.id, polityka_edycji: "rowni", kolor }).select("id, nazwa, kolor").single();
-    if (error || !pl) { alert("Nie utworzono: " + (error ? error.message : "")); btn.disabled = false; btn.textContent = "Utwórz rozmowę"; return; }
-    for (const c of zazn) { try { await supabase.rpc("zapros_kontakt", { p_plemie: pl.id, p_kontakt_id: c.dataset.id }); } catch (e) {} }
+    const { data: plId, error } = await supabase.rpc("utworz_plemie", { p_nazwa: nazwa, p_kolor: kolor, p_polityka: "rowni" });
+    if (error || !plId) { alert("Nie utworzono: " + (error ? error.message : "")); btn.disabled = false; btn.textContent = "Rozpocznij rozmowę"; return; }
+    try { await supabase.rpc("zapros_kontakt", { p_plemie: plId, p_kontakt_id: sel.dataset.id }); } catch (e) {}
     zamknij();
     const { data: pf } = await supabase.rpc("moje_plemiona_full");
-    const pObj = (pf || []).find((x) => x.id === pl.id) || { id: pl.id, nazwa: pl.nazwa, kolor: pl.kolor, czlonkowie: [] };
+    const pObj = (pf || []).find((x) => x.id === plId) || { id: plId, nazwa, kolor, czlonkowie: [] };
     otworzRozmowe(pObj);
     if (typeof renderRozmowyInbox === "function") renderRozmowyInbox();
   });
@@ -2682,7 +2681,7 @@ function edytujPlemie(p, card) {
 }
 
 async function utworzPlemie(nazwa, polityka, kolor) {
-  const { error } = await supabase.from("plemiona").insert({ nazwa, owner_traveler_id: TRAVELER.id, polityka_edycji: polityka, kolor });
+  const { error } = await supabase.rpc("utworz_plemie", { p_nazwa: nazwa, p_kolor: kolor, p_polityka: polityka });
   if (error) { alert("Nie utworzono: " + error.message); return; }
   renderPlemie();
 }
