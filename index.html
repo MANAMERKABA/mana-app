@@ -2957,6 +2957,22 @@ async function otworzRozmowe(p) {
       <span class="m-modal__tytul"><span style="width:9px;height:9px;border-radius:50%;background:${p.kolor || "#1f9e8f"};display:inline-block;margin-right:6px;"></span>Rozmowa · ${escP(nazwaRozmowy(p, mojeId))}</span>
       <span style="display:flex;align-items:center;gap:4px;"><button class="rz-tlum" title="Tłumaczenie na Twój język (i tryb nauki)" aria-label="Tłumaczenie" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px;opacity:.5;">🌐</button>${(p.owner_traveler_id === mojeId && p.typ === "rozmowa") ? `<button class="rz-usun" title="Usuń rozmowę" aria-label="Usuń rozmowę" style="border:none;background:none;cursor:pointer;color:#c0392b;font-size:16px;line-height:1;padding:0 6px;">🗑</button>` : ""}<button class="m-modal__x" aria-label="Zamknij">&#10005;</button></span>
     </div>
+    <div class="rz-tlum-bar" style="display:none;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface-2,#f6f3ec);font-size:13px;flex-wrap:wrap;">
+      <span style="color:var(--ink-soft);">🌐 Tłumaczę na:</span>
+      <select class="rz-tlum-jezyk" style="flex:none;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--surface);color:var(--ink);">
+        <option value="pl">Polski</option>
+        <option value="en">English</option>
+        <option value="es">Español</option>
+        <option value="de">Deutsch</option>
+        <option value="uk">Українська</option>
+        <option value="ru">Русский</option>
+        <option value="fr">Français</option>
+        <option value="it">Italiano</option>
+        <option value="pt">Português</option>
+        <option value="cs">Čeština</option>
+      </select>
+      <span style="color:var(--ink-soft);font-size:11.5px;margin-left:auto;">oryginał pod spodem</span>
+    </div>
     <div class="rz-lista" style="flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px;min-height:180px;">
       <div style="color:var(--ink-soft);font-size:14px;text-align:center;padding:16px 0;">Wczytuję…</div>
     </div>
@@ -2969,7 +2985,7 @@ async function otworzRozmowe(p) {
   const lista = overlay.querySelector(".rz-lista");
   const input = overlay.querySelector(".rz-input");
   const btn = overlay.querySelector(".rz-wyslij");
-  const jezykMoj = (TRAVELER && TRAVELER.jezyk) || "pl";
+  let jezykMoj = (TRAVELER && TRAVELER.jezyk) || (navigator.language || "pl").slice(0, 2).toLowerCase();
   let tlumaczOn = false;
   const tlumCache = {};
   const bubbles = [];
@@ -3000,9 +3016,21 @@ async function otworzRozmowe(p) {
     if (tlumaczOn) { for (const item of bubbles) await tlumaczBubble(item); }
     else przywrocOryginaly();
   }
+  const tlumBar = overlay.querySelector(".rz-tlum-bar");
+  const tlumSelect = overlay.querySelector(".rz-tlum-jezyk");
+  tlumSelect.value = jezykMoj;
+  if (tlumSelect.selectedIndex < 0) { tlumSelect.value = "pl"; jezykMoj = "pl"; }
   overlay.querySelector(".rz-tlum").addEventListener("click", () => {
     tlumaczOn = !tlumaczOn;
     overlay.querySelector(".rz-tlum").style.opacity = tlumaczOn ? "1" : ".5";
+    tlumBar.style.display = tlumaczOn ? "flex" : "none";
+    zastosujTlumaczenia();
+  });
+  tlumSelect.addEventListener("change", async () => {
+    jezykMoj = tlumSelect.value;
+    if (TRAVELER) TRAVELER.jezyk = jezykMoj;
+    for (const k in tlumCache) delete tlumCache[k];
+    try { await supabase.rpc("ustaw_jezyk", { p_jezyk: jezykMoj }); } catch (e) {}
     zastosujTlumaczenia();
   });
   const zamknij = () => {
