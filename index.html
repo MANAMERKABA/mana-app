@@ -1790,7 +1790,7 @@ async function renderRozmowyInbox() {
     const row = el(`<button style="width:100%;display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;text-align:left;font:inherit;">
       <span style="width:12px;height:12px;border-radius:50%;background:${p.kolor || "#1f9e8f"};flex:none;"></span>
       <span style="flex:1;min-width:0;">
-        <span style="font-size:15px;color:var(--ink);display:block;font-weight:500;">${escP(p.nazwa)}</span>
+        <span style="font-size:15px;color:var(--ink);display:block;font-weight:500;">${escP(p.nazwa)}${p.typ === "grupa" ? ` <span style="font-size:10.5px;color:#1a7158;background:#e7f1ec;border-radius:8px;padding:1px 6px;font-weight:600;vertical-align:middle;">grupa</span>` : ""}</span>
         <span style="font-size:12.5px;color:var(--ink-soft);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${podglad}</span>
       </span>
       ${n > 0 ? `<span style="background:#c0392b;color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;flex:none;">${n}</span>` : ""}
@@ -1835,7 +1835,7 @@ async function nowaRozmowa() {
     const nazwa = (sel.dataset.imie || "").trim() || "Rozmowa";
     const btn = sheet.querySelector(".nr-utworz"); btn.disabled = true; btn.textContent = "Tworzę…";
     const kolor = PLEMIE_KOLORY[Math.floor(Math.random() * PLEMIE_KOLORY.length)];
-    const { data: plId, error } = await supabase.rpc("utworz_plemie", { p_nazwa: nazwa, p_kolor: kolor, p_polityka: "rowni" });
+    const { data: plId, error } = await supabase.rpc("utworz_plemie", { p_nazwa: nazwa, p_kolor: kolor, p_polityka: "rowni", p_typ: "rozmowa" });
     if (error || !plId) { alert("Nie utworzono: " + (error ? error.message : "")); btn.disabled = false; btn.textContent = "Rozpocznij rozmowę"; return; }
     try { await supabase.rpc("zapros_kontakt", { p_plemie: plId, p_kontakt_id: sel.dataset.id }); } catch (e) {}
     zamknij();
@@ -2345,7 +2345,7 @@ async function renderPlemie() {
   const box = $("hyz-plemie"); if (!box) return;
   box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:12px 16px;">Wczytuję plemiona…</div>`;
   const [rp, rz] = await Promise.all([supabase.rpc("moje_plemiona_full"), supabase.rpc("moje_zaproszenia")]);
-  const plemiona = rp.data || [], zapro = rz.data || [];
+  const plemiona = (rp.data || []).filter((p) => p.typ !== "rozmowa"), zapro = rz.data || [];
   box.innerHTML = "";
   const wrap = el(`<div style="padding:4px 16px 24px;"></div>`);
 
@@ -2435,7 +2435,7 @@ function kartaPlemienia(p) {
     const r2 = rzad();
     const inv = el(`<button class="pl-zapros-btn" style="${BT}">➕ Zaproś</button>`);
     inv.addEventListener("click", () => zaprosZKontaktow(p.id, p.nazwa)); r2.appendChild(inv);
-    const dz = el(`<button style="${BT}">+ Dodaj dziecko</button>`);
+    const dz = el(`<button style="${BG}">+ Dodaj dziecko</button>`);
     dz.addEventListener("click", () => formDodajDziecko(p, card)); r2.appendChild(dz);
   }
   // Rząd 3 — rozmowa + zarządzanie
