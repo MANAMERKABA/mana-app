@@ -688,8 +688,8 @@
     </div>
     <div style="display:flex;gap:6px;padding:4px 16px 2px;">
       <button class="wiezi-seg wiezi-seg--on" data-seg="kon" style="flex:1;background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📇 Kontakty</button>
-      <button class="wiezi-seg" data-seg="ple" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">👥 Plemiona</button>
-      <button class="wiezi-seg" data-seg="roz" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">💬 Rozmowy</button>
+      <button class="wiezi-seg" data-seg="ple" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">👥 Plemiona<span class="wiezi-badge" id="wiezi-badge-ple" style="display:none;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;margin-left:5px;vertical-align:middle;"></span></button>
+      <button class="wiezi-seg" data-seg="roz" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">💬 Rozmowy<span class="wiezi-badge" id="wiezi-badge-roz" style="display:none;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;margin-left:5px;vertical-align:middle;"></span></button>
     </div>
     <div id="wiezi-sekcja-kon">
       <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
@@ -1376,12 +1376,23 @@ function odswiezKalendarzeLive() {
     }
   }, 300);
 }
+let _rozmowyLiveTimer = null;
+function odswiezRozmowyLive() {
+  clearTimeout(_rozmowyLiveTimer);
+  _rozmowyLiveTimer = setTimeout(() => {
+    if (typeof odswiezBadgeWiezi === "function") odswiezBadgeWiezi();
+    if (typeof renderNieprzeczytaneStart === "function") renderNieprzeczytaneStart();
+    if (typeof odswiezNieprzeczytaneRozmowy === "function") odswiezNieprzeczytaneRozmowy();
+    const rz = $("wiezi-sekcja-roz"); if (rz && rz.style.display !== "none" && typeof renderRozmowyInbox === "function") renderRozmowyInbox();
+  }, 400);
+}
 function subskrybujRealtime() {
   if (_kanalRealtime) return;
   _kanalRealtime = supabase
     .channel("mana-live")
     .on("postgres_changes", { event: "*", schema: "public", table: "events" }, odswiezKalendarzeLive)
     .on("postgres_changes", { event: "*", schema: "public", table: "plemie_czlonkowie" }, odswiezKalendarzeLive)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "wiadomosci" }, odswiezRozmowyLive)
     .subscribe();
 }
 
@@ -1736,7 +1747,24 @@ const SEJF_PRZEKLADKI = ["Pojazd", "Dom / Mieszkanie", "Ubezpieczenia", "Umowy",
 let sejfSzukaj = "";
 let SEJF_PLEMIE_MAP = {};
 function otworzSejf() { pokazWidok("sejf"); renderSejf(); }
-function otworzWiezi() { pokazWidok("wiezi"); przelaczWiezi("kon"); }
+function otworzWiezi() { pokazWidok("wiezi"); przelaczWiezi("kon"); odswiezBadgeWiezi(); }
+async function odswiezBadgeWiezi() {
+  try {
+    const [rn, rp] = await Promise.all([
+      supabase.rpc("nieprzeczytane_rozmowy"),
+      supabase.rpc("moje_plemiona_full"),
+    ]);
+    const npr = {}; (rn.data || []).forEach((x) => { npr[x.plemie_id] = x.liczba; });
+    let rozmC = 0, pleC = 0;
+    for (const p of (rp.data || [])) {
+      const n = npr[p.id] || 0;
+      if (n > 0) { rozmC++; if (p.typ === "grupa") pleC++; }
+    }
+    const setB = (id, n) => { const b = $(id); if (b) { if (n > 0) { b.textContent = n; b.style.display = "inline-flex"; } else { b.style.display = "none"; } } };
+    setB("wiezi-badge-roz", rozmC);
+    setB("wiezi-badge-ple", pleC);
+  } catch (e) {}
+}
 function przelaczWiezi(seg) {
   document.querySelectorAll(".wiezi-seg").forEach((b) => {
     const on = b.dataset.seg === seg;
@@ -1760,7 +1788,8 @@ function nazwaRozmowy(p, mojeId) {
   }
   return (p && p.nazwa) || "Rozmowa";
 }
-/* Skrzynka Rozmów w Więziach — lista wątków plemion (podgląd + licznik nieprzeczytanych) → tap otwiera wątek */
+/* Skrzynka Rozmów w Więziach — 1:1 wprost, grupy zwinięte pod paskiem „Plemiona" (przejrzystość) */
+let _rozmGrupyOtwarte = false;
 async function renderRozmowyInbox() {
   const box = $("wiezi-sekcja-roz"); if (!box) return;
   box.innerHTML = `<div style="padding:12px 16px;color:var(--ink-soft);font-size:14px;">Wczytuję…</div>`;
@@ -1785,8 +1814,7 @@ async function renderRozmowyInbox() {
   const nowa = el(`<button style="width:100%;border:1px dashed var(--turkus,#1f9e8f);background:#eef6f3;color:#1a7158;border-radius:12px;padding:11px;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:10px;">＋ Nowa rozmowa</button>`);
   nowa.addEventListener("click", nowaRozmowa);
   wrap.appendChild(nowa);
-  if (!plemiona.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:13.5px;padding:6px 2px;">Zacznij pierwszą rozmowę — wybierz osoby z kontaktów.</div>`));
-  for (const p of plemiona) {
+  const mkRow = (p) => {
     const n = nieprzMap[p.id] || 0;
     const ost = ostatnia[p.id];
     let podglad = "Brak wiadomości — zacznij rozmowę";
@@ -1798,13 +1826,32 @@ async function renderRozmowyInbox() {
     const row = el(`<button style="width:100%;display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;text-align:left;font:inherit;">
       <span style="width:12px;height:12px;border-radius:50%;background:${p.kolor || "#1f9e8f"};flex:none;"></span>
       <span style="flex:1;min-width:0;">
-        <span style="font-size:15px;color:var(--ink);display:block;font-weight:500;">${escP(nazwaRozmowy(p, mojeId))}${p.typ === "grupa" ? ` <span style="font-size:10.5px;color:#1a7158;background:#e7f1ec;border-radius:8px;padding:1px 6px;font-weight:600;vertical-align:middle;">grupa</span>` : ""}</span>
+        <span style="font-size:15px;color:var(--ink);display:block;font-weight:500;">${escP(nazwaRozmowy(p, mojeId))}</span>
         <span style="font-size:12.5px;color:var(--ink-soft);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${podglad}</span>
       </span>
       ${n > 0 ? `<span style="background:#c0392b;color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;flex:none;">${n}</span>` : ""}
     </button>`);
     row.addEventListener("click", () => otworzRozmowe(p));
-    wrap.appendChild(row);
+    return row;
+  };
+  const rozmowy = plemiona.filter((p) => p.typ === "rozmowa");
+  const grupy = plemiona.filter((p) => p.typ === "grupa");
+  if (!plemiona.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:13.5px;padding:6px 2px;">Zacznij pierwszą rozmowę — wybierz osobę z kontaktów.</div>`));
+  else if (!rozmowy.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:13px;padding:4px 2px 8px;">Brak rozmów 1:1 — zacznij nową powyżej.</div>`));
+  for (const p of rozmowy) wrap.appendChild(mkRow(p));
+  // Grupy — zwinięte pod paskiem, żeby nie zakłócać 1:1
+  if (grupy.length) {
+    let grupyUnread = 0; grupy.forEach((p) => { if ((nieprzMap[p.id] || 0) > 0) grupyUnread++; });
+    const bar = el(`<button style="width:100%;display:flex;align-items:center;gap:8px;background:#f3efe6;border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin:4px 0 8px;cursor:pointer;text-align:left;font:inherit;font-size:14px;font-weight:500;color:var(--ink);">
+      <span>👥 Plemiona</span>
+      <span style="color:var(--ink-soft);font-weight:400;">· ${grupy.length}</span>
+      ${grupyUnread ? `<span style="background:#c0392b;color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;">${grupyUnread}</span>` : ""}
+      <span style="flex:1;"></span><span class="rg-chev" style="color:var(--ink-soft);">${_rozmGrupyOtwarte ? "▲" : "▼"}</span>
+    </button>`);
+    const cont = el(`<div style="display:${_rozmGrupyOtwarte ? "" : "none"};"></div>`);
+    for (const p of grupy) cont.appendChild(mkRow(p));
+    bar.addEventListener("click", () => { _rozmGrupyOtwarte = !_rozmGrupyOtwarte; cont.style.display = _rozmGrupyOtwarte ? "" : "none"; const ch = bar.querySelector(".rg-chev"); if (ch) ch.textContent = _rozmGrupyOtwarte ? "▲" : "▼"; });
+    wrap.appendChild(bar); wrap.appendChild(cont);
   }
   box.appendChild(wrap);
 }
@@ -2926,6 +2973,7 @@ async function otworzRozmowe(p) {
     if (_kanalRozmowa) { try { supabase.removeChannel(_kanalRozmowa); } catch (e) {} _kanalRozmowa = null; }
     overlay.remove();
     if (typeof renderNieprzeczytaneStart === "function") renderNieprzeczytaneStart();
+    if (typeof odswiezBadgeWiezi === "function") odswiezBadgeWiezi();
     { const rz = $("wiezi-sekcja-roz"); if (rz && rz.style.display !== "none" && typeof renderRozmowyInbox === "function") renderRozmowyInbox(); }
   };
   overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
