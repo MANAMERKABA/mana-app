@@ -2419,39 +2419,38 @@ function kartaPlemienia(p) {
     czlBox.appendChild(chip);
   });
   const akcje = card.querySelector(".pl-akcje");
+  akcje.style.flexDirection = "column";
+  akcje.style.alignItems = "stretch";
+  const rzad = () => { const r = el(`<div style="display:flex;gap:8px;flex-wrap:wrap;"></div>`); akcje.appendChild(r); return r; };
+  // Rząd 1 — treść
+  const r1 = rzad();
   const kalBtn = el(`<button style="${BT}">Kalendarz</button>`);
-  kalBtn.addEventListener("click", () => otworzKalendarzPlemienia(p));
-  akcje.appendChild(kalBtn);
+  kalBtn.addEventListener("click", () => otworzKalendarzPlemienia(p)); r1.appendChild(kalBtn);
   const zadBtn = el(`<button style="${BG}">📋 Zadania</button>`);
-  zadBtn.addEventListener("click", () => otworzZadaniaPlemienia(p));
-  akcje.appendChild(zadBtn);
-  const rozmBtn = el(`<button style="${BG}" class="pl-rozm-btn">💬 Rozmowa</button>`);
-  rozmBtn.dataset.plemie = p.id;
-  rozmBtn.addEventListener("click", () => otworzRozmowe(p));
-  akcje.appendChild(rozmBtn);
-  // ➕ Zadanie — dla KAŻDEGO członka (zlecenie wymaga praw, wspólne wymaga tylko członkostwa — RLS pilnuje)
+  zadBtn.addEventListener("click", () => otworzZadaniaPlemienia(p)); r1.appendChild(zadBtn);
   const zz = el(`<button style="${BG}">➕ Zadanie</button>`);
-  zz.addEventListener("click", () => formZadajZadanie(p, card));
-  akcje.appendChild(zz);
+  zz.addEventListener("click", () => formZadajZadanie(p, card)); r1.appendChild(zz);
+  // Rząd 2 — ludzie (tylko założyciel)
   if (jaZalozyciel) {
-    const inv = el(`<div style="display:flex;gap:6px;"><button class="pl-zapros-btn" style="${BT}">➕ Zaproś</button></div>`);
-    inv.querySelector(".pl-zapros-btn").addEventListener("click", () => zaprosZKontaktow(p.id, p.nazwa));
-    akcje.appendChild(inv);
-    const dz = el(`<button style="${BG}">+ Dodaj dziecko</button>`);
-    dz.addEventListener("click", () => formDodajDziecko(p, card));
-    akcje.appendChild(dz);
+    const r2 = rzad();
+    const inv = el(`<button class="pl-zapros-btn" style="${BT}">➕ Zaproś</button>`);
+    inv.addEventListener("click", () => zaprosZKontaktow(p.id, p.nazwa)); r2.appendChild(inv);
+    const dz = el(`<button style="${BT}">+ Dodaj dziecko</button>`);
+    dz.addEventListener("click", () => formDodajDziecko(p, card)); r2.appendChild(dz);
   }
+  // Rząd 3 — rozmowa + zarządzanie
+  const r3 = rzad();
+  const rozmBtn = el(`<button style="${BT}" class="pl-rozm-btn">💬 Rozmowa</button>`);
+  rozmBtn.dataset.plemie = p.id;
+  rozmBtn.addEventListener("click", () => otworzRozmowe(p)); r3.appendChild(rozmBtn);
   if (owner) {
     const edit = el(`<button style="${BG}">Edytuj</button>`);
-    edit.addEventListener("click", () => edytujPlemie(p, card));
-    akcje.appendChild(edit);
+    edit.addEventListener("click", () => edytujPlemie(p, card)); r3.appendChild(edit);
     const del = el(`<button style="${BG}color:#c0392b;">Rozwiąż</button>`);
-    del.addEventListener("click", () => rozwiazPlemie(p.id, p.nazwa));
-    akcje.appendChild(del);
+    del.addEventListener("click", () => rozwiazPlemie(p.id, p.nazwa)); r3.appendChild(del);
   } else {
     const leave = el(`<button style="${BG}">Opuść</button>`);
-    leave.addEventListener("click", () => opuscPlemie(p.id, p.nazwa));
-    akcje.appendChild(leave);
+    leave.addEventListener("click", () => opuscPlemie(p.id, p.nazwa)); r3.appendChild(leave);
   }
   return card;
 }
