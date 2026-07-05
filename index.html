@@ -2952,26 +2952,30 @@ async function otworzRozmowe(p) {
   const czl = p.czlonkowie || [];
   const mojeId = TRAVELER && TRAVELER.id;
   const nickOf = (id) => { const c = czl.find((x) => x.traveler_id === id); return c ? (c.nick || "uczestnik") : "ktoś"; };
+  const jest1na1 = p.typ === "rozmowa";
+  const inny = czl.find((x) => x.traveler_id !== mojeId);
+  const innyNick = inny ? (inny.nick || "rozmówca") : "rozmówca";
+  const OPCJE_JEZYKI = ["pl:Polski", "en:English", "es:Español", "de:Deutsch", "uk:Українська", "ru:Русский", "fr:Français", "it:Italiano", "pt:Português", "cs:Čeština"].map((s) => { const i = s.indexOf(":"); return `<option value="${s.slice(0, i)}">${s.slice(i + 1)}</option>`; }).join("");
   const overlay = el(`<div class="m-overlay"><div class="m-modal" style="display:flex;flex-direction:column;max-height:82vh;">
     <div class="m-modal__head">
       <span class="m-modal__tytul"><span style="width:9px;height:9px;border-radius:50%;background:${p.kolor || "#1f9e8f"};display:inline-block;margin-right:6px;"></span>Rozmowa · ${escP(nazwaRozmowy(p, mojeId))}</span>
       <span style="display:flex;align-items:center;gap:4px;"><button class="rz-tlum" title="Tłumaczenie na Twój język (i tryb nauki)" aria-label="Tłumaczenie" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px;opacity:.5;">🌐</button>${(p.owner_traveler_id === mojeId && p.typ === "rozmowa") ? `<button class="rz-usun" title="Usuń rozmowę" aria-label="Usuń rozmowę" style="border:none;background:none;cursor:pointer;color:#c0392b;font-size:16px;line-height:1;padding:0 6px;">🗑</button>` : ""}<button class="m-modal__x" aria-label="Zamknij">&#10005;</button></span>
     </div>
-    <div class="rz-tlum-bar" style="display:none;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface-2,#f6f3ec);font-size:13px;flex-wrap:wrap;">
-      <span style="color:var(--ink-soft);">🌐 Tłumaczę na:</span>
-      <select class="rz-tlum-jezyk" style="flex:none;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--surface);color:var(--ink);">
-        <option value="pl">Polski</option>
-        <option value="en">English</option>
-        <option value="es">Español</option>
-        <option value="de">Deutsch</option>
-        <option value="uk">Українська</option>
-        <option value="ru">Русский</option>
-        <option value="fr">Français</option>
-        <option value="it">Italiano</option>
-        <option value="pt">Português</option>
-        <option value="cs">Čeština</option>
-      </select>
-      <span style="color:var(--ink-soft);font-size:11.5px;margin-left:auto;">oryginał pod spodem</span>
+    <div class="rz-tlum-bar" style="display:none;flex-direction:column;gap:6px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface-2,#f6f3ec);font-size:13px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="color:var(--ink-soft);">🌐</span>
+        <div class="rz-tryb" style="display:none;border:1px solid var(--line);border-radius:8px;overflow:hidden;">
+          <button type="button" class="rz-tryb-auto" style="border:none;padding:5px 10px;font-size:12.5px;cursor:pointer;">Auto</button>
+          <button type="button" class="rz-tryb-recz" style="border:none;padding:5px 10px;font-size:12.5px;cursor:pointer;">Ręcznie</button>
+        </div>
+        <label style="color:var(--ink-soft);">Czytam po:</label>
+        <select class="rz-tlum-jezyk" style="flex:none;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--surface);color:var(--ink);">${OPCJE_JEZYKI}</select>
+      </div>
+      <div class="rz-rozmowca-row" style="display:none;align-items:center;gap:8px;flex-wrap:wrap;">
+        <label style="color:var(--ink-soft);">${escP(innyNick)} pisze po:</label>
+        <select class="rz-rozmowca-jezyk" style="flex:none;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--surface);color:var(--ink);">${OPCJE_JEZYKI}</select>
+        <span style="color:var(--ink-soft);font-size:11px;">(on może zmienić u siebie)</span>
+      </div>
     </div>
     <div class="rz-lista" style="flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px;min-height:180px;">
       <div style="color:var(--ink-soft);font-size:14px;text-align:center;padding:16px 0;">Wczytuję…</div>
@@ -2987,13 +2991,16 @@ async function otworzRozmowe(p) {
   const btn = overlay.querySelector(".rz-wyslij");
   let jezykMoj = (TRAVELER && TRAVELER.jezyk) || (navigator.language || "pl").slice(0, 2).toLowerCase();
   let tlumaczOn = false;
+  let tryb = "auto";
+  let rozmowcaJezyk = null;
   const tlumCache = {};
   const bubbles = [];
-  async function tlumaczTekst(tekst) {
+  async function tlumaczTekst(tekst, target) {
+    target = target || jezykMoj;
     try {
       let { data: { session } } = await supabase.auth.getSession();
       if (!session || !session.access_token) return null;
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/tlumacz`, { method: "POST", headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ text: tekst, target: jezykMoj }) });
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/tlumacz`, { method: "POST", headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_KEY, "Content-Type": "application/json" }, body: JSON.stringify({ text: tekst, target }) });
       if (!res.ok) return null;
       return await res.json();
     } catch (e) { return null; }
@@ -3005,34 +3012,66 @@ async function otworzRozmowe(p) {
     if (!res || !res.translation || (res.source_lang && res.source_lang === jezykMoj)) return;
     if (!item.bubbleEl || !item.bubbleEl.isConnected) return;
     item.bubbleEl.textContent = res.translation;
+    if (!jest1na1) return; // w grupie tylko tłumaczenie, bez oryginału pod spodem
     let orig = item.row.querySelector(".rz-orig");
     if (!orig) { orig = el(`<div class="rz-orig" style="font-size:11.5px;color:var(--ink-soft);font-style:italic;margin-top:2px;max-width:80%;white-space:pre-wrap;word-break:break-word;"></div>`); item.bubbleEl.after(orig); }
     orig.textContent = item.w.tresc; orig.style.display = "";
   }
-  function przywrocOryginaly() {
-    for (const item of bubbles) { if (item.moje || !item.bubbleEl) continue; item.bubbleEl.textContent = item.w.tresc; const o = item.row.querySelector(".rz-orig"); if (o) o.style.display = "none"; }
+  async function podgladNadawcy(item) {
+    if (!item.moje || !jest1na1 || tryb !== "manual" || !rozmowcaJezyk) return;
+    const key = "s" + item.w.id + ":" + rozmowcaJezyk;
+    let res = tlumCache[key];
+    if (res === undefined) { res = await tlumaczTekst(item.w.tresc, rozmowcaJezyk); tlumCache[key] = res || null; }
+    if (!res || !res.translation) return;
+    if (!item.bubbleEl || !item.bubbleEl.isConnected) return;
+    let pv = item.row.querySelector(".rz-send-preview");
+    if (!pv) { pv = el(`<div class="rz-send-preview" style="font-size:11px;color:var(--ink-soft);font-style:italic;margin-top:2px;max-width:80%;align-self:flex-end;text-align:right;white-space:pre-wrap;word-break:break-word;"></div>`); item.bubbleEl.after(pv); }
+    pv.textContent = "→ " + res.translation; pv.style.display = "";
   }
-  async function zastosujTlumaczenia() {
-    if (tlumaczOn) { for (const item of bubbles) await tlumaczBubble(item); }
-    else przywrocOryginaly();
+  function przywrocWidok() {
+    for (const item of bubbles) {
+      if (!item.moje && item.bubbleEl) { item.bubbleEl.textContent = item.w.tresc; const o = item.row.querySelector(".rz-orig"); if (o) o.style.display = "none"; }
+      const pv = item.row.querySelector(".rz-send-preview"); if (pv) pv.style.display = "none";
+    }
+  }
+  async function odswiezWidok() {
+    if (!tlumaczOn) { przywrocWidok(); return; }
+    for (const item of bubbles) { if (item.moje) await podgladNadawcy(item); else await tlumaczBubble(item); }
   }
   const tlumBar = overlay.querySelector(".rz-tlum-bar");
   const tlumSelect = overlay.querySelector(".rz-tlum-jezyk");
+  const btnAuto = overlay.querySelector(".rz-tryb-auto");
+  const btnRecz = overlay.querySelector(".rz-tryb-recz");
+  const rozmowcaRow = overlay.querySelector(".rz-rozmowca-row");
+  const rozmowcaSelect = overlay.querySelector(".rz-rozmowca-jezyk");
   tlumSelect.value = jezykMoj;
   if (tlumSelect.selectedIndex < 0) { tlumSelect.value = "pl"; jezykMoj = "pl"; }
+  rozmowcaSelect.value = (jezykMoj === "en") ? "es" : "en";
+  rozmowcaJezyk = rozmowcaSelect.value;
+  if (jest1na1) overlay.querySelector(".rz-tryb").style.display = "inline-flex";
+  function malujTryb() {
+    const on = "background:var(--turkus,#1f9e8f);color:#fff;", off = "background:var(--surface);color:var(--ink);";
+    btnAuto.style.cssText = "border:none;padding:5px 10px;font-size:12.5px;cursor:pointer;" + (tryb === "auto" ? on : off);
+    btnRecz.style.cssText = "border:none;padding:5px 10px;font-size:12.5px;cursor:pointer;" + (tryb === "manual" ? on : off);
+    rozmowcaRow.style.display = (jest1na1 && tryb === "manual") ? "flex" : "none";
+  }
+  malujTryb();
   overlay.querySelector(".rz-tlum").addEventListener("click", () => {
     tlumaczOn = !tlumaczOn;
     overlay.querySelector(".rz-tlum").style.opacity = tlumaczOn ? "1" : ".5";
     tlumBar.style.display = tlumaczOn ? "flex" : "none";
-    zastosujTlumaczenia();
+    odswiezWidok();
   });
+  btnAuto.addEventListener("click", () => { tryb = "auto"; malujTryb(); odswiezWidok(); });
+  btnRecz.addEventListener("click", () => { tryb = "manual"; malujTryb(); odswiezWidok(); });
   tlumSelect.addEventListener("change", async () => {
     jezykMoj = tlumSelect.value;
     if (TRAVELER) TRAVELER.jezyk = jezykMoj;
-    for (const k in tlumCache) delete tlumCache[k];
+    for (const k in tlumCache) { if (!String(k).startsWith("s")) delete tlumCache[k]; }
     try { await supabase.rpc("ustaw_jezyk", { p_jezyk: jezykMoj }); } catch (e) {}
-    zastosujTlumaczenia();
+    odswiezWidok();
   });
+  rozmowcaSelect.addEventListener("change", () => { rozmowcaJezyk = rozmowcaSelect.value; odswiezWidok(); });
   const zamknij = () => {
     if (_kanalRozmowa) { try { supabase.removeChannel(_kanalRozmowa); } catch (e) {} _kanalRozmowa = null; }
     overlay.remove();
@@ -3065,7 +3104,7 @@ async function otworzRozmowe(p) {
     lista.appendChild(row);
     const item = { w, row, bubbleEl: row.querySelector(".rz-bubble"), moje };
     bubbles.push(item);
-    if (tlumaczOn && !moje) tlumaczBubble(item);
+    if (tlumaczOn) { if (moje) podgladNadawcy(item); else tlumaczBubble(item); }
   };
   function flagujWiadomosc(w, row) {
     const moje = w.traveler_id === mojeId;
