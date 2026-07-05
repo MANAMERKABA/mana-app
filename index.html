@@ -2898,7 +2898,7 @@ async function otworzRozmowe(p) {
   const overlay = el(`<div class="m-overlay"><div class="m-modal" style="display:flex;flex-direction:column;max-height:82vh;">
     <div class="m-modal__head">
       <span class="m-modal__tytul"><span style="width:9px;height:9px;border-radius:50%;background:${p.kolor || "#1f9e8f"};display:inline-block;margin-right:6px;"></span>Rozmowa · ${escP(p.nazwa)}</span>
-      <button class="m-modal__x" aria-label="Zamknij">&#10005;</button>
+      <span style="display:flex;align-items:center;gap:4px;">${(p.owner_traveler_id === mojeId && p.typ === "rozmowa") ? `<button class="rz-usun" title="Usuń rozmowę" aria-label="Usuń rozmowę" style="border:none;background:none;cursor:pointer;color:#c0392b;font-size:16px;line-height:1;padding:0 6px;">🗑</button>` : ""}<button class="m-modal__x" aria-label="Zamknij">&#10005;</button></span>
     </div>
     <div class="rz-lista" style="flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px;min-height:180px;">
       <div style="color:var(--ink-soft);font-size:14px;text-align:center;padding:16px 0;">Wczytuję…</div>
@@ -2920,6 +2920,14 @@ async function otworzRozmowe(p) {
   };
   overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
   overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  const btnUsun = overlay.querySelector(".rz-usun");
+  if (btnUsun) btnUsun.addEventListener("click", async () => {
+    if (!confirm(`Usunąć rozmowę „${p.nazwa}"? Zniknie razem z historią wiadomości.`)) return;
+    const { error } = await supabase.from("plemiona").delete().eq("id", p.id);
+    if (error) { trzosToast("Nie usunięto: " + error.message); return; }
+    zamknij();
+    if (typeof renderPlemie === "function") { const w = $("wiezi-sekcja-ple"); if (w && w.style.display !== "none") renderPlemie(); }
+  });
 
   const dodajWiersz = (w) => {
     const moje = w.traveler_id === mojeId;
