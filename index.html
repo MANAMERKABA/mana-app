@@ -1752,6 +1752,14 @@ function przelaczWiezi(seg) {
   else if (seg === "roz") renderRozmowyInbox();
 }
 document.querySelectorAll(".wiezi-seg").forEach((b) => b.addEventListener("click", () => przelaczWiezi(b.dataset.seg)));
+/* Nazwa wątku: dla 1:1 pokazuje imię DRUGIEJ osoby (każdej stronie), dla grupy — nazwę grupy */
+function nazwaRozmowy(p, mojeId) {
+  if (p && p.typ === "rozmowa") {
+    const inny = (p.czlonkowie || []).find((c) => c.traveler_id !== mojeId);
+    if (inny && inny.nick) return inny.nick;
+  }
+  return (p && p.nazwa) || "Rozmowa";
+}
 /* Skrzynka Rozmów w Więziach — lista wątków plemion (podgląd + licznik nieprzeczytanych) → tap otwiera wątek */
 async function renderRozmowyInbox() {
   const box = $("wiezi-sekcja-roz"); if (!box) return;
@@ -1790,7 +1798,7 @@ async function renderRozmowyInbox() {
     const row = el(`<button style="width:100%;display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;text-align:left;font:inherit;">
       <span style="width:12px;height:12px;border-radius:50%;background:${p.kolor || "#1f9e8f"};flex:none;"></span>
       <span style="flex:1;min-width:0;">
-        <span style="font-size:15px;color:var(--ink);display:block;font-weight:500;">${escP(p.nazwa)}${p.typ === "grupa" ? ` <span style="font-size:10.5px;color:#1a7158;background:#e7f1ec;border-radius:8px;padding:1px 6px;font-weight:600;vertical-align:middle;">grupa</span>` : ""}</span>
+        <span style="font-size:15px;color:var(--ink);display:block;font-weight:500;">${escP(nazwaRozmowy(p, mojeId))}${p.typ === "grupa" ? ` <span style="font-size:10.5px;color:#1a7158;background:#e7f1ec;border-radius:8px;padding:1px 6px;font-weight:600;vertical-align:middle;">grupa</span>` : ""}</span>
         <span style="font-size:12.5px;color:var(--ink-soft);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${podglad}</span>
       </span>
       ${n > 0 ? `<span style="background:#c0392b;color:#fff;border-radius:10px;font-size:11px;padding:1px 7px;flex:none;">${n}</span>` : ""}
@@ -1832,16 +1840,18 @@ async function nowaRozmowa() {
   sheet.querySelector(".nr-utworz").addEventListener("click", async () => {
     const sel = sheet.querySelector(".nr-radio:checked");
     if (!sel) { alert("Wybierz osobę."); return; }
-    const nazwa = (sel.dataset.imie || "").trim() || "Rozmowa";
-    const btn = sheet.querySelector(".nr-utworz"); btn.disabled = true; btn.textContent = "Tworzę…";
-    const kolor = PLEMIE_KOLORY[Math.floor(Math.random() * PLEMIE_KOLORY.length)];
-    const { data: plId, error } = await supabase.rpc("utworz_plemie", { p_nazwa: nazwa, p_kolor: kolor, p_polityka: "rowni", p_typ: "rozmowa" });
-    if (error || !plId) { alert("Nie utworzono: " + (error ? error.message : "")); btn.disabled = false; btn.textContent = "Rozpocznij rozmowę"; return; }
-    try { await supabase.rpc("zapros_kontakt", { p_plemie: plId, p_kontakt_id: sel.dataset.id }); } catch (e) {}
+    const btn = sheet.querySelector(".nr-utworz"); btn.disabled = true; btn.textContent = "Otwieram…";
+    const { data: r, error } = await supabase.rpc("rozpocznij_rozmowe", { p_kontakt_id: sel.dataset.id });
+    if (error || !r || r.ok === false) {
+      const msg = (r && r.error) === "nie_w_manie"
+        ? "Ta osoba nie ma jeszcze konta MANA. Rozmowa 1:1 działa z osobami w MANIE — najpierw zaproś ją do MANY (w Kontaktach albo przez plemię)."
+        : ("Nie udało się: " + ((r && r.error) || (error && error.message) || "błąd"));
+      alert(msg); btn.disabled = false; btn.textContent = "Rozpocznij rozmowę"; return;
+    }
     zamknij();
     const { data: pf } = await supabase.rpc("moje_plemiona_full");
-    const pObj = (pf || []).find((x) => x.id === plId) || { id: plId, nazwa, kolor, czlonkowie: [] };
-    otworzRozmowe(pObj);
+    const pObj = (pf || []).find((x) => x.id === r.plemie_id);
+    if (pObj) otworzRozmowe(pObj);
     if (typeof renderRozmowyInbox === "function") renderRozmowyInbox();
   });
 }
@@ -2897,7 +2907,7 @@ async function otworzRozmowe(p) {
   const nickOf = (id) => { const c = czl.find((x) => x.traveler_id === id); return c ? (c.nick || "uczestnik") : "ktoś"; };
   const overlay = el(`<div class="m-overlay"><div class="m-modal" style="display:flex;flex-direction:column;max-height:82vh;">
     <div class="m-modal__head">
-      <span class="m-modal__tytul"><span style="width:9px;height:9px;border-radius:50%;background:${p.kolor || "#1f9e8f"};display:inline-block;margin-right:6px;"></span>Rozmowa · ${escP(p.nazwa)}</span>
+      <span class="m-modal__tytul"><span style="width:9px;height:9px;border-radius:50%;background:${p.kolor || "#1f9e8f"};display:inline-block;margin-right:6px;"></span>Rozmowa · ${escP(nazwaRozmowy(p, mojeId))}</span>
       <span style="display:flex;align-items:center;gap:4px;">${(p.owner_traveler_id === mojeId && p.typ === "rozmowa") ? `<button class="rz-usun" title="Usuń rozmowę" aria-label="Usuń rozmowę" style="border:none;background:none;cursor:pointer;color:#c0392b;font-size:16px;line-height:1;padding:0 6px;">🗑</button>` : ""}<button class="m-modal__x" aria-label="Zamknij">&#10005;</button></span>
     </div>
     <div class="rz-lista" style="flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px;min-height:180px;">
