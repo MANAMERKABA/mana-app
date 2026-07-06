@@ -697,6 +697,9 @@
         <button id="kon-z-plemienia" style="background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px 13px;font-size:13px;cursor:pointer;">👥 Dodaj z plemienia</button>
         <span style="font-size:12px;color:var(--ink-soft);">rodzina · serwis · firma</span>
       </div>
+      <div style="padding:2px 16px 4px;">
+        <input id="kon-szukaj" type="search" placeholder="Szukaj kontaktu…" autocapitalize="off" style="width:100%;box-sizing:border-box;padding:8px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+      </div>
       <div id="sejf-kontakty" style="padding:6px 16px 30px;"></div>
     </div>
     <div id="wiezi-sekcja-ple" style="display:none"><div id="hyz-plemie"></div></div>
@@ -1276,8 +1279,20 @@ function pinLockDodajBlad(id) {
 function pinLockReset(id) { localStorage.removeItem("mana_pinlock_" + id); }
 
 let _tokenZaproszenia = null;
+let _czatDeepLink = null;
 async function start() {
-  try { _tokenZaproszenia = new URLSearchParams(location.search).get("zaproszenie"); } catch (_) {}
+  try {
+    _tokenZaproszenia = new URLSearchParams(location.search).get("zaproszenie");
+    if (_tokenZaproszenia) localStorage.setItem("mana_zapros_tok", _tokenZaproszenia);
+    else _tokenZaproszenia = localStorage.getItem("mana_zapros_tok");
+  } catch (_) {}
+  try {
+    const qs = new URLSearchParams(location.search);
+    const hs = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+    _czatDeepLink = qs.get("czat") || hs.get("czat") || null;
+    if (_czatDeepLink) localStorage.setItem("mana_czat_deep", _czatDeepLink);
+    else _czatDeepLink = localStorage.getItem("mana_czat_deep");
+  } catch (_) {}
   let recovery = false;
   nasluchujOdzyskiwania(() => {
     recovery = true;
@@ -1313,18 +1328,42 @@ async function pokazBannerZaproszenia() {
 async function wejdz() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: trav } = await supabase
-    .from("travels").select("id, nick, uklad_pokoi, jezyk").eq("auth_user_id", session.user.id).maybeSingle();
+    .from("travels").select("id, nick, uklad_pokoi, jezyk, tryb_gosc").eq("auth_user_id", session.user.id).maybeSingle();
   if (!trav) { $("m-loader").textContent = "Nie znaleziono profilu podróżnika."; return; }
   TRAVELER = trav;
   $("m-loader").style.display = "none";
   $("m-app").style.display = "flex";
   renderHeader();
+  if (_tokenZaproszenia) {
+    await obsluzTokenZaproszenia();
+    try { const { data: t2 } = await supabase.from("travels").select("tryb_gosc").eq("id", TRAVELER.id).maybeSingle(); if (t2) TRAVELER.tryb_gosc = t2.tryb_gosc; } catch (_) {}
+  }
+  if (TRAVELER.tryb_gosc) { await wejdzJakoGosc(); return; }
   renderPokoje();
   subskrybujRealtime();
   await wczytajDzien();
-  await obsluzTokenZaproszenia();
   await pokazIndykatorZaproszen();
   await pokazIndykatorRozjazdow();
+  if (_czatDeepLink) { const id = _czatDeepLink; _czatDeepLink = null; try { localStorage.removeItem("mana_czat_deep"); } catch (_) {} otworzRozmowaPoId(id); }
+}
+/* Tryb gościa: konto zablokowane do komunikatora — widzi TYLKO rozmowy (lejek: potem odblokujemy do pełnej MANY). */
+async function wejdzJakoGosc() {
+  subskrybujRealtime();
+  const mb = $("m-mana-btn"); if (mb) mb.style.display = "none";
+  const bw = $("m-back-wiezi"); if (bw) bw.style.visibility = "hidden";
+  const tyt = document.querySelector("#m-widok-wiezi .m-widok__tytul, #m-widok-wiezi h1, #m-widok-wiezi h2"); if (tyt) tyt.textContent = "Komunikator";
+  pokazWidok("wiezi");
+  przelaczWiezi("roz");
+  document.querySelectorAll(".wiezi-seg").forEach((b) => { if (b.dataset.seg !== "roz") b.style.display = "none"; });
+  if (_czatDeepLink) { const id = _czatDeepLink; _czatDeepLink = null; try { localStorage.removeItem("mana_czat_deep"); } catch (_) {} await otworzRozmowaPoId(id); }
+}
+async function otworzRozmowaPoId(id) {
+  try {
+    const { data } = await supabase.rpc("moje_plemiona_full");
+    const p = (data || []).find((x) => String(x.id) === String(id));
+    if (p) otworzRozmowe(p);
+    else if (typeof trzosToast === "function") trzosToast("Nie znaleziono rozmowy albo brak dostępu.");
+  } catch (e) {}
 }
 async function pokazIndykatorRozjazdow() {
   try {
@@ -1337,11 +1376,13 @@ async function pokazIndykatorRozjazdow() {
 async function obsluzTokenZaproszenia() {
   if (!_tokenZaproszenia) return;
   const tok = _tokenZaproszenia; _tokenZaproszenia = null;
+  try { localStorage.removeItem("mana_zapros_tok"); } catch (_) {}
   const { data, error } = await supabase.rpc("przyjmij_zaproszenie_token", { p_token: tok });
   try { const u = new URL(location.href); u.searchParams.delete("zaproszenie"); history.replaceState(null, "", u.pathname + u.search + u.hash); } catch (_) {}
   if (error) { trzosToast("Zaproszenie: " + error.message); return; }
   if (!data || !data.ok) { trzosToast((data && data.error) || "Zaproszenie nieaktualne."); return; }
-  trzosToast("Dołączyłeś do grupy ✓");
+  if (data.plemie_id && !_czatDeepLink) _czatDeepLink = data.plemie_id;
+  trzosToast(data.gosc ? "Zaproszenie przyjęte ✓" : "Dołączyłeś do grupy ✓");
   if (typeof renderPlemie === "function") renderPlemie();
 }
 async function pokazIndykatorZaproszen() {
@@ -1780,6 +1821,7 @@ function przelaczWiezi(seg) {
   else if (seg === "roz") renderRozmowyInbox();
 }
 document.querySelectorAll(".wiezi-seg").forEach((b) => b.addEventListener("click", () => przelaczWiezi(b.dataset.seg)));
+{ const ks = document.getElementById("kon-szukaj"); if (ks) ks.addEventListener("input", filtrujKontakty); }
 /* Nazwa wątku: dla 1:1 pokazuje imię DRUGIEJ osoby (każdej stronie), dla grupy — nazwę grupy */
 function nazwaRozmowy(p, mojeId) {
   if (p && p.typ === "rozmowa") {
@@ -1814,6 +1856,9 @@ async function renderRozmowyInbox() {
   const nowa = el(`<button style="width:100%;border:1px dashed var(--turkus,#1f9e8f);background:#eef6f3;color:#1a7158;border-radius:12px;padding:11px;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:10px;">＋ Nowa rozmowa</button>`);
   nowa.addEventListener("click", nowaRozmowa);
   wrap.appendChild(nowa);
+  const goscBtn = el(`<button style="width:100%;border:1px dashed #b98a3e;background:#faf4e8;color:#8a6416;border-radius:12px;padding:10px;font-size:13.5px;font-weight:500;cursor:pointer;margin-bottom:12px;">🔗 Zaproś kogoś spoza MANA (link)</button>`);
+  goscBtn.addEventListener("click", zaprosGoscia);
+  wrap.appendChild(goscBtn);
   const mkRow = (p) => {
     const n = nieprzMap[p.id] || 0;
     const ost = ostatnia[p.id];
@@ -1854,6 +1899,39 @@ async function renderRozmowyInbox() {
     wrap.appendChild(bar); wrap.appendChild(cont);
   }
   box.appendChild(wrap);
+}
+/* Zaproś kogoś SPOZA MANA do rozmowy 1:1 — tworzy rozmowę + zaproszenie „gość" (konto zablokowane do komunikatora) + link. */
+async function zaprosGoscia() {
+  const sheet = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">Zaproś kogoś spoza MANA</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form">
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;line-height:1.5;">Osoba dostanie link, założy konto (e-mail + hasło) i zobaczy <b>tylko tę rozmowę</b> — nic więcej. Później można odblokować pełną MANA.</div>
+      <label style="font-size:12px;color:var(--ink-soft);">Imię (jak ma się wyświetlać)</label>
+      <input class="zg-imie" type="text" placeholder="np. Bartosz" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin:4px 0 10px;">
+      <label style="font-size:12px;color:var(--ink-soft);">E-mail</label>
+      <input class="zg-mail" type="email" placeholder="bartosz@przyklad.pl" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin:4px 0 12px;">
+      <button class="zg-utworz" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;">Utwórz link zaproszenia</button>
+      <div class="zg-wynik" style="margin-top:12px;"></div>
+    </div>
+  </div></div>`);
+  document.body.appendChild(sheet);
+  const zam = () => sheet.remove();
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) zam(); });
+  sheet.querySelector(".m-modal__x").addEventListener("click", zam);
+  sheet.querySelector(".zg-utworz").addEventListener("click", async () => {
+    const imie = sheet.querySelector(".zg-imie").value.trim();
+    const mail = sheet.querySelector(".zg-mail").value.trim();
+    const wynik = sheet.querySelector(".zg-wynik");
+    if (!mail || mail.indexOf("@") < 0) { wynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">Podaj poprawny e-mail.</span>`; return; }
+    wynik.innerHTML = `<span style="color:var(--ink-soft);font-size:13px;">Tworzę…</span>`;
+    const { data, error } = await supabase.rpc("zapros_gosc_rozmowa", { p_email: mail, p_nazwa: imie });
+    if (error || !data || !data.ok) { wynik.innerHTML = `<span style="color:#c0392b;font-size:13px;">${escP((data && data.error) || (error && error.message) || "Nie udało się.")}</span>`; return; }
+    const link = `${location.origin}${location.pathname}?zaproszenie=${data.token}&czat=${data.plemie_id}`;
+    wynik.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Wyślij ten link do ${escP(imie || mail)}:</div>
+      <div style="display:flex;gap:6px;"><input class="zg-link" readonly value="${escP(link)}" style="flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:12px;background:#faf8f2;"><button class="zg-kop" style="border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer;flex:none;">Kopiuj</button></div>`;
+    wynik.querySelector(".zg-kop").addEventListener("click", async () => { try { await navigator.clipboard.writeText(link); if (typeof trzosToast === "function") trzosToast("Link skopiowany ✓"); } catch (e) { const i = wynik.querySelector(".zg-link"); i.select(); document.execCommand("copy"); } });
+    if (typeof renderRozmowyInbox === "function") renderRozmowyInbox();
+  });
 }
 /* Nowa rozmowa = INDYWIDUALNA (1:1): wybierz jedną osobę → dwuosobowe plemię + zaproszenie + wątek. Grupowe zakładasz w Plemionach. */
 async function nowaRozmowa() {
@@ -2226,13 +2304,20 @@ async function renderKontakty() {
   box.innerHTML = "";
   if (!kon.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Brak kontaktów — dodaj pierwszy albo „Dodaj z plemienia".</div>`)); return; }
   for (const k of kon) box.appendChild(kartaKontakt(k));
+  filtrujKontakty();
+}
+function filtrujKontakty() {
+  const inp = $("kon-szukaj"), box = $("sejf-kontakty");
+  if (!inp || !box) return;
+  const q = (inp.value || "").trim().toLowerCase();
+  box.querySelectorAll("div[data-szukaj]").forEach((c) => { c.style.display = (!q || (c.dataset.szukaj || "").includes(q)) ? "" : "none"; });
 }
 function kartaKontakt(k) {
   const moje = k.owner_traveler_id === (TRAVELER && TRAVELER.id);
   const konto = k.target_traveler_id ? " · 🟢 konto MANA" : "";
   const zakres = k.plemie_id ? ("👥 " + escP(KON_PLEMIE_MAP[k.plemie_id] || "plemię")) : "🔒 tylko ja";
   const linie = [k.telefon, (k.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
-  const w = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
+  const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
     <div style="font-size:15px;font-weight:500;">${esc(k.imie || "(bez imienia)")}${konto}</div>
     ${linie ? `<div style="font-size:12.5px;color:var(--ink);margin-top:2px;">${linie}</div>` : ""}
     ${k.typ ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${escP(k.typ)}</div>` : ""}
@@ -2959,7 +3044,7 @@ async function otworzRozmowe(p) {
   const overlay = el(`<div class="m-overlay"><div class="m-modal" style="display:flex;flex-direction:column;max-height:82vh;">
     <div class="m-modal__head">
       <span class="m-modal__tytul"><span style="width:9px;height:9px;border-radius:50%;background:${p.kolor || "#1f9e8f"};display:inline-block;margin-right:6px;"></span>Rozmowa · ${escP(nazwaRozmowy(p, mojeId))}</span>
-      <span style="display:flex;align-items:center;gap:4px;"><button class="rz-tlum" title="Tłumaczenie na Twój język (i tryb nauki)" aria-label="Tłumaczenie" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px;opacity:.5;">🌐</button>${(p.owner_traveler_id === mojeId && p.typ === "rozmowa") ? `<button class="rz-usun" title="Usuń rozmowę" aria-label="Usuń rozmowę" style="border:none;background:none;cursor:pointer;color:#c0392b;font-size:16px;line-height:1;padding:0 6px;">🗑</button>` : ""}<button class="m-modal__x" aria-label="Zamknij">&#10005;</button></span>
+      <span style="display:flex;align-items:center;gap:4px;"><button class="rz-link" title="Udostępnij link do tej rozmowy" aria-label="Udostępnij link" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px;opacity:.55;">🔗</button><button class="rz-tlum" title="Tłumaczenie na Twój język (i tryb nauki)" aria-label="Tłumaczenie" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px;opacity:.5;">🌐</button>${(p.owner_traveler_id === mojeId && p.typ === "rozmowa") ? `<button class="rz-usun" title="Usuń rozmowę" aria-label="Usuń rozmowę" style="border:none;background:none;cursor:pointer;color:#c0392b;font-size:16px;line-height:1;padding:0 6px;">🗑</button>` : ""}<button class="m-modal__x" aria-label="Zamknij">&#10005;</button></span>
     </div>
     <div class="rz-tlum-bar" style="display:none;flex-direction:column;gap:6px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface-2,#f6f3ec);font-size:13px;">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -2998,6 +3083,12 @@ async function otworzRozmowe(p) {
   let tryb = "auto";
   let rozmowcaJezyk = null;
   let livePreview = false;
+  const _ustKey = "mana_tlumacz";
+  const _ust = (() => { try { return (JSON.parse(localStorage.getItem(_ustKey) || "{}")[p.id]) || {}; } catch (e) { return {}; } })();
+  function zapiszUst() { try { const all = JSON.parse(localStorage.getItem(_ustKey) || "{}"); all[p.id] = { on: tlumaczOn, tryb, rozmowca: rozmowcaJezyk, live: livePreview }; localStorage.setItem(_ustKey, JSON.stringify(all)); } catch (e) {} }
+  if (_ust.on) tlumaczOn = true;
+  if (_ust.tryb) tryb = _ust.tryb;
+  if (_ust.live) livePreview = true;
   const tlumCache = {};
   const bubbles = [];
   async function tlumaczTekst(tekst, target) {
@@ -3051,7 +3142,8 @@ async function otworzRozmowe(p) {
   const rozmowcaSelect = overlay.querySelector(".rz-rozmowca-jezyk");
   tlumSelect.value = jezykMoj;
   if (tlumSelect.selectedIndex < 0) { tlumSelect.value = "pl"; jezykMoj = "pl"; }
-  rozmowcaSelect.value = (jezykMoj === "en") ? "es" : "en";
+  rozmowcaSelect.value = _ust.rozmowca || ((jezykMoj === "en") ? "es" : "en");
+  if (rozmowcaSelect.selectedIndex < 0) rozmowcaSelect.value = "en";
   rozmowcaJezyk = rozmowcaSelect.value;
   if (jest1na1) overlay.querySelector(".rz-tryb").style.display = "inline-flex";
   function malujTryb() {
@@ -3064,11 +3156,11 @@ async function otworzRozmowe(p) {
   overlay.querySelector(".rz-tlum").addEventListener("click", () => {
     tlumaczOn = !tlumaczOn;
     overlay.querySelector(".rz-tlum").style.opacity = tlumaczOn ? "1" : ".5";
-    tlumBar.style.display = tlumaczOn ? "flex" : "none";
-    odswiezWidok();
+    tlumBar.style.display = (tlumaczOn || livePreview) ? "flex" : "none";
+    odswiezWidok(); zapiszUst();
   });
-  btnAuto.addEventListener("click", () => { tryb = "auto"; malujTryb(); odswiezWidok(); });
-  btnRecz.addEventListener("click", () => { tryb = "manual"; malujTryb(); odswiezWidok(); });
+  btnAuto.addEventListener("click", () => { tryb = "auto"; malujTryb(); odswiezWidok(); zapiszUst(); });
+  btnRecz.addEventListener("click", () => { tryb = "manual"; malujTryb(); odswiezWidok(); zapiszUst(); });
   tlumSelect.addEventListener("change", async () => {
     jezykMoj = tlumSelect.value;
     if (TRAVELER) TRAVELER.jezyk = jezykMoj;
@@ -3076,7 +3168,7 @@ async function otworzRozmowe(p) {
     try { await supabase.rpc("ustaw_jezyk", { p_jezyk: jezykMoj }); } catch (e) {}
     odswiezWidok();
   });
-  rozmowcaSelect.addEventListener("change", () => { rozmowcaJezyk = rozmowcaSelect.value; odswiezWidok(); aktualizujLive(); });
+  rozmowcaSelect.addEventListener("change", () => { rozmowcaJezyk = rozmowcaSelect.value; odswiezWidok(); aktualizujLive(); zapiszUst(); });
   const nauka = overlay.querySelector(".rz-nauka");
   const liveEl = overlay.querySelector(".rz-live");
   let liveTimer = null;
@@ -3087,6 +3179,7 @@ async function otworzRozmowe(p) {
     if (livePreview) { tlumBar.style.display = "flex"; }
     malujTryb();
     aktualizujLive();
+    zapiszUst();
   });
   function aktualizujLive() {
     if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
@@ -3099,6 +3192,12 @@ async function otworzRozmowe(p) {
     }, 650);
   }
   input.addEventListener("input", aktualizujLive);
+  // Odtworzenie zapamiętanych ustawień w UI
+  overlay.querySelector(".rz-tlum").style.opacity = tlumaczOn ? "1" : ".5";
+  nauka.style.opacity = livePreview ? "1" : ".5";
+  tlumBar.style.display = (tlumaczOn || livePreview) ? "flex" : "none";
+  malujTryb();
+  aktualizujLive();
   const zamknij = () => {
     if (_kanalRozmowa) { try { supabase.removeChannel(_kanalRozmowa); } catch (e) {} _kanalRozmowa = null; }
     overlay.remove();
@@ -3108,6 +3207,12 @@ async function otworzRozmowe(p) {
   };
   overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
   overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  const btnLink = overlay.querySelector(".rz-link");
+  if (btnLink) btnLink.addEventListener("click", async () => {
+    const link = `${location.origin}${location.pathname}?czat=${p.id}`;
+    try { await navigator.clipboard.writeText(link); if (typeof trzosToast === "function") trzosToast("Link skopiowany ✓ (osoba musi być członkiem tej rozmowy)"); }
+    catch (e) { prompt("Skopiuj link do rozmowy:", link); }
+  });
   const btnUsun = overlay.querySelector(".rz-usun");
   if (btnUsun) btnUsun.addEventListener("click", async () => {
     if (!confirm(`Usunąć rozmowę „${p.nazwa}"? Zniknie razem z historią wiadomości.`)) return;
