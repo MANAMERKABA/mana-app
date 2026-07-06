@@ -2339,15 +2339,17 @@ async function renderKontakty() {
   const box = $("sejf-kontakty");
   if (!box) return;
   box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
-  const [rK, rPl] = await Promise.all([
+  const [rK, rPl, rOf] = await Promise.all([
     supabase.from("kontakty").select("*").order("imie", { ascending: true }),
     supabase.rpc("moje_plemiona_full"),
+    supabase.rpc("moje_oferty_kontaktow"),
   ]);
   if (rK.error) { box.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(rK.error.message)}</div>`; return; }
   KON_PLEMIE_MAP = {};
   (rPl.data || []).forEach((p) => { KON_PLEMIE_MAP[p.id] = p.nazwa; });
   const kon = (rK.data || []).filter((k) => k.owner_org_id == null && k.target_traveler_id !== (TRAVELER && TRAVELER.id)); // prywatne/rodzinne; bez firmowych (CRM=gospodarz) i bez siebie (=wizytówka)
   box.innerHTML = "";
+  renderOfertyKontaktow(box, rOf.data || []);
   if (!kon.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Brak kontaktów — dodaj pierwszy albo „Dodaj z plemienia".</div>`)); return; }
   kon.sort((a, b) => ((b.target_traveler_id ? 1 : 0) - (a.target_traveler_id ? 1 : 0)));
   let poprzMana = null;
@@ -2358,6 +2360,38 @@ async function renderKontakty() {
     poprzMana = jm;
   }
   filtrujKontakty();
+}
+function renderOfertyKontaktow(box, oferty) {
+  if (!oferty || !oferty.length) return;
+  const sek = el(`<div style="margin:2px 0 16px;"><div style="font-size:12px;color:#8a6416;font-weight:600;margin:0 2px 7px;">📥 Udostępnione Tobie · ${oferty.length}</div></div>`);
+  for (const o of oferty) {
+    const dane = [o.telefon, (o.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
+    const row = el(`<div style="border:1px solid #e6cf9a;background:#fbf5e8;border-radius:12px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="width:32px;height:32px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:15px;background:${o.jest_mana ? "#1a9e5f" : "#e7e3d9"};color:#fff;">${o.jest_mana ? "💬" : ""}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14.5px;font-weight:500;">${esc(o.imie || "Kontakt")}${o.jest_mana ? `<span style="font-size:11px;color:#1a7158;font-weight:600;"> · MANA</span>` : ""}</div>
+          ${dane ? `<div style="font-size:12px;color:var(--ink-soft);">${dane}</div>` : ""}
+          <div style="font-size:11px;color:#8a6416;margin-top:1px;">udostępnia: ${esc(o.od_nick || "ktoś")}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:9px;">
+        <button class="of-przyj" style="border:none;background:#1a7158;color:#fff;border-radius:8px;font-size:12.5px;padding:7px 15px;cursor:pointer;">Przyjmij</button>
+        <button class="of-odrz" style="${BG}font-size:12.5px;padding:7px 12px;">Odrzuć</button>
+      </div>
+    </div>`);
+    row.querySelector(".of-przyj").addEventListener("click", async () => {
+      const { data, error } = await supabase.rpc("przyjmij_kontakt", { p_oferta_id: o.oferta_id });
+      if (error || (data && data.ok === false)) { trzosToast("Błąd: " + ((data && data.error) || (error && error.message) || "")); return; }
+      trzosToast((data && data.istnial) ? "Już masz ten kontakt ✓" : "Przyjęto — kontakt jest teraz Twój ✓"); renderKontakty();
+    });
+    row.querySelector(".of-odrz").addEventListener("click", async () => {
+      await supabase.rpc("odrzuc_kontakt", { p_oferta_id: o.oferta_id });
+      trzosToast("Odrzucono."); renderKontakty();
+    });
+    sek.appendChild(row);
+  }
+  box.appendChild(sek);
 }
 function filtrujKontakty() {
   const inp = $("kon-szukaj"), box = $("sejf-kontakty");
@@ -2385,9 +2419,9 @@ function kartaKontakt(k) {
     ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
     <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
       ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><svg viewBox="0 0 24 24" width="13" height="13" fill="#c0392b" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>Zadzwoń</a>` : ""}
-      ${moje ? `<button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
       <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
-      <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>` : `<span style="font-size:11px;color:var(--ink-soft);">udostępniony Tobie</span>`}
+      ${moje ? `<button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
+      <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>` : `<span style="font-size:11px;color:var(--ink-soft);">wspólny plemienia</span>`}
     </div>
   </div>`);
   const brz = w.querySelector(".kn-rozmowa"); if (brz) brz.addEventListener("click", () => otworzRozmoweZKontaktu(k));
@@ -2436,6 +2470,7 @@ function menuKontaktu(k) {
 }
 function formKontakt(k, onSave) {
   const edycja = !!k;
+  const cudzy = edycja && k && k.owner_traveler_id !== (TRAVELER && TRAVELER.id);
   const opcjeTyp = KON_TYPY.map(([v, l]) => `<option value="${v}"${k && k.typ === v ? " selected" : ""}>${escP(l)}</option>`).join("");
   const ov = el(`<div class="m-overlay"><div class="m-modal">
     <div class="m-modal__head"><span class="m-modal__tytul">${edycja ? "Kontakt" : "Nowy kontakt"}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
@@ -2468,23 +2503,37 @@ function formKontakt(k, onSave) {
     const sel = ov.querySelector("#kn-kto");
     (pls || []).forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
     if (edycja && k.plemie_id) sel.value = k.plemie_id;
+    if (cudzy) { const wrap = sel.closest("div"); if (wrap) wrap.style.display = "none"; }
   })();
   ov.querySelector("#kn-zapisz").addEventListener("click", async () => {
     const imie = stdNazwa(ov.querySelector("#kn-imie").value);
     if (!imie) { ov.querySelector("#kn-imie").focus(); return; }
+    const ktoPlemie = ov.querySelector("#kn-kto").value || null;
     const payload = {
       imie,
       telefon: stdTel(ov.querySelector("#kn-tel").value, ov.querySelector("#kn-kraj").value),
       email: stdEmail(ov.querySelector("#kn-email").value),
       typ: ov.querySelector("#kn-typ").value || "inny",
       notatka: ov.querySelector("#kn-notatka").value.trim() || null,
-      plemie_id: ov.querySelector("#kn-kto").value || null,
+      plemie_id: null, // udostępnianie idzie teraz przez OFERTĘ, nie przez auto-widoczność
     };
-    let error;
-    if (edycja) ({ error } = await supabase.from("kontakty").update(payload).eq("id", k.id));
-    else ({ error } = await supabase.from("kontakty").insert({ ...payload, owner_traveler_id: TRAVELER.id, polaczenie_status: "brak", aktywny: true }));
+    let error, kontaktId = edycja ? k.id : null;
+    if (edycja && cudzy) {
+      const { data: rd, error: re } = await supabase.rpc("edytuj_kontakt", { p_id: k.id, p_imie: payload.imie, p_telefon: payload.telefon, p_email: payload.email, p_typ: payload.typ, p_notatka: payload.notatka });
+      error = re || ((rd && rd.ok === false) ? { message: rd.error || "Brak uprawnień." } : null);
+    } else if (edycja) {
+      ({ error } = await supabase.from("kontakty").update(payload).eq("id", k.id));
+    } else {
+      const { data: nd, error: ne } = await supabase.from("kontakty").insert({ ...payload, owner_traveler_id: TRAVELER.id, polaczenie_status: "brak", aktywny: true }).select("id").single();
+      error = ne; kontaktId = nd && nd.id;
+    }
     if (error) { trzosToast("Błąd: " + error.message); return; }
-    zamknij(); trzosToast("Zapisano ✓"); renderKontakty(); if (typeof onSave === "function") onSave();
+    let komunikat = "Zapisano ✓";
+    if (ktoPlemie && !cudzy && kontaktId) {
+      const { data: od } = await supabase.rpc("udostepnij_kontakt", { p_kontakt_id: kontaktId, p_plemie_id: ktoPlemie });
+      if (od && od.ok) komunikat = `Zapisano · wysłano ofertę do plemienia (${od.wyslano})`;
+    }
+    zamknij(); trzosToast(komunikat); renderKontakty(); if (typeof onSave === "function") onSave();
   });
 }
 async function usunKontakt(k) {
@@ -3143,7 +3192,7 @@ async function otworzRozmowe(p) {
   const overlay = el(`<div class="m-overlay"><div class="m-modal" style="display:flex;flex-direction:column;max-height:82vh;">
     <div class="m-modal__head">
       <span class="m-modal__tytul"><span style="width:9px;height:9px;border-radius:50%;background:${p.kolor || "#1f9e8f"};display:inline-block;margin-right:6px;"></span>Rozmowa · ${escP(nazwaRozmowy(p, mojeId))}</span>
-      <span style="display:flex;align-items:center;gap:4px;"><button class="rz-link" title="Udostępnij link do tej rozmowy" aria-label="Udostępnij link" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px;opacity:.55;">🔗</button><button class="rz-tlum" title="Tłumaczenie na Twój język (i tryb nauki)" aria-label="Tłumaczenie" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px;opacity:.5;">🌐</button>${(p.owner_traveler_id === mojeId && p.typ === "rozmowa") ? `<button class="rz-usun" title="Usuń rozmowę" aria-label="Usuń rozmowę" style="border:none;background:none;cursor:pointer;color:#c0392b;font-size:16px;line-height:1;padding:0 6px;">🗑</button>` : ""}<button class="m-modal__x" aria-label="Zamknij">&#10005;</button></span>
+      <span style="display:flex;align-items:center;gap:4px;"><button class="rz-znik" title="Znikające wiadomości" aria-label="Znikające wiadomości" style="border:none;background:none;cursor:pointer;font-size:15px;line-height:1;padding:0 5px;opacity:.5;">⏱</button><button class="rz-link" title="Udostępnij link do tej rozmowy" aria-label="Udostępnij link" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px;opacity:.55;">🔗</button><button class="rz-tlum" title="Tłumaczenie na Twój język (i tryb nauki)" aria-label="Tłumaczenie" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;padding:0 6px;opacity:.5;">🌐</button>${(p.owner_traveler_id === mojeId && p.typ === "rozmowa") ? `<button class="rz-usun" title="Usuń rozmowę" aria-label="Usuń rozmowę" style="border:none;background:none;cursor:pointer;color:#c0392b;font-size:16px;line-height:1;padding:0 6px;">🗑</button>` : ""}<button class="m-modal__x" aria-label="Zamknij">&#10005;</button></span>
     </div>
     <div class="rz-tlum-bar" style="display:none;flex-direction:column;gap:6px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface-2,#f6f3ec);font-size:13px;">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -3312,6 +3361,32 @@ async function otworzRozmowe(p) {
     try { await navigator.clipboard.writeText(link); if (typeof trzosToast === "function") trzosToast("Link skopiowany ✓ (osoba musi być członkiem tej rozmowy)"); }
     catch (e) { prompt("Skopiuj link do rozmowy:", link); }
   });
+  const btnZnik = overlay.querySelector(".rz-znik");
+  let znikGodz = null;
+  function malujZnik() { if (!btnZnik) return; btnZnik.textContent = znikGodz ? (znikGodz >= 168 ? "⏱7d" : "⏱" + znikGodz + "h") : "⏱"; btnZnik.style.opacity = znikGodz ? "1" : ".5"; btnZnik.style.fontSize = znikGodz ? "11px" : "15px"; }
+  (async () => { try { const { data } = await supabase.from("plemiona").select("znikanie_godzin").eq("id", p.id).maybeSingle(); znikGodz = (data && data.znikanie_godzin) || null; malujZnik(); } catch (e) {} })();
+  if (btnZnik) btnZnik.addEventListener("click", () => {
+    const opcje = [["Wyłączone", 0], ["24 godziny", 24], ["48 godzin", 48], ["72 godziny", 72], ["7 dni", 168]];
+    const sheet = el(`<div class="m-overlay" style="align-items:flex-end;"><div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px 20px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px;">⏱ Znikające wiadomości</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:12px;line-height:1.5;">Po wybranym czasie wiadomości w tej rozmowie kasują się u wszystkich. Domyślnie wyłączone.</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${opcje.map(([n, g]) => `<button class="zn-opt" data-g="${g}" style="${BG}text-align:left;padding:11px 13px;font-size:14px;${(znikGodz || 0) === g ? "outline:2px solid var(--turkus,#1f9e8f);font-weight:600;" : ""}">${n}${(znikGodz || 0) === g ? " ✓" : ""}</button>`).join("")}
+      </div>
+      <button class="zn-x" style="width:100%;border:none;background:none;color:var(--ink-soft);padding:10px;font-size:14px;cursor:pointer;margin-top:8px;">Zamknij</button>
+    </div></div>`);
+    document.body.appendChild(sheet);
+    const zam = () => sheet.remove();
+    sheet.addEventListener("click", (e) => { if (e.target === sheet) zam(); });
+    sheet.querySelector(".zn-x").addEventListener("click", zam);
+    sheet.querySelectorAll(".zn-opt").forEach((b) => b.addEventListener("click", async () => {
+      const g = Number(b.dataset.g);
+      const { data, error } = await supabase.rpc("ustaw_znikanie", { p_plemie: p.id, p_godzin: g });
+      if (error || (data && data.ok === false)) { trzosToast("Błąd: " + ((data && data.error) || (error && error.message) || "")); return; }
+      znikGodz = g > 0 ? g : null; malujZnik(); zam();
+      trzosToast(g > 0 ? "Wiadomości znikają po " + (g >= 168 ? "7 dniach" : g + " h") : "Znikanie wyłączone");
+    }));
+  });
   const btnUsun = overlay.querySelector(".rz-usun");
   if (btnUsun) btnUsun.addEventListener("click", async () => {
     if (!confirm(`Usunąć rozmowę „${p.nazwa}"? Zniknie razem z historią wiadomości.`)) return;
@@ -3408,6 +3483,7 @@ async function otworzRozmowe(p) {
     try { await supabase.from("plemie_przeczytane").upsert({ traveler_id: mojeId, plemie_id: p.id, ostatnio: new Date().toISOString() }, { onConflict: "traveler_id,plemie_id" }); } catch (e) {}
   };
 
+  try { await supabase.rpc("sprzataj_znikajace", { p_plemie: p.id }); } catch (e) {}
   const { data: wiad = [], error } = await supabase
     .from("wiadomosci").select("id, traveler_id, tresc, created_at")
     .eq("plemie_id", p.id).order("created_at", { ascending: true }).limit(300);
