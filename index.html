@@ -1331,7 +1331,7 @@ async function pokazBannerZaproszenia() {
 async function wejdz() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: trav } = await supabase
-    .from("travels").select("id, nick, uklad_pokoi, jezyk, tryb_gosc").eq("auth_user_id", session.user.id).maybeSingle();
+    .from("travels").select("id, nick, uklad_pokoi, jezyk, tryb_gosc, telefon, email").eq("auth_user_id", session.user.id).maybeSingle();
   if (!trav) { $("m-loader").textContent = "Nie znaleziono profilu podróżnika."; return; }
   TRAVELER = trav;
   $("m-loader").style.display = "none";
@@ -1447,7 +1447,49 @@ function renderHeader() {
   const ini = (typeof inicjalyPl === "function") ? inicjalyPl(nick) : (nick[0] || "?").toUpperCase();
   document.querySelectorAll(".m-user").forEach((s) => {
     s.innerHTML = `<span class="m-user__ini">${esc(ini)}</span><span class="m-user__nick">${esc(nick)}</span>`;
-    s.title = "Zalogowany: " + nick;
+    s.title = "Twoja wizytówka — " + nick;
+    s.style.cursor = "pointer";
+    if (!s._wiz) { s._wiz = true; s.addEventListener("click", otworzWizytowke); }
+  });
+}
+function otworzWizytowke() {
+  const t = TRAVELER || {};
+  const jezyki = [["pl", "Polski"], ["en", "English"], ["es", "Español"], ["de", "Deutsch"], ["uk", "Українська"], ["ru", "Русский"], ["fr", "Français"], ["it", "Italiano"], ["pt", "Português"], ["cs", "Čeština"]];
+  const opcje = jezyki.map(([k, n]) => `<option value="${k}" ${((t.jezyk || "pl") === k) ? "selected" : ""}>${escP(n)}</option>`).join("");
+  const ini = (typeof inicjalyPl === "function") ? inicjalyPl(t.nick || "?") : ((t.nick || "?")[0] || "?").toUpperCase();
+  const ov = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">Twoja wizytówka</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <span style="width:52px;height:52px;border-radius:50%;background:#1a7158;color:#fff;font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none;">${esc(ini)}</span>
+        <div style="font-size:12px;color:var(--ink-soft);line-height:1.5;">To Twoja wizytówka — <b>warstwa podstawowa</b>, którą widzą osoby, z którymi się połączysz.</div>
+      </div>
+      <label>Imię i nazwisko</label>
+      <input type="text" id="wiz-nick" maxlength="120" value="${esc(t.nick || "")}" placeholder="np. Adam Bielawski">
+      <label>Telefon</label>
+      <input type="tel" id="wiz-tel" maxlength="40" value="${esc(t.telefon || "")}" placeholder="+48 …">
+      <label>E-mail (logowanie)</label>
+      <input type="email" value="${esc(t.email || "")}" disabled style="opacity:.65;">
+      <label>Język</label>
+      <select id="wiz-jezyk">${opcje}</select>
+      <div style="margin-top:12px;padding:10px 12px;background:#f3efe6;border:1px solid var(--line);border-radius:10px;font-size:12.5px;color:var(--ink-soft);">🔒 Dane wrażliwe (konto, karta, dokumenty) → <b>Sejf</b>, pod osobnym kodem. <i>(wkrótce)</i></div>
+      <button id="wiz-zapisz" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-top:14px;">Zapisz</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zam = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zam);
+  ov.querySelector("#wiz-zapisz").addEventListener("click", async () => {
+    const nick = ov.querySelector("#wiz-nick").value.trim();
+    const tel = ov.querySelector("#wiz-tel").value.trim();
+    const jez = ov.querySelector("#wiz-jezyk").value;
+    const { data, error } = await supabase.rpc("zapisz_wizytowke", { p_nick: nick, p_telefon: tel, p_jezyk: jez });
+    if (error || (data && data.ok === false)) { alert("Nie zapisano: " + ((data && data.error) || (error && error.message) || "")); return; }
+    if (TRAVELER) { TRAVELER.nick = nick || TRAVELER.nick; TRAVELER.telefon = tel; TRAVELER.jezyk = jez; }
+    if (typeof renderHeader === "function") renderHeader();
+    zam();
+    if (typeof trzosToast === "function") trzosToast("Wizytówka zapisana ✓");
   });
 }
 $("m-logout").addEventListener("click", async () => {
@@ -2304,7 +2346,7 @@ async function renderKontakty() {
   if (rK.error) { box.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(rK.error.message)}</div>`; return; }
   KON_PLEMIE_MAP = {};
   (rPl.data || []).forEach((p) => { KON_PLEMIE_MAP[p.id] = p.nazwa; });
-  const kon = (rK.data || []).filter((k) => k.owner_org_id == null); // prywatne/rodzinne; firmowe (CRM) to gospodarz
+  const kon = (rK.data || []).filter((k) => k.owner_org_id == null && k.target_traveler_id !== (TRAVELER && TRAVELER.id)); // prywatne/rodzinne; bez firmowych (CRM=gospodarz) i bez siebie (=wizytówka)
   box.innerHTML = "";
   if (!kon.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Brak kontaktów — dodaj pierwszy albo „Dodaj z plemienia".</div>`)); return; }
   kon.sort((a, b) => ((b.target_traveler_id ? 1 : 0) - (a.target_traveler_id ? 1 : 0)));
