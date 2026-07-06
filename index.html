@@ -2303,6 +2303,7 @@ async function renderKontakty() {
   const kon = (rK.data || []).filter((k) => k.owner_org_id == null); // prywatne/rodzinne; firmowe (CRM) to gospodarz
   box.innerHTML = "";
   if (!kon.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Brak kontaktów — dodaj pierwszy albo „Dodaj z plemienia".</div>`)); return; }
+  kon.sort((a, b) => ((b.target_traveler_id ? 1 : 0) - (a.target_traveler_id ? 1 : 0)));
   for (const k of kon) box.appendChild(kartaKontakt(k));
   filtrujKontakty();
 }
@@ -2316,17 +2317,16 @@ function kartaKontakt(k) {
   const moje = k.owner_traveler_id === (TRAVELER && TRAVELER.id);
   const jestMana = !!k.target_traveler_id;
   const sub = [k.telefon, (k.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
-  const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:7px;">
-    <span title="${jestMana ? "w MANIE" : "poza MANĄ"}" style="width:10px;height:10px;border-radius:50%;flex:none;background:${jestMana ? "#1a9e5f" : "#cdc8bc"};"></span>
-    <span style="flex:1;min-width:0;">
-      <span style="font-size:14.5px;font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(k.imie || "(bez imienia)")}${jestMana ? `<span style="font-size:11px;color:#1a7158;font-weight:500;"> · MANA</span>` : ""}</span>
-      ${sub ? `<span style="font-size:12px;color:var(--ink-soft);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sub}</span>` : ""}
-    </span>
-    ${jestMana && moje ? `<button class="kn-rozmowa" title="Rozmowa w MANA" style="border:none;background:#1a7158;color:#fff;border-radius:9px;padding:7px 11px;font-size:12.5px;cursor:pointer;flex:none;white-space:nowrap;">💬 Rozmowa</button>` : ""}
-    ${moje ? `<button class="kn-menu" title="Więcej" style="border:none;background:none;color:var(--ink-soft);font-size:19px;line-height:1;cursor:pointer;flex:none;padding:0 4px;">⋯</button>` : `<span style="font-size:11px;color:var(--ink-soft);flex:none;">udostępniony</span>`}
+  const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:7px;cursor:${moje ? "pointer" : "default"};">
+    <span title="${jestMana ? "w MANIE" : "poza MANĄ"}" style="width:9px;height:9px;border-radius:50%;flex:none;background:${jestMana ? "#1a9e5f" : "#cdc8bc"};"></span>
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(k.imie || "(bez imienia)")}${jestMana ? `<span style="font-size:11px;color:#1a7158;font-weight:600;"> · MANA</span>` : ""}${moje ? "" : `<span style="font-size:11px;color:var(--ink-soft);"> · udostępniony</span>`}</div>
+      ${sub ? `<div style="font-size:12px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sub}</div>` : ""}
+    </div>
+    ${jestMana && moje ? `<button class="kn-rozmowa" title="Rozmowa w MANA" style="border:none;background:#1a7158;color:#fff;border-radius:9px;padding:7px 12px;font-size:12.5px;cursor:pointer;flex:none;margin-left:auto;white-space:nowrap;">💬 Rozmowa</button>` : (moje ? `<span style="flex:none;margin-left:auto;color:var(--ink-soft);font-size:18px;line-height:1;">›</span>` : "")}
   </div>`);
-  const br = w.querySelector(".kn-rozmowa"); if (br) br.addEventListener("click", () => otworzRozmoweZKontaktu(k));
-  const bm = w.querySelector(".kn-menu"); if (bm) bm.addEventListener("click", () => menuKontaktu(k));
+  if (moje) w.addEventListener("click", () => menuKontaktu(k));
+  const br = w.querySelector(".kn-rozmowa"); if (br) br.addEventListener("click", (e) => { e.stopPropagation(); otworzRozmoweZKontaktu(k); });
   return w;
 }
 async function otworzRozmoweZKontaktu(k) {
