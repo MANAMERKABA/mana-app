@@ -2304,7 +2304,13 @@ async function renderKontakty() {
   box.innerHTML = "";
   if (!kon.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Brak kontaktów — dodaj pierwszy albo „Dodaj z plemienia".</div>`)); return; }
   kon.sort((a, b) => ((b.target_traveler_id ? 1 : 0) - (a.target_traveler_id ? 1 : 0)));
-  for (const k of kon) box.appendChild(kartaKontakt(k));
+  let poprzMana = null;
+  for (const k of kon) {
+    const jm = !!k.target_traveler_id;
+    if (poprzMana === true && jm === false) box.appendChild(el(`<div class="kon-sep" style="height:1px;background:var(--line);margin:12px 6px 16px;"></div>`));
+    box.appendChild(kartaKontakt(k));
+    poprzMana = jm;
+  }
   filtrujKontakty();
 }
 function filtrujKontakty() {
@@ -2312,30 +2318,31 @@ function filtrujKontakty() {
   if (!inp || !box) return;
   const q = (inp.value || "").trim().toLowerCase();
   box.querySelectorAll("div[data-szukaj]").forEach((c) => { c.style.display = (!q || (c.dataset.szukaj || "").includes(q)) ? "" : "none"; });
+  box.querySelectorAll(".kon-sep").forEach((s) => { s.style.display = q ? "none" : ""; });
 }
 function kartaKontakt(k) {
   const moje = k.owner_traveler_id === (TRAVELER && TRAVELER.id);
   const jestMana = !!k.target_traveler_id;
-  const sub = [k.telefon, (k.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
-  const konto = jestMana ? ` <span style="font-size:11px;color:#1a7158;font-weight:600;">· MANA</span>` : "";
-  const zakres = k.plemie_id ? ("👥 " + escP(KON_PLEMIE_MAP[k.plemie_id] || "plemię")) : "🔒 tylko ja";
   const linie = [k.telefon, (k.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
+  const bubel = jestMana
+    ? `<button class="kn-rozmowa" title="Rozmowa w MANA" style="width:36px;height:36px;border:none;border-radius:50%;background:#1a7158;color:#fff;font-size:16px;line-height:1;cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center;">💬</button>`
+    : `<span title="poza MANĄ" style="width:36px;height:36px;border-radius:50%;background:#e7e3d9;flex:none;display:inline-block;"></span>`;
   const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
-    <div style="display:flex;align-items:center;gap:8px;">
-      <span title="${jestMana ? "w MANIE" : "poza MANĄ"}" style="width:9px;height:9px;border-radius:50%;flex:none;background:${jestMana ? "#1a9e5f" : "#cdc8bc"};"></span>
-      <div style="font-size:15px;font-weight:500;">${esc(k.imie || "(bez imienia)")}${konto}</div>
+    <div style="display:flex;align-items:center;gap:11px;">
+      ${bubel}
+      <div style="min-width:0;flex:1;">
+        <div style="font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(k.imie || "(bez imienia)")}</div>
+        ${linie ? `<div style="font-size:12.5px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${linie}</div>` : ""}
+        ${k.typ ? `<div style="font-size:11px;color:var(--ink-soft);">${escP(k.typ)}</div>` : ""}
+      </div>
     </div>
-    ${linie ? `<div style="font-size:12.5px;color:var(--ink);margin-top:3px;">${linie}</div>` : ""}
-    ${k.typ ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${escP(k.typ)}</div>` : ""}
-    ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:3px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
-    <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${zakres}${moje ? "" : " · udostępniony Tobie"}</div>
+    ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
     ${moje ? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-      ${jestMana ? `<button class="kn-rozmowa" style="border:none;background:#1a7158;color:#fff;border-radius:8px;font-size:12px;padding:6px 12px;cursor:pointer;">💬 Rozmowa</button>` : ""}
       ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;">📞 Zadzwoń</a>` : ""}
       <button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
       <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
       <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
-    </div>` : ""}
+    </div>` : `<div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">udostępniony Tobie</div>`}
   </div>`);
   const brz = w.querySelector(".kn-rozmowa"); if (brz) brz.addEventListener("click", () => otworzRozmoweZKontaktu(k));
   const be = w.querySelector(".kn-edit"); if (be) be.addEventListener("click", () => formKontakt(k));
