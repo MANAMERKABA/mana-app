@@ -2317,16 +2317,30 @@ function kartaKontakt(k) {
   const moje = k.owner_traveler_id === (TRAVELER && TRAVELER.id);
   const jestMana = !!k.target_traveler_id;
   const sub = [k.telefon, (k.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
-  const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:7px;cursor:${moje ? "pointer" : "default"};">
-    <span title="${jestMana ? "w MANIE" : "poza MANĄ"}" style="width:9px;height:9px;border-radius:50%;flex:none;background:${jestMana ? "#1a9e5f" : "#cdc8bc"};"></span>
-    <div style="flex:1;min-width:0;">
-      <div style="font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(k.imie || "(bez imienia)")}${jestMana ? `<span style="font-size:11px;color:#1a7158;font-weight:600;"> · MANA</span>` : ""}${moje ? "" : `<span style="font-size:11px;color:var(--ink-soft);"> · udostępniony</span>`}</div>
-      ${sub ? `<div style="font-size:12px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${sub}</div>` : ""}
+  const konto = jestMana ? ` <span style="font-size:11px;color:#1a7158;font-weight:600;">· MANA</span>` : "";
+  const zakres = k.plemie_id ? ("👥 " + escP(KON_PLEMIE_MAP[k.plemie_id] || "plemię")) : "🔒 tylko ja";
+  const linie = [k.telefon, (k.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
+  const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span title="${jestMana ? "w MANIE" : "poza MANĄ"}" style="width:9px;height:9px;border-radius:50%;flex:none;background:${jestMana ? "#1a9e5f" : "#cdc8bc"};"></span>
+      <div style="font-size:15px;font-weight:500;">${esc(k.imie || "(bez imienia)")}${konto}</div>
     </div>
-    ${jestMana && moje ? `<button class="kn-rozmowa" title="Rozmowa w MANA" style="border:none;background:#1a7158;color:#fff;border-radius:9px;padding:7px 12px;font-size:12.5px;cursor:pointer;flex:none;margin-left:auto;white-space:nowrap;">💬 Rozmowa</button>` : (moje ? `<span style="flex:none;margin-left:auto;color:var(--ink-soft);font-size:18px;line-height:1;">›</span>` : "")}
+    ${linie ? `<div style="font-size:12.5px;color:var(--ink);margin-top:3px;">${linie}</div>` : ""}
+    ${k.typ ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">${escP(k.typ)}</div>` : ""}
+    ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:3px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
+    <div style="font-size:11px;color:var(--ink-soft);margin-top:2px;">${zakres}${moje ? "" : " · udostępniony Tobie"}</div>
+    ${moje ? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+      ${jestMana ? `<button class="kn-rozmowa" style="border:none;background:#1a7158;color:#fff;border-radius:8px;font-size:12px;padding:6px 12px;cursor:pointer;">💬 Rozmowa</button>` : ""}
+      ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;">📞 Zadzwoń</a>` : ""}
+      <button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
+      <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
+      <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
+    </div>` : ""}
   </div>`);
-  if (moje) w.addEventListener("click", () => menuKontaktu(k));
-  const br = w.querySelector(".kn-rozmowa"); if (br) br.addEventListener("click", (e) => { e.stopPropagation(); otworzRozmoweZKontaktu(k); });
+  const brz = w.querySelector(".kn-rozmowa"); if (brz) brz.addEventListener("click", () => otworzRozmoweZKontaktu(k));
+  const be = w.querySelector(".kn-edit"); if (be) be.addEventListener("click", () => formKontakt(k));
+  const bu = w.querySelector(".kn-usun"); if (bu) bu.addEventListener("click", () => usunKontakt(k));
+  const bz = w.querySelector(".kn-zapros"); if (bz) bz.addEventListener("click", () => zaprosKontakt(k));
   return w;
 }
 async function otworzRozmoweZKontaktu(k) {
