@@ -686,10 +686,13 @@
       <span class="m-hyz-tytul">Więzi</span>
       <span class="m-user"></span>
     </div>
-    <div style="display:flex;gap:6px;padding:4px 16px 2px;">
-      <button class="wiezi-seg wiezi-seg--on" data-seg="kon" style="flex:1;background:#1a7158;color:#fff;border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">📇 Kontakty</button>
-      <button class="wiezi-seg" data-seg="ple" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">👥 Plemiona<span class="wiezi-badge" id="wiezi-badge-ple" style="display:none;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;margin-left:5px;vertical-align:middle;"></span></button>
-      <button class="wiezi-seg" data-seg="roz" style="flex:1;background:#efece3;color:var(--ink);border:none;border-radius:8px;padding:8px;font-size:13px;cursor:pointer;">💬 Rozmowy<span class="wiezi-badge" id="wiezi-badge-roz" style="display:none;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;margin-left:5px;vertical-align:middle;"></span></button>
+    <div style="padding:8px 16px 4px;">
+      <div style="font-size:11px;color:var(--ink-soft);margin:0 2px 5px;letter-spacing:.03em;">Wybierz widok:</div>
+      <div style="display:flex;gap:6px;background:#e5dfd2;border-radius:13px;padding:5px;">
+        <button class="wiezi-seg wiezi-seg--on" data-seg="kon" style="flex:1;border:none;border-radius:9px;padding:10px 6px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,box-shadow .15s;">📇 Kontakty</button>
+        <button class="wiezi-seg" data-seg="ple" style="flex:1;border:none;border-radius:9px;padding:10px 6px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,box-shadow .15s;">👥 Plemiona<span class="wiezi-badge" id="wiezi-badge-ple" style="display:none;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;margin-left:5px;vertical-align:middle;"></span></button>
+        <button class="wiezi-seg" data-seg="roz" style="flex:1;border:none;border-radius:9px;padding:10px 6px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,box-shadow .15s;">💬 Rozmowy<span class="wiezi-badge" id="wiezi-badge-roz" style="display:none;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;margin-left:5px;vertical-align:middle;"></span></button>
+      </div>
     </div>
     <div id="wiezi-sekcja-kon">
       <div style="padding:10px 16px 4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
@@ -1809,8 +1812,9 @@ async function odswiezBadgeWiezi() {
 function przelaczWiezi(seg) {
   document.querySelectorAll(".wiezi-seg").forEach((b) => {
     const on = b.dataset.seg === seg;
-    b.style.background = on ? "#1a7158" : "#efece3";
-    b.style.color = on ? "#fff" : "var(--ink)";
+    b.style.background = on ? "#1a7158" : "transparent";
+    b.style.color = on ? "#fff" : "#5c5647";
+    b.style.boxShadow = on ? "0 1px 5px rgba(0,0,0,.2)" : "none";
   });
   const k = $("wiezi-sekcja-kon"), p = $("wiezi-sekcja-ple"), r = $("wiezi-sekcja-roz");
   if (k) k.style.display = seg === "kon" ? "" : "none";
@@ -2338,7 +2342,7 @@ function kartaKontakt(k) {
     </div>
     ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
     ${moje ? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-      ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;">📞 Zadzwoń</a>` : ""}
+      ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;color:#c0392b;">📞 Zadzwoń</a>` : ""}
       <button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
       <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
       <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
