@@ -2383,12 +2383,12 @@ function kartaKontakt(k) {
       </div>
     </div>
     ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
-    ${moje ? `<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
       ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;color:#c0392b;display:inline-flex;align-items:center;gap:4px;"><svg viewBox="0 0 24 24" width="13" height="13" fill="#c0392b" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>Zadzwoń</a>` : ""}
-      <button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
+      ${moje ? `<button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
       <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
-      <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>
-    </div>` : `<div style="font-size:11px;color:var(--ink-soft);margin-top:6px;">udostępniony Tobie</div>`}
+      <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>` : `<span style="font-size:11px;color:var(--ink-soft);">udostępniony Tobie</span>`}
+    </div>
   </div>`);
   const brz = w.querySelector(".kn-rozmowa"); if (brz) brz.addEventListener("click", () => otworzRozmoweZKontaktu(k));
   const be = w.querySelector(".kn-edit"); if (be) be.addEventListener("click", () => formKontakt(k));
@@ -2397,7 +2397,13 @@ function kartaKontakt(k) {
   return w;
 }
 async function otworzRozmoweZKontaktu(k) {
-  const { data, error } = await supabase.rpc("rozpocznij_rozmowe", { p_kontakt_id: k.id });
+  const moje = k.owner_traveler_id === (TRAVELER && TRAVELER.id);
+  let data, error;
+  if (moje) {
+    ({ data, error } = await supabase.rpc("rozpocznij_rozmowe", { p_kontakt_id: k.id }));
+  } else if (k.target_traveler_id) {
+    ({ data, error } = await supabase.rpc("rozpocznij_rozmowe_traveler", { p_target: k.target_traveler_id }));
+  } else { trzosToast("Ta osoba nie ma jeszcze konta MANA."); return; }
   if (error) { trzosToast("Nie udało się: " + error.message); return; }
   if (!data || !data.ok) { trzosToast(data && data.error === "nie_w_manie" ? "Ta osoba nie ma jeszcze konta MANA." : ((data && data.error) || "Nie udało się.")); return; }
   await otworzRozmowaPoId(data.plemie_id);
