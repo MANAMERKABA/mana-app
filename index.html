@@ -5716,6 +5716,19 @@ function oknoWydarzenia(opcje) {
         } else {
           ({ error } = await supabase.from("events").update({ ...rekord, rozjazd: true }).eq("id", ev.id));
         }
+      } else if (dlaRaw === "__wszyscy__") {
+        // PROMOCJA osobistego wydarzenia na grupowe: nadaj grupa_id + utwórz kopie dla pozostałych członków
+        const pl = plemionaData.find((x) => x.id === ktoSel.value);
+        const czl = (pl && pl.czlonkowie) || [];
+        const gid = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : null;
+        const { error: e1 } = await supabase.from("events").update({ ...rekord, grupa_id: gid }).eq("id", ev.id);
+        const inni = czl.filter((c) => c.traveler_id !== ev.traveler_id);
+        let e2 = null;
+        if (inni.length) {
+          const rows = inni.map((c) => ({ ...rekord, grupa_id: gid, traveler_id: c.traveler_id, typ: "wydarzenie", utworzony_przez: TRAVELER.id, status: (c.traveler_id === TRAVELER.id || c.zarzadzany) ? "planowane" : "proponowane" }));
+          ({ error: e2 } = await supabase.from("events").insert(rows));
+        }
+        error = e1 || e2;
       } else {
         ({ error } = await supabase.from("events").update(rekord).eq("id", ev.id));
       }
