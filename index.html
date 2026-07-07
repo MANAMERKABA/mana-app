@@ -5144,15 +5144,17 @@ async function renderKalendarz() {
     if (kier > 0) { track.appendChild(staraTresc); track.appendChild(nowy); track.style.transform = "translate3d(0,0,0)"; }
     else { track.appendChild(nowy); track.appendChild(staraTresc); track.style.transform = "translate3d(-50%,0,0)"; }
     box.appendChild(track);
+    ustawScrollGodziny(nowy);
     void track.offsetWidth; // wymuś reflow z pozycją startową
     track.style.transition = "transform .3s cubic-bezier(.33,0,.2,1)";
     track.style.transform = kier > 0 ? "translate3d(-50%,0,0)" : "translate3d(0,0,0)";
     let zamkniete = false;
-    const finisz = () => { if (zamkniete) return; zamkniete = true; box.innerHTML = ""; box.style.overflow = ""; box.style.position = ""; box.appendChild(nowy); };
+    const finisz = () => { if (zamkniete) return; zamkniete = true; box.innerHTML = ""; box.style.overflow = ""; box.style.position = ""; box.appendChild(nowy); ustawScrollGodziny(nowy); };
     track.addEventListener("transitionend", finisz, { once: true });
     setTimeout(finisz, 420);
   } else {
     box.appendChild(nowy);
+    ustawScrollGodziny(nowy);
   }
   aktualizujSidebar();
   wczytajPropozycjeWydarzen();
@@ -5607,6 +5609,20 @@ async function renderMiesiacGrid(box, od) {
 }
 
 /* --- widok Dziś / 3 dni / Tydzień: siatka czasu --- */
+function ustawScrollGodziny(root) {
+  const zrob = () => {
+    const scr = root && root.querySelector(".m-tg__scroll");
+    if (!scr || !scr.clientHeight) return false;
+    const teraz = root.querySelector(".m-tg__teraz");
+    const H = 44;
+    const target = teraz ? ((parseFloat(teraz.style.top) || 0) - scr.clientHeight / 2) : (8 * H - scr.clientHeight / 2);
+    scr.scrollTop = Math.max(0, target);
+    return true;
+  };
+  if (zrob()) return;
+  requestAnimationFrame(() => { if (!zrob()) setTimeout(zrob, 60); });
+  setTimeout(zrob, 140);
+}
 async function renderSiatka(box, od, dni) {
   const H = 44;
   const teraz = czesciWarszawy(new Date());
