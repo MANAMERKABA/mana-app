@@ -5039,6 +5039,7 @@ if (Rozpoznanie) {
 let widokKal = "3dni";
 let kotwica = dzisWarszawa();
 let _evCache = null, _evCacheTs = 0, _kalKier = 0;
+let _miesOstatni = null, _miesPokazPrzeszle = false;
 function invalidujEvCache() { _evCache = null; }
 let pokazRocznice = true;
 let zapytanieSzukaj = "";
@@ -5117,9 +5118,9 @@ async function renderKalendarz() {
     <div class="m-kalbar">
       <button class="m-kalrok" id="kal-rok" title="Widok roku" style="border:none;background:none;font-size:13px;font-weight:700;color:#1a7158;cursor:pointer;padding:0 4px;">${z.od.getFullYear()}</button>
       <span class="m-kaletyk">${esc(etykietaOkresu(z))}</span>
-      <button class="m-kalnav" data-k="-1" aria-label="Wstecz">&#8249;</button>
+      ${z.rok ? "" : '<button class="m-kalnav" data-k="-1" aria-label="Wstecz">&#8249;</button>'}
       <button class="m-kaldzis" id="kal-dzis">Dziś</button>
-      <button class="m-kalnav" data-k="1" aria-label="Naprzód">&#8250;</button>
+      ${z.rok ? "" : '<button class="m-kalnav" data-k="1" aria-label="Naprzód">&#8250;</button>'}
       <button class="m-kalmenu" id="kal-menu" aria-label="Podgląd" style="margin-left:auto;">&#9776;</button>
       <button class="m-kalmenu" id="kal-szukaj" aria-label="Szukaj">&#128269;</button>
       <button class="m-kalmenu" id="kal-plus" aria-label="Nowe wydarzenie" style="font-weight:700;">&#65291;</button>
@@ -5133,7 +5134,7 @@ async function renderKalendarz() {
   $("kal-plus").addEventListener("click", () => oknoWydarzenia({ data: new Date(kotwica) }));
   $("kal-szukaj").addEventListener("click", () => { const si = $("hyz-szukaj"); if (si) { si.scrollIntoView({ block: "center", behavior: "smooth" }); si.focus(); } });
   const box = $("kal-tresc");
-  podepnijSwipe(box);
+  if (!z.rok) podepnijSwipe(box); // w widoku roku tylko góra/dół (pion), bez lewo/prawo
   const nowy = el(`<div style="flex:0 0 50%;min-width:0;will-change:transform;"></div>`);
   if (z.rok) await renderRokGrid(nowy, z.od.getFullYear());
   else if (z.miesiac) await renderMiesiacGrid(nowy, z.od);
@@ -5535,6 +5536,8 @@ async function renderMiesiacGrid(box, od) {
   const pierwszyDow = (new Date(rok, mies, 1).getDay() + 6) % 7;
   const dzisD = czesciWarszawy(new Date());
   const dzisTen = (dzisD.rok === rok && dzisD.mies - 1 === mies) ? dzisD.dzien : -1;
+  const _mk = `${rok}-${mies}`;
+  if (_miesOstatni !== _mk) { _miesPokazPrzeszle = false; _miesOstatni = _mk; } // nowy miesiąc → reset „wszystkie"
 
   const wyd = await wczytajWydarzeniaZakres(
     new Date(rok, mies, 1), new Date(rok, mies + 1, 1));
@@ -5585,10 +5588,24 @@ async function renderMiesiacGrid(box, od) {
 
   const lista = document.createElement("div");
   lista.className = "m-mlist";
-  if (!wyd.length) {
-    lista.appendChild(el(`<div class="m-pusto" style="padding:8px 4px">Brak wydarzeń w tym miesiącu.</div>`));
+  // Bieżący miesiąc = wyjątek: domyślnie od DZIŚ do końca (przycisk „wszystkie"). Przeszłe i przyszłe miesiące = całość.
+  const biezacyMies = dzisTen > 0;
+  let doPokazania = wyd, ukryte = 0;
+  if (biezacyMies && !_miesPokazPrzeszle) {
+    const prog = new Date(rok, mies, dzisTen); prog.setHours(0, 0, 0, 0);
+    const przeszly = (e) => new Date(e.koniec || e.data_czas) < prog;
+    ukryte = wyd.filter(przeszly).length;
+    doPokazania = wyd.filter((e) => !przeszly(e));
+  }
+  if (biezacyMies && (ukryte > 0 || _miesPokazPrzeszle)) {
+    const btn = el(`<button style="border:1px solid var(--line);background:var(--surface);border-radius:9px;font-size:12px;padding:5px 11px;margin:2px 4px 8px;cursor:pointer;color:var(--ink-soft);">${_miesPokazPrzeszle ? "↑ Tylko nadchodzące" : `Pokaż wszystkie (${ukryte} minione)`}</button>`);
+    btn.addEventListener("click", () => { _miesPokazPrzeszle = !_miesPokazPrzeszle; renderKalendarz(); });
+    lista.appendChild(btn);
+  }
+  if (!doPokazania.length) {
+    lista.appendChild(el(`<div class="m-pusto" style="padding:8px 4px">${biezacyMies ? "Nic już przed Tobą w tym miesiącu." : "Brak wydarzeń w tym miesiącu."}</div>`));
   } else {
-    for (const e of wyd) {
+    for (const e of doPokazania) {
       const zakres = etykietaZakresuCalodziennego(e);
       const kiedy = zakres
         ? zakres
