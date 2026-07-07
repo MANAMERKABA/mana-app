@@ -720,6 +720,16 @@
     <div class="m-stopka"></div>
   </div>
 
+  <div id="m-widok-puls" style="display:none">
+    <div class="m-hyz-bar">
+      <button class="m-back" id="m-back-puls">&#8592; Ekran startowy</button>
+      <span class="m-hyz-tytul">Puls</span>
+      <span class="m-user"></span>
+    </div>
+    <div id="puls-tresc" style="padding:10px 16px 30px;"></div>
+    <div class="m-stopka"></div>
+  </div>
+
 </div>
 
 <div class="m-loader" id="m-loader">Wczytuję MANĘ…</div>
@@ -743,10 +753,12 @@ const POKOJE = [
     ikona: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>' },
   { nazwa: "Egzamin", zywy: true, akcja: "egzamin",
     ikona: '<path d="M22 10L12 5 2 10l10 5 10-5z"/><path d="M6 12v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5"/>' },
-  { nazwa: "Puls", zywy: false,
+  { nazwa: "Puls", zywy: true, akcja: "puls",
     ikona: '<path d="M20.8 5.6a5.5 5.5 0 0 0-8.8-1.4L12 4l-.1-.1A5.5 5.5 0 0 0 3.2 11c1.6 4.3 8.8 9 8.8 9s7.2-4.7 8.8-9z"/>' },
   { nazwa: "Gawęda", zywy: false,
     ikona: '<path d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 21l2.2-5.4A8.4 8.4 0 1 1 21 11.5z"/>' },
+  { nazwa: "Ród", zywy: false,
+    ikona: '<circle cx="12" cy="5" r="2.5"/><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M12 7.5v3.5M6 16.5v-2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2"/>' },
 ];
 const KOLOR_PRIO = { niski: "#9aa0a6", normalny: "#e0a020", wysoki: "#e07a20", pilny: "#d23b3b" };
 const KATEGORIE = ["praca", "rodzina", "prywatne", "zdrowie", "inne"];
@@ -1507,6 +1519,7 @@ function pokazWidok(nazwa) {
   $("m-widok-sejf").style.display = nazwa === "sejf" ? "" : "none";
   $("m-widok-wiezi").style.display = nazwa === "wiezi" ? "" : "none";
   $("m-widok-egzamin").style.display = nazwa === "egzamin" ? "" : "none";
+  $("m-widok-puls").style.display = nazwa === "puls" ? "" : "none";
   if (nazwa === "ekran" && typeof TRAVELER !== "undefined" && TRAVELER && typeof wczytajDzien === "function") wczytajDzien();
   window.scrollTo(0, 0);
 }
@@ -1515,6 +1528,7 @@ $("m-back-trzos").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-wiezi").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-sejf").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-egzamin").addEventListener("click", () => pokazWidok("ekran"));
+$("m-back-puls").addEventListener("click", () => pokazWidok("ekran"));
 
 /* ════════════════════════════════════════════════════════════════════
    TRZOS — osobiste finanse: przychody + koszty + paragony/OCR.
@@ -1834,6 +1848,70 @@ let sejfSzukaj = "";
 let SEJF_PLEMIE_MAP = {};
 function otworzSejf() { pokazWidok("sejf"); renderSejf(); }
 function otworzWiezi() { pokazWidok("wiezi"); przelaczWiezi("kon"); odswiezBadgeWiezi(); }
+/* PULS — prywatny notatnik ciała (sen/samopoczucie) + zdjęcia wyników badań. Dane o zdrowiu (Art.9): tylko właściciel, docelowo pod pieczęcią. */
+function otworzPuls() { pokazWidok("puls"); renderPuls(); }
+async function renderPuls() {
+  const box = $("puls-tresc"); if (!box) return;
+  box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
+  const { data: wpisy = [], error } = await supabase.from("puls_wpisy").select("*").order("created_at", { ascending: false }).limit(200);
+  box.innerHTML = "";
+  const form = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;line-height:1.45;">🔒 Prywatny notatnik ciała — tylko Ty. Sen, samopoczucie, objawy, zdjęcia wyników badań.</div>
+    <textarea id="puls-tekst" placeholder="np. Noc bez pocenia, 2× wstawałem na siku, sen 0:30–8:30" style="width:100%;box-sizing:border-box;min-height:62px;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;resize:vertical;"></textarea>
+    <div id="puls-podglad" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;"></div>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+      <label style="${BG}font-size:12.5px;padding:7px 12px;cursor:pointer;">📷 Zdjęcie badań<input id="puls-foto" type="file" accept="image/*" multiple style="display:none;"></label>
+      <button id="puls-zapisz" style="border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:9px;padding:8px 16px;font-size:14px;cursor:pointer;margin-left:auto;">Zapisz</button>
+    </div>
+  </div>`);
+  box.appendChild(form);
+  const pliki = [];
+  const podglad = form.querySelector("#puls-podglad");
+  form.querySelector("#puls-foto").addEventListener("change", (e) => {
+    for (const f of e.target.files) pliki.push(f);
+    e.target.value = "";
+    podglad.innerHTML = pliki.map((f) => `<span style="font-size:11px;background:#efece3;border-radius:6px;padding:3px 8px;">${escP(f.name)}</span>`).join("");
+  });
+  form.querySelector("#puls-zapisz").addEventListener("click", async () => {
+    const tekst = form.querySelector("#puls-tekst").value.trim();
+    if (!tekst && !pliki.length) { trzosToast("Wpisz coś albo dodaj zdjęcie."); return; }
+    const btn = form.querySelector("#puls-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
+    const sciezki = [];
+    for (const f of pliki) {
+      const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
+      const sciezka = `traveler/${TRAVELER.id}/puls/${crypto.randomUUID()}.${ext}`;
+      const up = await supabase.storage.from("dokumenty").upload(sciezka, f, { contentType: f.type || undefined, upsert: false });
+      if (!up.error) sciezki.push(sciezka);
+    }
+    const { error: ie } = await supabase.from("puls_wpisy").insert({ traveler_id: TRAVELER.id, tekst: tekst || null, zdjecia: sciezki });
+    if (ie) { trzosToast("Błąd: " + ie.message); btn.disabled = false; btn.textContent = "Zapisz"; return; }
+    trzosToast("Zapisano w Pulsie ✓"); renderPuls();
+  });
+  if (error) { box.appendChild(el(`<div style="color:#c4513a;">Błąd: ${escP(error.message)}</div>`)); return; }
+  if (!wpisy.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:13.5px;padding:6px 2px;">Jeszcze nic tu nie ma. Zapisz pierwszą notatkę o ciele.</div>`)); return; }
+  for (const w of wpisy) box.appendChild(await kartaPuls(w));
+}
+async function kartaPuls(w) {
+  const data = new Date(w.created_at).toLocaleString("pl-PL", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: TZ });
+  const card = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;">
+    <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">${escP(data)}</div>
+    ${w.tekst ? `<div style="font-size:14px;white-space:pre-wrap;">${esc(w.tekst)}</div>` : ""}
+    <div class="puls-foto-box" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:${w.tekst ? "8" : "0"}px;"></div>
+    <button class="puls-usun" style="border:none;background:none;color:#c0392b;font-size:11.5px;cursor:pointer;padding:5px 0 0;">Usuń</button>
+  </div>`);
+  const fb = card.querySelector(".puls-foto-box");
+  const zdj = Array.isArray(w.zdjecia) ? w.zdjecia : [];
+  for (const s of zdj) {
+    try { const { data: su } = await supabase.storage.from("dokumenty").createSignedUrl(s, 600); if (su && su.signedUrl) fb.appendChild(el(`<a href="${su.signedUrl}" target="_blank" rel="noopener"><img src="${su.signedUrl}" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);"></a>`)); } catch (e) {}
+  }
+  card.querySelector(".puls-usun").addEventListener("click", async () => {
+    if (!confirm("Usunąć ten wpis?")) return;
+    if (zdj.length) { try { await supabase.storage.from("dokumenty").remove(zdj); } catch (e) {} }
+    await supabase.from("puls_wpisy").delete().eq("id", w.id);
+    trzosToast("Usunięto."); renderPuls();
+  });
+  return card;
+}
 async function odswiezBadgeWiezi() {
   try {
     const [rn, rp] = await Promise.all([
@@ -3685,6 +3763,8 @@ function renderPokoje() {
     if (p.akcja === "sejf") btn.addEventListener("click", otworzSejf);
     if (p.akcja === "wiezi") btn.addEventListener("click", otworzWiezi);
     if (p.akcja === "egzamin") btn.addEventListener("click", otworzEgzamin);
+    if (p.akcja === "puls") btn.addEventListener("click", otworzPuls);
+    if (!p.zywy) btn.addEventListener("click", () => { if (typeof trzosToast === "function") trzosToast(p.nazwa + " — wkrótce"); });
     btn.dataset.key = p.nazwa;
     ukladDraggable(btn, wrap);
     wrap.appendChild(btn);
@@ -3697,8 +3777,9 @@ const POKOJE_META = {
   "Sejf": { opis: "Dokumenty pod kluczem — umowy, polisy, dowód rej.", sub: "" },
   "Więzi": { opis: "Ludzie i grupy — kontakty, plemiona, rozmowy w jednym miejscu.", sub: "" },
   "Egzamin": { opis: "Plan nauki rozłożony w czasie plus fiszki.", sub: "" },
-  "Puls": { opis: "Ciało: samopoczucie, badania, nawyki.", sub: "wkrótce" },
-  "Gawęda": { opis: "Rozmowa z Mędrcem — wsparcie i mądrość społeczności.", sub: "wkrótce" }
+  "Puls": { opis: "Notatnik ciała — sen, samopoczucie, zdjęcia wyników badań.", sub: "" },
+  "Gawęda": { opis: "Rozmowa z Mędrcem — wsparcie i mądrość społeczności.", sub: "wkrótce" },
+  "Ród": { opis: "Twój ród — pochodzenie, drzewo rodzinne, historia rodziny.", sub: "wkrótce" }
 };
 function przypietePokoje() {
   const u = (TRAVELER && TRAVELER.uklad_pokoi && TRAVELER.uklad_pokoi.mana) || null;
