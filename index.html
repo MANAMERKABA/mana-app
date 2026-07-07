@@ -214,8 +214,25 @@
 
   /* ---- POKÓJ HORYZONT ---- */
   .m-hyz-bar { display: flex; align-items: center; gap: 10px; padding: 16px 18px 8px; }
-  .m-back { background: none; border: none; cursor: pointer; font-family: var(--font-body); font-size: 13px; color: var(--ink-soft); padding: 6px 8px 6px 0; }
-  .m-back:hover { color: var(--turkus); }
+  .m-back { display: none !important; }
+  .m-hyz-tytul { cursor: pointer; user-select: none; display: inline-flex; align-items: center; gap: 4px; }
+  .m-hyz-tytul::after { content: "▾"; font-size: 0.62em; color: var(--ink-soft); position: relative; top: 1px; }
+  .m-nav-ovl { position: fixed; inset: 0; background: rgba(24,21,16,.34); z-index: 9998; display: flex; justify-content: center; align-items: flex-start; }
+  .m-nav-panel { background: var(--surface); width: min(440px, 94vw); margin-top: 7vh; border-radius: 16px; box-shadow: 0 18px 52px rgba(0,0,0,.32); padding: 8px; max-height: 84vh; overflow-y: auto; transform: translateY(-14px); opacity: 0; transition: transform .18s ease, opacity .18s ease; }
+  .m-nav-panel.on { transform: translateY(0); opacity: 1; }
+  .m-nav-sekcja { font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); padding: 12px 12px 4px; }
+  .m-nav-row { display: flex; align-items: center; gap: 11px; padding: 12px; border-radius: 11px; cursor: pointer; }
+  .m-nav-row:hover { background: var(--bg); }
+  .m-nav-row--on { background: var(--turkus-bg); }
+  .m-nav-ico { width: 26px; flex: 0 0 26px; display: flex; align-items: center; justify-content: center; }
+  .m-nav-ico svg { width: 22px; height: 22px; }
+  .m-nav-nazwa { font-size: 15px; font-weight: 600; color: var(--ink); }
+  .m-nav-chev { margin-left: auto; color: var(--ink-soft); font-size: 12px; }
+  .m-nav-locked .m-nav-nazwa { color: var(--ink-soft); }
+  .m-nav-detal { padding: 0 12px 12px 49px; font-size: 13px; color: var(--ink-soft); line-height: 1.45; }
+  .m-nav-detal-akcja { margin-top: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .m-nav-btn { border: none; border-radius: 8px; padding: 7px 13px; font-size: 13px; cursor: pointer; }
+  .m-nav-cena { font-size: 13px; color: var(--ink); font-weight: 600; }
   .m-hyz-tytul { font-family: var(--font-display); font-size: 20px; font-weight: 600; }
   .m-warstwa { margin-bottom: 4px; }
   .m-warstwa__head { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); padding: 12px 18px 4px; }
@@ -1511,7 +1528,9 @@ $("m-logout").addEventListener("click", async () => {
 /* ====================================================================
    PRZEŁĄCZANIE WIDOKÓW
    ==================================================================== */
+let WIDOK_AKTYWNY = "ekran";
 function pokazWidok(nazwa) {
+  WIDOK_AKTYWNY = nazwa;
   // "" zamiast "block" — inaczej inline style nadpisuje desktopowe display: grid
   $("m-widok-ekran").style.display = nazwa === "ekran" ? "" : "none";
   $("m-widok-horyzont").style.display = nazwa === "horyzont" ? "" : "none";
@@ -1529,6 +1548,80 @@ $("m-back-wiezi").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-sejf").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-egzamin").addEventListener("click", () => pokazWidok("ekran"));
 $("m-back-puls").addEventListener("click", () => pokazWidok("ekran"));
+
+/* ════════════════════════════════════════════════════════════════════
+   NAWIGATOR POKOI — mechanizm wpięty w KAŻDY nagłówek pokoju.
+   Tap w tytuł (np. „Horyzont ▾") → lista: Ekran startowy + Twoje pokoje
+   (w kolejności z ekranu startowego) + „Więcej w MANA" (reszta, z opisem
+   i miejscem na cenę/„Odblokuj" — płatności przygotowane, nie pobierane).
+   Ta sama filozofia co kontekstowy „2026" w kalendarzu: nagłówek = ster.
+   ════════════════════════════════════════════════════════════════════ */
+function idzDoPokoju(nazwa) {
+  const p = POKOJE.find((x) => x.nazwa === nazwa);
+  if (!p) return;
+  if (!p.zywy) { if (typeof trzosToast === "function") trzosToast(nazwa + " — wkrótce"); return; }
+  const fn = { horyzont: otworzHoryzont, trzos: otworzTrzos, sejf: otworzSejf, wiezi: otworzWiezi, egzamin: otworzEgzamin, puls: otworzPuls }[p.akcja];
+  if (fn) fn();
+}
+function otworzNawigator() {
+  const stary = $("m-nawigator"); if (stary) { stary.remove(); return; }
+  const twoje = (typeof przypietePokoje === "function") ? przypietePokoje() : POKOJE.filter((p) => p.zywy).map((p) => p.nazwa);
+  const twojeSet = new Set(twoje);
+  const reszta = POKOJE.map((p) => p.nazwa).filter((n) => !twojeSet.has(n));
+  const ovl = el(`<div id="m-nawigator" class="m-nav-ovl"></div>`);
+  const panel = el(`<div class="m-nav-panel"></div>`);
+  const zamknij = () => ovl.remove();
+  const ikonaHtml = (p) => `<svg viewBox="0 0 24 24" fill="none" stroke="${p && p.zywy ? "#1a7158" : "#8c887e"}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p ? p.ikona : ""}</svg>`;
+
+  const home = el(`<div class="m-nav-row${WIDOK_AKTYWNY === "ekran" ? " m-nav-row--on" : ""}"><span class="m-nav-ico"><svg viewBox="0 0 24 24" fill="none" stroke="#1a7158" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg></span><span class="m-nav-nazwa">Ekran startowy</span></div>`);
+  home.addEventListener("click", () => { zamknij(); pokazWidok("ekran"); });
+  panel.appendChild(home);
+
+  panel.appendChild(el(`<div class="m-nav-sekcja">Twoje pokoje</div>`));
+  for (const n of twoje) {
+    const p = POKOJE.find((x) => x.nazwa === n); if (!p) continue;
+    const czyOn = WIDOK_AKTYWNY === p.akcja;
+    const row = el(`<div class="m-nav-row${czyOn ? " m-nav-row--on" : ""}"><span class="m-nav-ico">${ikonaHtml(p)}</span><span class="m-nav-nazwa">${esc(p.nazwa)}</span></div>`);
+    row.addEventListener("click", () => { zamknij(); idzDoPokoju(p.nazwa); });
+    panel.appendChild(row);
+  }
+
+  if (reszta.length) {
+    panel.appendChild(el(`<div class="m-nav-sekcja">Więcej w MANA</div>`));
+    for (const n of reszta) {
+      const p = POKOJE.find((x) => x.nazwa === n); if (!p) continue;
+      const meta = (typeof POKOJE_META !== "undefined" && POKOJE_META[n]) || {};
+      const row = el(`<div class="m-nav-row m-nav-locked"><span class="m-nav-ico">${ikonaHtml(p)}</span><span class="m-nav-nazwa">${esc(p.nazwa)}</span><span class="m-nav-chev">▾</span></div>`);
+      const detal = el(`<div class="m-nav-detal" style="display:none;">${esc(meta.opis || "")}<div class="m-nav-detal-akcja"></div></div>`);
+      const akcjaBox = detal.querySelector(".m-nav-detal-akcja");
+      if (p.zywy) {
+        const b = el(`<button class="m-nav-btn" style="background:#1a7158;color:#fff;">Otwórz</button>`);
+        b.addEventListener("click", () => { zamknij(); idzDoPokoju(p.nazwa); });
+        akcjaBox.appendChild(b);
+      } else if (meta.cena) {
+        akcjaBox.appendChild(el(`<span class="m-nav-cena">${esc(meta.cena)}</span>`));
+        const b = el(`<button class="m-nav-btn" style="background:#1a7158;color:#fff;">Odblokuj</button>`);
+        b.addEventListener("click", () => { if (typeof trzosToast === "function") trzosToast("Płatności wkrótce — przygotowujemy tę możliwość."); });
+        akcjaBox.appendChild(b);
+      } else {
+        akcjaBox.appendChild(el(`<span class="m-nav-cena" style="color:#8c887e;font-weight:500;">Wkrótce</span>`));
+      }
+      row.addEventListener("click", () => {
+        const pokaz = detal.style.display === "none";
+        detal.style.display = pokaz ? "block" : "none";
+        const ch = row.querySelector(".m-nav-chev"); if (ch) ch.textContent = pokaz ? "▴" : "▾";
+      });
+      panel.appendChild(row);
+      panel.appendChild(detal);
+    }
+  }
+
+  ovl.appendChild(panel);
+  ovl.addEventListener("click", (e) => { if (e.target === ovl) zamknij(); });
+  document.body.appendChild(ovl);
+  requestAnimationFrame(() => panel.classList.add("on"));
+}
+document.querySelectorAll(".m-hyz-tytul").forEach((t) => t.addEventListener("click", otworzNawigator));
 
 /* ════════════════════════════════════════════════════════════════════
    TRZOS — osobiste finanse: przychody + koszty + paragony/OCR.
@@ -4379,9 +4472,22 @@ async function asystentParagon(file) {
     if (d.data) podsum += `<div>Data: ${esc(d.data)}</div>`;
     if (kwota != null) podsum += `<div>Razem: ${fmtZl(kwota)}</div>`;
     if (poz.length) podsum += `<div style="margin-top:4px;">Pozycje:</div><ul>${poz.map((p) => `<li>${esc(p.nazwa)}${p.kwota != null ? " — " + fmtZl(p.kwota) : ""}${p.kategoria ? ` <span style="color:#8c887e;">(${esc(p.kategoria)})</span>` : ""}</li>`).join("")}</ul>`;
-    const bubel = el(`<div class="m-msg m-msg--asystent">${podsum}<div style="display:flex;gap:8px;margin-top:8px;"><button class="par-zapisz" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">Zapisz do Trzosu</button><button class="par-anuluj" style="background:#efece3;color:#26241f;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">Anuluj</button></div></div>`);
+    const bubel = el(`<div class="m-msg m-msg--asystent">${podsum}<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;"><button class="par-zapisz" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">Zapisz do Trzosu</button><button class="par-przekaz" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">→ Przekaż osobie</button><button class="par-anuluj" style="background:#efece3;color:#26241f;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">Anuluj</button></div></div>`);
     $("m-stream").appendChild(bubel); $("m-stream").scrollTop = $("m-stream").scrollHeight;
     bubel.querySelector(".par-anuluj").addEventListener("click", () => { bubel.querySelector("div:last-child").remove(); dodajWiadomosc("asystent", "Anulowane — nie zapisałem. Paragon został w dokumentach."); });
+    bubel.querySelector(".par-przekaz").addEventListener("click", async () => {
+      const btn = bubel.querySelector(".par-przekaz"); btn.disabled = true; btn.textContent = "Zapisuję…";
+      try {
+        const dzis = czesciWarszawy(new Date()).dataISO;
+        const tx = await supabase.from("transakcje").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "koszt", kwota: kwota != null ? kwota : 0, data: d.data || dzis, kategoria: d.kategoria || null, metoda_platnosci: d.metoda_platnosci || null, opis: d.sprzedawca || null, nip_sprzedawcy: d.nip || null, numer_dokumentu: nrDok || null, dokument_typ: d.dokument_typ || "paragon", kwota_netto: d.kwota_netto != null ? d.kwota_netto : null, kwota_vat: d.kwota_vat != null ? d.kwota_vat : null, paragon_url: sciezka }).select("id").single();
+        if (tx.error) throw tx.error;
+        await supabase.from("dokumenty").update({ transakcja_id: tx.data.id }).eq("id", dok.data.id);
+        if (poz.length) { const rows = poz.map((p) => ({ transakcja_id: tx.data.id, typ: "zakup", nazwa: String(p.nazwa), ilosc: p.ilosc != null ? p.ilosc : 1, jednostka: p.jednostka || "szt", cena_jedn: p.cena_jedn != null ? p.cena_jedn : null, kwota: p.kwota != null ? p.kwota : null, kategoria: p.kategoria || null })); await supabase.from("transakcja_pozycje").insert(rows); }
+        bubel.querySelector("div:last-child").remove();
+        dodajWiadomosc("asystent", "Zapisałem paragon ✓ — wybierz komu go przekazać.");
+        oknoWyslijKoszt(tx.data.id, d.sprzedawca, kwota);
+      } catch (e) { btn.disabled = false; btn.textContent = "→ Przekaż osobie"; dodajWiadomosc("asystent", "Nie zapisałem: " + (e.message || e)); }
+    });
     bubel.querySelector(".par-zapisz").addEventListener("click", async () => {
       const btn = bubel.querySelector(".par-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
       try {
@@ -4400,11 +4506,6 @@ async function asystentParagon(file) {
           const pozTekst = poz.length ? poz.map((p) => `${p.nazwa}${p.kwota != null ? " " + p.kwota + " zł" : ""}${p.kategoria ? " (" + p.kategoria + ")" : ""}`).join("; ") : "brak pozycji";
           const ktekst = `[ZDARZENIE W APCE] Użytkownik przed chwilą dodał PARAGON przez zdjęcie i zapisał go do Trzosu: sprzedawca „${d.sprzedawca || "?"}", pozycje: ${pozTekst}, razem ${kwota != null ? kwota + " zł" : "?"}, data ${d.data || dzis}, transakcja id ${tx.data.id}. TO JUŻ JEST ZAPISANE. Jeśli użytkownik o to pyta lub prosi o zmianę (np. „to dla Patrycji"), pracuj na tej transakcji — NIE pytaj ponownie o kwotę ani pozycje i NIE mów, że nie widzisz paragonu.`;
           await supabase.rpc("zapisz_kontekst_asystenta", { p_tresc: ktekst });
-        } catch (e) {}
-        try {
-          const wb = el(`<div class="m-msg m-msg--asystent"><div style="font-size:13px;margin-bottom:6px;">To dla kogoś? Możesz wysłać mu ofertę (przyjmuje u siebie).</div><button class="par-wyslij" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">→ Wyślij osobie</button></div>`);
-          $("m-stream").appendChild(wb); $("m-stream").scrollTop = $("m-stream").scrollHeight;
-          wb.querySelector(".par-wyslij").addEventListener("click", () => oknoWyslijKoszt(tx.data.id, d.sprzedawca, kwota));
         } catch (e) {}
         if (typeof renderTrzos === "function" && $("m-widok-trzos") && $("m-widok-trzos").style.display !== "none") renderTrzos();
       } catch (e) { btn.disabled = false; btn.textContent = "Zapisz do Trzosu"; dodajWiadomosc("asystent", "Nie zapisałem: " + (e.message || e)); }
