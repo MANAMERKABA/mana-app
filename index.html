@@ -1750,7 +1750,7 @@ function kartaTrzos(typ, t) {
   (async () => {
     const { data: pls } = await supabase.rpc("moje_plemiona_full");
     const sel = ov.querySelector("#tx-kto");
-    (pls || []).forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
+    (pls || []).filter((p) => p.typ !== "rozmowa").forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
     if (t && t.plemie_id) sel.value = t.plemie_id;
   })();
 
@@ -2275,7 +2275,7 @@ function kartaSejf(d) {
   (async () => {
     const { data: pls } = await supabase.rpc("moje_plemiona_full");
     const sel = ov.querySelector("#sj-kto");
-    (pls || []).forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
+    (pls || []).filter((p) => p.typ !== "rozmowa").forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
     if (edycja && d.plemie_id) sel.value = d.plemie_id;
   })();
   ov.querySelector("#sj-zapisz").addEventListener("click", async () => {
@@ -2579,7 +2579,7 @@ function formKontakt(k, onSave) {
   (async () => {
     const { data: pls } = await supabase.rpc("moje_plemiona_full");
     const sel = ov.querySelector("#kn-kto");
-    (pls || []).forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
+    (pls || []).filter((p) => p.typ !== "rozmowa").forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = "👥 " + p.nazwa; sel.appendChild(o); });
     if (edycja && k.plemie_id) sel.value = k.plemie_id;
     if (cudzy) { const wrap = sel.closest("div"); if (wrap) wrap.style.display = "none"; }
   })();
@@ -2731,8 +2731,26 @@ async function renderPlemie() {
   noweBtn.addEventListener("click", () => formNowePlemie(wrap, noweBtn));
   wrap.appendChild(noweBtn);
 
+  let wszystkoOtwarte = false;
+  try { wszystkoOtwarte = localStorage.getItem("mana_plemie_rozwin") === "1"; } catch (e) {}
+  if (plemiona.length) {
+    const rozwinBtn = el(`<button style="${BG}margin:0 0 10px;font-size:12.5px;padding:6px 12px;">${wszystkoOtwarte ? "Zwiń wszystko" : "Rozwiń wszystko"}</button>`);
+    rozwinBtn.addEventListener("click", () => {
+      wszystkoOtwarte = !wszystkoOtwarte;
+      try { localStorage.setItem("mana_plemie_rozwin", wszystkoOtwarte ? "1" : "0"); } catch (e) {}
+      wrap.querySelectorAll(".pl-body").forEach((b) => { b.style.display = wszystkoOtwarte ? "block" : "none"; });
+      wrap.querySelectorAll(".pl-chev").forEach((c) => { c.textContent = wszystkoOtwarte ? "▾" : "▸"; });
+      rozwinBtn.textContent = wszystkoOtwarte ? "Zwiń wszystko" : "Rozwiń wszystko";
+    });
+    wrap.appendChild(rozwinBtn);
+  }
+
   if (!plemiona.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Nie masz jeszcze plemion. Załóż pierwsze — np. „Rodzina".</div>`));
   plemiona.forEach((p) => wrap.appendChild(kartaPlemienia(p)));
+  if (wszystkoOtwarte) {
+    wrap.querySelectorAll(".pl-body").forEach((b) => { b.style.display = "block"; });
+    wrap.querySelectorAll(".pl-chev").forEach((c) => { c.textContent = "▾"; });
+  }
   box.appendChild(wrap);
   odswiezNieprzeczytaneRozmowy();
 }
@@ -2744,6 +2762,8 @@ async function odswiezNieprzeczytaneRozmowy() {
       if (b && !b.querySelector(".rz-kropka") && r.liczba > 0) {
         b.appendChild(el(`<span class="rz-kropka" style="display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;margin-left:5px;padding:0 4px;">${r.liczba}</span>`));
       }
+      const gk = document.querySelector(`.pl-glowa[data-plemie="${r.plemie_id}"] .pl-glowa-kropka`);
+      if (gk && r.liczba > 0) { gk.textContent = r.liczba; gk.style.display = "inline-block"; }
     });
   } catch (e) {}
 }
@@ -2754,15 +2774,21 @@ function kartaPlemienia(p) {
   const jaZalozyciel = p.moja_rola === "zalozyciel";
   const czl = p.czlonkowie || [];
   const card = el(`<div style="background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:10px;">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+    <div class="pl-glowa" data-plemie="${p.id}" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
       <span style="width:12px;height:12px;border-radius:50%;background:${p.kolor || "#1f9e8f"};flex:none;"></span>
-      <b style="font-size:15px;">${escP(p.nazwa)}</b>
-      <span style="font-size:11px;color:var(--ink-soft);">· ${escP(POLITYKA_OPIS[p.polityka_edycji] || p.polityka_edycji)}</span>
+      <b style="font-size:15px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escP(p.nazwa)}</b>
+      <span class="pl-glowa-kropka" style="display:none;min-width:16px;height:16px;line-height:16px;text-align:center;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;padding:0 4px;flex:none;"></span>
+      <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;flex:none;">${czl.length} os.</span>
+      <span class="pl-chev" style="color:var(--ink-soft);font-size:15px;line-height:1;flex:none;">▸</span>
     </div>
-    <div style="font-size:12px;color:var(--ink-soft);margin-top:6px;">Członkowie (${czl.length}):</div>
-    <div class="pl-czl" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;"></div>
-    <div class="pl-akcje" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"></div>
+    <div class="pl-body" style="display:none;">
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">${escP(POLITYKA_OPIS[p.polityka_edycji] || p.polityka_edycji)} · Członkowie (${czl.length}):</div>
+      <div class="pl-czl" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;"></div>
+      <div class="pl-akcje" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;"></div>
+    </div>
   </div>`);
+  { const _g = card.querySelector(".pl-glowa"), _b = card.querySelector(".pl-body"), _c = card.querySelector(".pl-chev");
+    _g.addEventListener("click", () => { const open = _b.style.display !== "none"; _b.style.display = open ? "none" : "block"; _c.textContent = open ? "▸" : "▾"; }); }
   const czlBox = card.querySelector(".pl-czl");
   czl.forEach((c) => {
     const dziecko = !!c.zarzadzany;
@@ -5806,7 +5832,7 @@ function oknoWydarzenia(opcje) {
   ktoSel.addEventListener("change", aktualizujDla);
   (async () => {
     const { data } = await supabase.rpc("moje_plemiona_full");
-    plemionaData = data || [];
+    plemionaData = (data || []).filter((p) => p.typ !== "rozmowa");
     plemionaData.forEach((p) => { const o = document.createElement("option"); o.value = p.id; o.textContent = p.nazwa; ktoSel.appendChild(o); });
     if (ev && ev.plemie_id) ktoSel.value = ev.plemie_id;
     else if (opcje.plemie_id) ktoSel.value = opcje.plemie_id;
