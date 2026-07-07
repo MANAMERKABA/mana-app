@@ -1705,6 +1705,7 @@ function wierszTrzos(t) {
     if (dok.ocr_status !== "gotowe") akcje.appendChild(mkBtn("OCR", "#5b8def", () => wykonajOcrTrzos(t)));
     akcje.appendChild(mkBtn("📎 Podgląd", "#8c887e", () => otworzDokTrzos(dok.plik_url)));
   }
+  if (t.typ === "koszt") akcje.appendChild(mkBtn(t.rozrachunek_id ? "✓ Wysłane" : "→ Osobie", t.rozrachunek_id ? "#8c887e" : "#1a7158", () => oknoWyslijKoszt(t.id, t.opis, t.kwota)));
   akcje.appendChild(mkBtn("Edytuj", "#8c887e", () => kartaTrzos(t.typ, t)));
   akcje.appendChild(mkBtn("Usuń", "#c4513a", () => usunTrzos(t)));
   wrap.appendChild(row);
