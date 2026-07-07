@@ -1850,11 +1850,45 @@ function otworzSejf() { pokazWidok("sejf"); renderSejf(); }
 function otworzWiezi() { pokazWidok("wiezi"); przelaczWiezi("kon"); odswiezBadgeWiezi(); }
 /* PULS — prywatny notatnik ciała (sen/samopoczucie) + zdjęcia wyników badań. Dane o zdrowiu (Art.9): tylko właściciel, docelowo pod pieczęcią. */
 function otworzPuls() { pokazWidok("puls"); renderPuls(); }
+async function renderPropozycjePuls(box) {
+  let prop = [];
+  try { const { data } = await supabase.rpc("moje_propozycje"); prop = data || []; } catch (e) { return; }
+  if (!prop.length) return;
+  const sek = el(`<div style="margin:0 0 16px;"><div style="font-size:12px;color:#8a6416;font-weight:600;margin:0 2px 7px;">📥 Do przyjęcia · ${prop.length}</div></div>`);
+  for (const p of prop) {
+    const lad = p.ladunek || {};
+    const poz = Array.isArray(lad.pozycje) ? lad.pozycje : [];
+    const pozTekst = poz.length ? poz.map((x) => escP(x.nazwa || "")).join(", ") : escP(lad.sprzedawca || "zakup");
+    const kwota = lad.kwota != null ? fmtZl(Number(lad.kwota)) : "";
+    const kosztOdbiorcy = p.koszt_czyj === "odbiorca";
+    const row = el(`<div style="border:1px solid #e6cf9a;background:#fbf5e8;border-radius:12px;padding:11px 13px;margin-bottom:8px;">
+      <div style="font-size:14px;font-weight:500;">${escP(p.od_nick || "ktoś")} → Ty</div>
+      <div style="font-size:13px;color:var(--ink);margin-top:2px;">${pozTekst}${kwota ? " · " + kwota : ""}</div>
+      <div style="font-size:11.5px;color:#8a6416;margin-top:3px;">${kosztOdbiorcy ? ("Koszt na Ciebie — będziesz winna " + escP(p.od_nick || "")) : ("Koszt bierze na siebie " + escP(p.od_nick || "") + " · lek → Twój Puls")}</div>
+      <div style="display:flex;gap:8px;margin-top:9px;flex-wrap:wrap;">
+        <button class="pp-jak" style="border:none;background:#1a7158;color:#fff;border-radius:8px;font-size:12.5px;padding:7px 13px;cursor:pointer;">${kosztOdbiorcy ? "Przyjmij (koszt + Puls)" : "Przyjmij do Pulsu"}</button>
+        ${kosztOdbiorcy ? "" : `<button class="pp-caly" style="${BG}font-size:12.5px;padding:7px 12px;">Biorę cały koszt</button>`}
+        <button class="pp-odrz" style="${BG}font-size:12.5px;padding:7px 12px;">Odrzuć</button>
+      </div>
+    </div>`);
+    const przyj = async (wariant) => {
+      const { data, error } = await supabase.rpc("przyjmij_propozycje", { p_id: p.id, p_wariant: wariant });
+      if (error || (data && data.ok === false)) { trzosToast("Błąd: " + ((data && data.error) || (error && error.message) || "")); return; }
+      trzosToast((data && data.koszt_na_mnie) ? "Przyjęto — koszt i dług zapisane + wpis w Pulsie ✓" : "Przyjęto do Pulsu ✓"); renderPuls();
+    };
+    row.querySelector(".pp-jak").addEventListener("click", () => przyj("jak_jest"));
+    const bc = row.querySelector(".pp-caly"); if (bc) bc.addEventListener("click", () => przyj("caly_paragon"));
+    row.querySelector(".pp-odrz").addEventListener("click", async () => { await supabase.rpc("odrzuc_propozycje", { p_id: p.id }); trzosToast("Odrzucono."); renderPuls(); });
+    sek.appendChild(row);
+  }
+  box.appendChild(sek);
+}
 async function renderPuls() {
   const box = $("puls-tresc"); if (!box) return;
   box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
   const { data: wpisy = [], error } = await supabase.from("puls_wpisy").select("*").order("created_at", { ascending: false }).limit(200);
   box.innerHTML = "";
+  await renderPropozycjePuls(box);
   const form = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
     <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;line-height:1.45;">🔒 Prywatny notatnik ciała — tylko Ty. Sen, samopoczucie, objawy, zdjęcia wyników badań.</div>
     <textarea id="puls-tekst" placeholder="np. Noc bez pocenia, 2× wstawałem na siku, sen 0:30–8:30" style="width:100%;box-sizing:border-box;min-height:62px;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;resize:vertical;"></textarea>
@@ -4360,11 +4394,56 @@ async function asystentParagon(file) {
         }
         bubel.querySelector("div:last-child").remove();
         dodajWiadomosc("asystent", "Zapisałem w Trzosie ✓" + (kwota != null ? " (" + fmtZl(kwota) + ")" : "") + (poz.length ? `, pozycji: ${poz.length}` : ""));
+        // KONTEKST dla asystenta — żeby wiedział o paragonie w kolejnej turze (Fix A)
+        try {
+          const pozTekst = poz.length ? poz.map((p) => `${p.nazwa}${p.kwota != null ? " " + p.kwota + " zł" : ""}${p.kategoria ? " (" + p.kategoria + ")" : ""}`).join("; ") : "brak pozycji";
+          const ktekst = `[ZDARZENIE W APCE] Użytkownik przed chwilą dodał PARAGON przez zdjęcie i zapisał go do Trzosu: sprzedawca „${d.sprzedawca || "?"}", pozycje: ${pozTekst}, razem ${kwota != null ? kwota + " zł" : "?"}, data ${d.data || dzis}, transakcja id ${tx.data.id}. TO JUŻ JEST ZAPISANE. Jeśli użytkownik o to pyta lub prosi o zmianę (np. „to dla Patrycji"), pracuj na tej transakcji — NIE pytaj ponownie o kwotę ani pozycje i NIE mów, że nie widzisz paragonu.`;
+          await supabase.rpc("zapisz_kontekst_asystenta", { p_tresc: ktekst });
+        } catch (e) {}
+        try {
+          const wb = el(`<div class="m-msg m-msg--asystent"><div style="font-size:13px;margin-bottom:6px;">To dla kogoś? Możesz wysłać mu ofertę (przyjmuje u siebie).</div><button class="par-wyslij" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">→ Wyślij osobie</button></div>`);
+          $("m-stream").appendChild(wb); $("m-stream").scrollTop = $("m-stream").scrollHeight;
+          wb.querySelector(".par-wyslij").addEventListener("click", () => oknoWyslijKoszt(tx.data.id, d.sprzedawca, kwota));
+        } catch (e) {}
         if (typeof renderTrzos === "function" && $("m-widok-trzos") && $("m-widok-trzos").style.display !== "none") renderTrzos();
       } catch (e) { btn.disabled = false; btn.textContent = "Zapisz do Trzosu"; dodajWiadomosc("asystent", "Nie zapisałem: " + (e.message || e)); }
     });
   } catch (err) { mysl.remove(); dodajWiadomosc("asystent", "Błąd: " + (err.message || err)); }
   trwaRozmowa = false;
+}
+
+/* Wyślij OFERTĘ kosztu osobie w MANIE (paragon → Puls odbiorcy + ewentualny dług). Moja strona już zapisana; to tylko most do niej. */
+async function oknoWyslijKoszt(txId, sprzedawca, kwota) {
+  const { data: kon } = await supabase.from("kontakty").select("id, imie, target_traveler_id").eq("owner_traveler_id", TRAVELER.id).not("target_traveler_id", "is", null).order("imie");
+  const lista = (kon || []).filter((k) => k.target_traveler_id !== TRAVELER.id);
+  const opcje = lista.length ? lista.map((k) => `<label style="display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:14px;"><input type="radio" name="wk-osoba" value="${k.target_traveler_id}" style="width:18px;height:18px;"><span>${escP(k.imie || "?")}</span></label>`).join("") : `<div style="color:var(--ink-soft);font-size:13px;padding:4px 0;">Brak kontaktów w MANIE — dodaj/połącz kontakt najpierw.</div>`;
+  const ov = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">Wyślij koszt osobie</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form">
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;line-height:1.5;">${escP(sprzedawca || "zakup")}${kwota != null ? " · " + fmtZl(kwota) : ""}. Osoba dostanie <b>ofertę</b> — przyjmie ją u siebie (lek → jej Puls, koszt/dług wg wyboru).</div>
+      <label>Dla kogo</label>
+      <div style="margin:4px 0 12px;">${opcje}</div>
+      <label>Koszt</label>
+      <div style="display:flex;gap:8px;margin:4px 0 14px;">
+        <label style="flex:1;display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:9px;cursor:pointer;"><input type="radio" name="wk-koszt" value="nadawca" checked style="width:16px;height:16px;"><span style="font-size:13px;">Biorę na siebie</span></label>
+        <label style="flex:1;display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:9px;cursor:pointer;"><input type="radio" name="wk-koszt" value="odbiorca" style="width:16px;height:16px;"><span style="font-size:13px;">Ona/on płaci (dług)</span></label>
+      </div>
+      <button class="wk-wyslij" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;">Wyślij ofertę</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zam = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zam);
+  ov.querySelector(".wk-wyslij").addEventListener("click", async () => {
+    const os = ov.querySelector('input[name="wk-osoba"]:checked');
+    if (!os) { trzosToast("Wybierz osobę."); return; }
+    const koszt = (ov.querySelector('input[name="wk-koszt"]:checked') || {}).value || "nadawca";
+    const { data, error } = await supabase.rpc("zaproponuj_koszt", { p_do_traveler: Number(os.value), p_transakcja_id: txId, p_koszt_czyj: koszt });
+    if (error || (data && data.ok === false)) { trzosToast("Nie wysłano: " + ((data && data.error) || (error && error.message) || "")); return; }
+    zam();
+    if (typeof dodajWiadomosc === "function") dodajWiadomosc("asystent", "Wysłałem ofertę ✓ — pojawi się u odbiorcy do przyjęcia." + (koszt === "odbiorca" ? " U Ciebie zapisałem niepotwierdzone roszczenie (dług)." : ""));
+  });
 }
 
 /* ════════════════════════════════════════════════════════════════════
