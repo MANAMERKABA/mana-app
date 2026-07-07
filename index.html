@@ -5144,8 +5144,13 @@ async function renderKalendarz() {
     if (kier > 0) { track.appendChild(staraTresc); track.appendChild(nowy); track.style.transform = "translateX(0)"; }
     else { track.appendChild(nowy); track.appendChild(staraTresc); track.style.transform = "translateX(-50%)"; }
     box.appendChild(track);
-    requestAnimationFrame(() => { track.style.transition = "transform .3s cubic-bezier(.33,0,.2,1)"; track.style.transform = kier > 0 ? "translateX(-50%)" : "translateX(0)"; });
-    track.addEventListener("transitionend", () => { box.innerHTML = ""; box.style.overflow = ""; box.style.position = ""; box.appendChild(nowy); }, { once: true });
+    void track.offsetWidth; // wymuś reflow z pozycją startową — inaczej przeglądarka pominie animację
+    track.style.transition = "transform .32s cubic-bezier(.33,0,.2,1)";
+    track.style.transform = kier > 0 ? "translateX(-50%)" : "translateX(0)";
+    let zamkniete = false;
+    const finisz = () => { if (zamkniete) return; zamkniete = true; box.innerHTML = ""; box.style.overflow = ""; box.style.position = ""; box.appendChild(nowy); };
+    track.addEventListener("transitionend", finisz, { once: true });
+    setTimeout(finisz, 420); // bezpiecznik, gdyby transitionend nie wpadło
   } else {
     box.appendChild(nowy);
   }
