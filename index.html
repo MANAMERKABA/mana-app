@@ -5068,6 +5068,8 @@ async function otworzHoryzont(opcje) {
 /* --- okres bieżącego widoku --- */
 function zakresOkresu() {
   const k = new Date(kotwica.getFullYear(), kotwica.getMonth(), kotwica.getDate());
+  if (widokKal === "rok")
+    return { od: new Date(k.getFullYear(), 0, 1), rok: true };
   if (widokKal === "miesiac")
     return { od: new Date(k.getFullYear(), k.getMonth(), 1), miesiac: true };
   if (widokKal === "tydzien") {
@@ -5078,13 +5080,15 @@ function zakresOkresu() {
 }
 function przesunOkres(kier) {
   const k = kotwica;
-  if (widokKal === "miesiac") kotwica = new Date(k.getFullYear(), k.getMonth() + kier, 1);
+  if (widokKal === "rok") kotwica = new Date(k.getFullYear() + kier, k.getMonth(), 1);
+  else if (widokKal === "miesiac") kotwica = new Date(k.getFullYear(), k.getMonth() + kier, 1);
   else if (widokKal === "tydzien") kotwica = new Date(k.getFullYear(), k.getMonth(), k.getDate() + 7 * kier);
   else if (widokKal === "3dni") kotwica = new Date(k.getFullYear(), k.getMonth(), k.getDate() + 3 * kier);
   else kotwica = new Date(k.getFullYear(), k.getMonth(), k.getDate() + kier);
   renderKalendarz();
 }
 function etykietaOkresu(z) {
+  if (z.rok) return String(z.od.getFullYear());
   if (z.miesiac)
     return z.od.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
   if (z.dni === 1)
@@ -5102,20 +5106,27 @@ async function renderKalendarz() {
   const z = zakresOkresu();
   wrap.innerHTML = `
     <div class="m-kalbar">
-      <button class="m-kalmenu" id="kal-menu" aria-label="Widoki">&#9776;</button>
+      <button class="m-kalrok" id="kal-rok" title="Widok roku" style="border:none;background:none;font-size:13px;font-weight:700;color:#1a7158;cursor:pointer;padding:0 4px;">${z.od.getFullYear()}</button>
       <span class="m-kaletyk">${esc(etykietaOkresu(z))}</span>
       <button class="m-kalnav" data-k="-1" aria-label="Wstecz">&#8249;</button>
       <button class="m-kaldzis" id="kal-dzis">Dziś</button>
       <button class="m-kalnav" data-k="1" aria-label="Naprzód">&#8250;</button>
+      <button class="m-kalmenu" id="kal-menu" aria-label="Podgląd" style="margin-left:auto;">&#9776;</button>
+      <button class="m-kalmenu" id="kal-szukaj" aria-label="Szukaj">&#128269;</button>
+      <button class="m-kalmenu" id="kal-plus" aria-label="Nowe wydarzenie" style="font-weight:700;">&#65291;</button>
     </div>
     <div class="m-kaltresc" id="kal-tresc"></div>`;
   wrap.querySelectorAll(".m-kalnav").forEach((b) =>
     b.addEventListener("click", () => przesunOkres(Number(b.dataset.k))));
   $("kal-dzis").addEventListener("click", () => { kotwica = dzisWarszawa(); renderKalendarz(); });
+  $("kal-rok").addEventListener("click", () => { widokKal = "rok"; renderKalendarz(); });
   $("kal-menu").addEventListener("click", (e) => { e.stopPropagation(); otworzMenuKal(); });
+  $("kal-plus").addEventListener("click", () => oknoWydarzenia({ data: new Date(kotwica) }));
+  $("kal-szukaj").addEventListener("click", () => { const si = $("hyz-szukaj"); if (si) { si.scrollIntoView({ block: "center", behavior: "smooth" }); si.focus(); } });
   const box = $("kal-tresc");
   podepnijSwipe(box);
-  if (z.miesiac) await renderMiesiacGrid(box, z.od);
+  if (z.rok) await renderRokGrid(box, z.od.getFullYear());
+  else if (z.miesiac) await renderMiesiacGrid(box, z.od);
   else await renderSiatka(box, z.od, z.dni);
   aktualizujSidebar();
   wczytajPropozycjeWydarzen();
@@ -5173,6 +5184,7 @@ function otworzMenuKal() {
     <button data-w="3dni">3 dni</button>
     <button data-w="tydzien">Tydzień</button>
     <button data-w="miesiac">Miesiąc</button>
+    <button data-w="rok">Rok</button>
     <div class="m-kalmenu-sep"></div>
     <button data-toggle="rocznice">${pokazRocznice ? "✓ " : ""}Rocznice i urodziny</button>
     <div class="m-kalmenu-sep"></div>
@@ -5440,6 +5452,43 @@ async function wczytajWydarzeniaZakres(od, doData) {
 }
 
 /* --- widok Miesiąc --- */
+function miniMiesiacKal(rok, mies) {
+  const pierwszy = new Date(rok, mies, 1);
+  const ile = new Date(rok, mies + 1, 0).getDate();
+  const startDow = (pierwszy.getDay() + 6) % 7;
+  const dzis = dzisWarszawa();
+  const nazwaM = pierwszy.toLocaleDateString("pl-PL", { month: "long" });
+  let cells = "";
+  for (let i = 0; i < startDow; i++) cells += `<span></span>`;
+  for (let d = 1; d <= ile; d++) {
+    const jestDzis = dzis.getFullYear() === rok && dzis.getMonth() === mies && dzis.getDate() === d;
+    cells += `<span style="${jestDzis ? "background:#1a7158;color:#fff;border-radius:50%;" : ""}display:inline-flex;align-items:center;justify-content:center;aspect-ratio:1;">${d}</span>`;
+  }
+  const w = el(`<div class="mm-kal" style="cursor:pointer;">
+    <div style="font-size:12.5px;font-weight:600;color:#1a7158;margin-bottom:4px;text-transform:capitalize;">${escP(nazwaM)}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);font-size:9.5px;text-align:center;color:var(--ink-soft);line-height:1.3;">${cells}</div>
+  </div>`);
+  w.addEventListener("click", () => { kotwica = new Date(rok, mies, 1); widokKal = "miesiac"; renderKalendarz(); });
+  return w;
+}
+async function renderRokGrid(box, rokCentr) {
+  box.innerHTML = "";
+  const cont = el(`<div style="overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 200px);padding:4px 4px 60px;"></div>`);
+  const sekcje = {};
+  for (let r = rokCentr - 3; r <= rokCentr + 3; r++) {
+    const sek = el(`<div style="margin-bottom:26px;">
+      <div style="font-size:22px;font-weight:700;color:${r === rokCentr ? "#1a7158" : "var(--ink)"};margin:4px 4px 12px;">${r}</div>
+      <div class="rok-mies-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px 12px;"></div>
+    </div>`);
+    const g = sek.querySelector(".rok-mies-grid");
+    for (let m = 0; m < 12; m++) g.appendChild(miniMiesiacKal(r, m));
+    cont.appendChild(sek);
+    sekcje[r] = sek;
+  }
+  box.appendChild(cont);
+  const t = sekcje[rokCentr];
+  if (t) requestAnimationFrame(() => { cont.scrollTop = t.offsetTop - 4; });
+}
 async function renderMiesiacGrid(box, od) {
   const rok = od.getFullYear(), mies = od.getMonth();
   const dniWMies = new Date(rok, mies + 1, 0).getDate();
@@ -5568,7 +5617,22 @@ async function renderSiatka(box, od, dni) {
     for (let h = 1; h < 24; h++) linie += `<div class="m-tg__linia" style="top:${h * H}px"></div>`;
     kolumny += `<div class="m-tg__kol" data-i="${i}" style="height:${24 * H}px">${linie}</div>`;
   }
-  box.innerHTML = `<div class="m-tg">
+  const dowLit = ["P", "W", "Ś", "C", "P", "S", "N"];
+  const pon = new Date(od); pon.setDate(od.getDate() - ((od.getDay() + 6) % 7));
+  const odISO2 = dataKalISO(od), konISO2 = dataKalISO(new Date(od.getTime() + (dni - 1) * 86400000));
+  let stripTydz = `<div class="m-kal-tydz" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:6px 8px 8px;border-bottom:1px solid var(--line);">`;
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(pon.getTime() + i * 86400000);
+    const iso = dataKalISO(d);
+    const wZak = iso >= odISO2 && iso <= konISO2;
+    const jestDzis2 = iso === dzisISO;
+    stripTydz += `<button class="m-ktd" data-iso="${d.toISOString()}" style="border:none;background:${wZak ? "#eaf1ee" : "transparent"};border-radius:12px;padding:3px 0 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;">
+      <span style="font-size:9.5px;color:var(--ink-soft);">${dowLit[i]}</span>
+      <span style="font-size:14px;font-weight:600;width:27px;height:27px;display:flex;align-items:center;justify-content:center;${jestDzis2 ? "background:#d23b3b;color:#fff;border-radius:50%;" : "color:var(--ink);"}">${d.getDate()}</span>
+    </button>`;
+  }
+  stripTydz += `</div>`;
+  box.innerHTML = `${stripTydz}<div class="m-tg">
     <div class="m-tg__naglowki" style="grid-template-columns:38px repeat(${dni},1fr)">${naglowki}</div>
     ${stripHtml}
     <div class="m-tg__scroll"><div class="m-tg__plansza">
@@ -5576,6 +5640,7 @@ async function renderSiatka(box, od, dni) {
       <div class="m-tg__kolumny" style="grid-template-columns:repeat(${dni},1fr)">${kolumny}</div>
     </div></div>
   </div>`;
+  box.querySelectorAll(".m-ktd").forEach((b) => b.addEventListener("click", () => { kotwica = new Date(b.dataset.iso); renderKalendarz(); }));
 
   // kliknięcia na bary całodzienne — otwórz edycję
   box.querySelectorAll(".m-tg__caly-dzien-bar").forEach((b) => {
@@ -5615,7 +5680,7 @@ async function renderSiatka(box, od, dni) {
     const dz = new Date(od.getTime() + i * 86400000);
     if (dataKalISO(dz) === dzisISO) {
       const top = (teraz.godz * 60 + teraz.min) / 60 * H;
-      kolEls[i].appendChild(el(`<div class="m-tg__teraz" style="top:${top}px"></div>`));
+      kolEls[i].appendChild(el(`<div class="m-tg__teraz" style="top:${top}px"><span style="position:absolute;left:2px;top:-8px;background:#d23b3b;color:#fff;font-size:10px;font-weight:700;padding:0 5px;border-radius:9px;line-height:16px;white-space:nowrap;">${dwa(teraz.godz)}:${dwa(teraz.min)}</span></div>`));
     }
     kolEls[i].addEventListener("click", (ev) => {
       const rect = kolEls[i].getBoundingClientRect();
