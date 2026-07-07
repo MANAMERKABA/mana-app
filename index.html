@@ -5107,12 +5107,7 @@ function etykietaOkresu(z) {
 async function renderKalendarz() {
   const wrap = $("hyz-kalendarz");
   const z = zakresOkresu();
-  const kier = _kalKier; _kalKier = 0;
-  let staraTresc = null;
-  if (kier) {
-    const sb = $("kal-tresc");
-    if (sb && sb.children.length) { staraTresc = document.createElement("div"); staraTresc.style.cssText = "flex:0 0 50%;min-width:0;"; while (sb.firstChild) staraTresc.appendChild(sb.firstChild); }
-  }
+  _kalKier = 0;
   wrap.innerHTML = `
     <div class="m-kalbar">
       <button class="m-kalrok" id="kal-rok" title="Widok roku" style="border:none;background:none;font-size:13px;font-weight:700;color:#1a7158;cursor:pointer;padding:0 4px;">${z.od.getFullYear()}</button>
@@ -5133,26 +5128,37 @@ async function renderKalendarz() {
   $("kal-plus").addEventListener("click", () => oknoWydarzenia({ data: new Date(kotwica) }));
   $("kal-szukaj").addEventListener("click", () => { const si = $("hyz-szukaj"); if (si) { si.scrollIntoView({ block: "center", behavior: "smooth" }); si.focus(); } });
   const box = $("kal-tresc");
-  podepnijSwipe(box);
-  const nowy = el(`<div style="flex:0 0 50%;min-width:0;"></div>`);
-  if (z.rok) await renderRokGrid(nowy, z.od.getFullYear());
-  else if (z.miesiac) await renderMiesiacGrid(nowy, z.od);
-  else await renderSiatka(nowy, z.od, z.dni);
-  if (kier && staraTresc) {
-    box.style.overflow = "hidden"; box.style.position = "relative";
-    const track = el(`<div style="display:flex;width:200%;will-change:transform;"></div>`);
-    if (kier > 0) { track.appendChild(staraTresc); track.appendChild(nowy); track.style.transform = "translateX(0)"; }
-    else { track.appendChild(nowy); track.appendChild(staraTresc); track.style.transform = "translateX(-50%)"; }
-    box.appendChild(track);
-    void track.offsetWidth; // wymuś reflow z pozycją startową — inaczej przeglądarka pominie animację
-    track.style.transition = "transform .32s cubic-bezier(.33,0,.2,1)";
-    track.style.transform = kier > 0 ? "translateX(-50%)" : "translateX(0)";
-    let zamkniete = false;
-    const finisz = () => { if (zamkniete) return; zamkniete = true; box.innerHTML = ""; box.style.overflow = ""; box.style.position = ""; box.appendChild(nowy); };
-    track.addEventListener("transitionend", finisz, { once: true });
-    setTimeout(finisz, 420); // bezpiecznik, gdyby transitionend nie wpadło
+  if (z.rok) {
+    await renderRokGrid(box, z.od.getFullYear());
+  } else if (z.miesiac) {
+    await renderMiesiacGrid(box, z.od);
   } else {
-    box.appendChild(nowy);
+    // WIDOK CZASOWY — pager 3 paneli, NATYWNE przewijanie przeglądarki (płynny pan palcem, 60fps)
+    box.style.display = "flex";
+    box.style.overflowX = "auto";
+    box.style.overflowY = "hidden";
+    box.style.scrollSnapType = "x mandatory";
+    box.style.scrollbarWidth = "none";
+    box.style.touchAction = "pan-x";
+    const okresMs = z.dni * 86400000;
+    for (const off of [-1, 0, 1]) {
+      const panel = el(`<div class="kal-panel" style="flex:0 0 100%;min-width:100%;scroll-snap-align:start;"></div>`);
+      await renderSiatka(panel, new Date(z.od.getTime() + off * okresMs), z.dni);
+      box.appendChild(panel);
+    }
+    const naSrodek = () => { const w = box.clientWidth; if (w) box.scrollLeft = w; else requestAnimationFrame(naSrodek); };
+    naSrodek(); // środkowy panel = bieżący okres
+    let _pt;
+    box.addEventListener("scroll", () => {
+      clearTimeout(_pt);
+      _pt = setTimeout(() => {
+        const w = box.clientWidth; if (!w) return;
+        const idx = Math.round(box.scrollLeft / w);
+        if (idx === 1) return; // wrócił do środka — nic nie robimy
+        kotwica = new Date(z.od.getTime() + (idx - 1) * okresMs);
+        renderKalendarz(); // przebuduj 3 panele wokół nowego okresu (dane z cache = szybko)
+      }, 120);
+    });
   }
   aktualizujSidebar();
   wczytajPropozycjeWydarzen();
