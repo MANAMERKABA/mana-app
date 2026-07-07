@@ -2429,6 +2429,17 @@ async function renderKontakty() {
   box.innerHTML = "";
   renderOfertyKontaktow(box, rOf.data || []);
   if (!kon.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Brak kontaktów — dodaj pierwszy albo „Dodaj z plemienia".</div>`)); return; }
+  let konOtw = false;
+  try { konOtw = localStorage.getItem("mana_kontakty_rozwin") === "1"; } catch (e) {}
+  const rbK = el(`<button style="${BG}margin:0 0 10px;font-size:12.5px;padding:6px 12px;">${konOtw ? "Zwiń wszystko" : "Rozwiń wszystko"}</button>`);
+  rbK.addEventListener("click", () => {
+    konOtw = !konOtw;
+    try { localStorage.setItem("mana_kontakty_rozwin", konOtw ? "1" : "0"); } catch (e) {}
+    box.querySelectorAll(".kn-body").forEach((b) => { b.style.display = konOtw ? "block" : "none"; });
+    box.querySelectorAll(".kn-chev").forEach((c) => { c.textContent = konOtw ? "▾" : "▸"; });
+    rbK.textContent = konOtw ? "Zwiń wszystko" : "Rozwiń wszystko";
+  });
+  box.appendChild(rbK);
   kon.sort((a, b) => ((b.target_traveler_id ? 1 : 0) - (a.target_traveler_id ? 1 : 0)));
   let poprzMana = null;
   for (const k of kon) {
@@ -2437,6 +2448,7 @@ async function renderKontakty() {
     box.appendChild(kartaKontakt(k));
     poprzMana = jm;
   }
+  if (konOtw) { box.querySelectorAll(".kn-body").forEach((b) => { b.style.display = "block"; }); box.querySelectorAll(".kn-chev").forEach((c) => { c.textContent = "▾"; }); }
   filtrujKontakty();
 }
 function renderOfertyKontaktow(box, oferty) {
@@ -2485,24 +2497,33 @@ function kartaKontakt(k) {
   const bubel = jestMana
     ? `<button class="kn-rozmowa" title="Rozmowa w MANA" style="width:36px;height:36px;border:none;border-radius:50%;background:#1a7158;color:#fff;font-size:16px;line-height:1;cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center;">💬</button>`
     : `<span title="poza MANĄ" style="width:36px;height:36px;border-radius:50%;background:#e7e3d9;flex:none;display:inline-block;"></span>`;
-  const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;">
-    <div style="display:flex;align-items:center;gap:11px;">
+  const telIkona = k.telefon
+    ? `<a class="kn-tel" href="tel:${escP(k.telefon)}" title="Zadzwoń" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--line);border-radius:50%;text-decoration:none;"><svg viewBox="0 0 24 24" width="15" height="15" fill="#c0392b" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg></a>`
+    : "";
+  const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:7px;">
+    <div class="kn-glowa" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
       ${bubel}
       <div style="min-width:0;flex:1;">
-        <div style="font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(k.imie || "(bez imienia)")}</div>
-        ${linie ? `<div style="font-size:12.5px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${linie}</div>` : ""}
-        ${k.typ ? `<div style="font-size:11px;color:var(--ink-soft);">${escP(k.typ)}</div>` : ""}
+        <div style="font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(k.imie || "(bez imienia)")}</div>
+        ${linie ? `<div style="font-size:12px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${linie}</div>` : ""}
+      </div>
+      ${telIkona}
+      <span class="kn-chev" style="color:var(--ink-soft);font-size:15px;line-height:1;flex:none;">▸</span>
+    </div>
+    <div class="kn-body" style="display:none;">
+      ${k.typ ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">${escP(k.typ)}</div>` : ""}
+      ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:4px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
+        <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
+        ${moje ? `<button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
+        <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>` : `<span style="font-size:11px;color:var(--ink-soft);">wspólny plemienia</span>`}
       </div>
     </div>
-    ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:6px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
-    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
-      ${k.telefon ? `<a href="tel:${escP(k.telefon)}" style="${BG}font-size:12px;padding:5px 10px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;"><svg viewBox="0 0 24 24" width="13" height="13" fill="#c0392b" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>Zadzwoń</a>` : ""}
-      <button class="kn-edit" style="${BG}font-size:12px;padding:5px 10px;">Edytuj</button>
-      ${moje ? `<button class="kn-zapros" style="${BG}font-size:12px;padding:5px 10px;">✉ Zaproś</button>
-      <button class="kn-usun" style="${BG}font-size:12px;padding:5px 10px;color:#c0392b;">Usuń</button>` : `<span style="font-size:11px;color:var(--ink-soft);">wspólny plemienia</span>`}
-    </div>
   </div>`);
-  const brz = w.querySelector(".kn-rozmowa"); if (brz) brz.addEventListener("click", () => otworzRozmoweZKontaktu(k));
+  { const g = w.querySelector(".kn-glowa"), b = w.querySelector(".kn-body"), c = w.querySelector(".kn-chev");
+    g.addEventListener("click", () => { const open = b.style.display !== "none"; b.style.display = open ? "none" : "block"; c.textContent = open ? "▸" : "▾"; }); }
+  const brz = w.querySelector(".kn-rozmowa"); if (brz) brz.addEventListener("click", (e) => { e.stopPropagation(); otworzRozmoweZKontaktu(k); });
+  const btel = w.querySelector(".kn-tel"); if (btel) btel.addEventListener("click", (e) => { e.stopPropagation(); });
   const be = w.querySelector(".kn-edit"); if (be) be.addEventListener("click", () => formKontakt(k));
   const bu = w.querySelector(".kn-usun"); if (bu) bu.addEventListener("click", () => usunKontakt(k));
   const bz = w.querySelector(".kn-zapros"); if (bz) bz.addEventListener("click", () => zaprosKontakt(k));
