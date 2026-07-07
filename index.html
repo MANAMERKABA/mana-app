@@ -5038,6 +5038,8 @@ if (Rozpoznanie) {
    ==================================================================== */
 let widokKal = "3dni";
 let kotwica = dzisWarszawa();
+let _evCache = null, _evCacheTs = 0, _kalKier = 0;
+function invalidujEvCache() { _evCache = null; }
 let pokazRocznice = true;
 let zapytanieSzukaj = "";
 
@@ -5085,6 +5087,7 @@ function przesunOkres(kier) {
   else if (widokKal === "tydzien") kotwica = new Date(k.getFullYear(), k.getMonth(), k.getDate() + 7 * kier);
   else if (widokKal === "3dni") kotwica = new Date(k.getFullYear(), k.getMonth(), k.getDate() + 3 * kier);
   else kotwica = new Date(k.getFullYear(), k.getMonth(), k.getDate() + kier);
+  _kalKier = kier;
   renderKalendarz();
 }
 function etykietaOkresu(z) {
@@ -5128,6 +5131,7 @@ async function renderKalendarz() {
   if (z.rok) await renderRokGrid(box, z.od.getFullYear());
   else if (z.miesiac) await renderMiesiacGrid(box, z.od);
   else await renderSiatka(box, z.od, z.dni);
+  if (_kalKier) { try { box.animate([{ transform: `translateX(${_kalKier * 28}px)`, opacity: 0.4 }, { transform: "translateX(0)", opacity: 1 }], { duration: 160, easing: "ease-out" }); } catch (e) {} _kalKier = 0; }
   aktualizujSidebar();
   wczytajPropozycjeWydarzen();
 }
@@ -5161,13 +5165,13 @@ async function wczytajPropozycjeWydarzen() {
 async function akceptujWydarzenie(e) {
   const { error } = await supabase.from("events").update({ status: "planowane" }).eq("id", e.id).eq("traveler_id", TRAVELER.id);
   if (error) { alert("Nie przyjęto: " + error.message); return; }
-  renderKalendarz();
+  invalidujEvCache(); renderKalendarz();
 }
 async function odrzucWydarzenie(e) {
   if (!confirm(`Odrzucić wydarzenie „${e.tytul}"?`)) return;
   const { error } = await supabase.from("events").delete().eq("id", e.id).eq("traveler_id", TRAVELER.id);
   if (error) { alert("Nie odrzucono: " + error.message); return; }
-  renderKalendarz();
+  invalidujEvCache(); renderKalendarz();
 }
 
 function otworzMenuKal() {
@@ -5417,24 +5421,36 @@ function rozwinCykliczne(ev, ws, we) {
 async function wczytajWydarzeniaZakres(od, doData) {
   const odISO = isoZWarszawy(dataKalISO(od), "00:00");
   const doISO = isoZWarszawy(dataKalISO(doData), "00:00");
+  const odT = new Date(odISO).getTime(), doT = new Date(doISO).getTime();
   await zaladujPlemionaCache();
-  // 1) wpisy JEDNORAZOWE — overlap z oknem
-  const { data: jedno = [] } = await supabase
-    .from("events").select("*")
-    .in("typ", ["wydarzenie", "zadanie"])
-    .or("powtarzalnosc.is.null,powtarzalnosc.eq.jednorazowe")
-    .lt("data_czas", doISO)
-    .or(`koniec.gt.${odISO},and(koniec.is.null,data_czas.gte.${odISO})`)
-    .order("data_czas", { ascending: true });
-  // 2) REGUŁY cykliczne — pierwsza data przed końcem okna, seria jeszcze trwa; rozwijane lokalnie
-  const { data: cykl = [] } = await supabase
-    .from("events").select("*")
-    .in("typ", ["wydarzenie", "zadanie"])
-    .in("powtarzalnosc", ["dziennie", "tygodniowo", "miesiecznie", "rocznie"])
-    .lt("data_czas", doISO)
-    .or(`powtarzanie_do.is.null,powtarzanie_do.gte.${odISO}`);
-  let lista = [...(jedno || [])];
-  for (const rule of (cykl || [])) {
+  // CACHE szerokiego okna (±45 dni) — nawigacja w jego obrębie bez zapytań do bazy (płynność)
+  const swieze = _evCache && (Date.now() - _evCacheTs < 30000) && odT >= _evCache.odT && doT <= _evCache.doT;
+  if (!swieze) {
+    const wideOdT = odT - 45 * 86400000, wideDoT = doT + 45 * 86400000;
+    const wideOd = new Date(wideOdT).toISOString(), wideDo = new Date(wideDoT).toISOString();
+    const [rJ, rC] = await Promise.all([
+      supabase.from("events").select("*")
+        .in("typ", ["wydarzenie", "zadanie"])
+        .or("powtarzalnosc.is.null,powtarzalnosc.eq.jednorazowe")
+        .lt("data_czas", wideDo)
+        .or(`koniec.gt.${wideOd},and(koniec.is.null,data_czas.gte.${wideOd})`)
+        .order("data_czas", { ascending: true }),
+      supabase.from("events").select("*")
+        .in("typ", ["wydarzenie", "zadanie"])
+        .in("powtarzalnosc", ["dziennie", "tygodniowo", "miesiecznie", "rocznie"])
+        .lt("data_czas", wideDo)
+        .or(`powtarzanie_do.is.null,powtarzanie_do.gte.${wideOd}`),
+    ]);
+    _evCache = { odT: wideOdT, doT: wideDoT, jedno: rJ.data || [], cykl: rC.data || [] };
+    _evCacheTs = Date.now();
+  }
+  // z cache dla żądanego (wąskiego) okna
+  let lista = (_evCache.jedno || []).filter((e) => {
+    const sT = new Date(e.data_czas).getTime();
+    const kT = e.koniec ? new Date(e.koniec).getTime() : null;
+    return sT < doT && (kT != null ? kT > odT : sT >= odT);
+  });
+  for (const rule of (_evCache.cykl || [])) {
     for (const occ of rozwinCykliczne(rule, new Date(odISO), new Date(doISO))) lista.push(occ);
   }
   const _me = TRAVELER && TRAVELER.id;
@@ -5863,7 +5879,7 @@ function oknoWydarzenia(opcje) {
   if (ev && (ev.grupa_pending || ev.rozjazd)) {
     const bn = overlay.querySelector("#w-rozjazd-banner");
     const fmtT = (iso) => { try { return fmtData(iso, { day: "numeric", month: "short" }) + " " + fmtGodz(iso); } catch (e) { return ""; } };
-    const odswiezPo = () => { zamknij(); renderKalendarz(); if (PLEMIE_KAL) renderPlemieKalendarz(); const wE = $("m-widok-ekran"); if (wE && wE.style.display !== "none" && typeof wczytajDzien === "function" && TRAVELER) wczytajDzien(); };
+    const odswiezPo = () => { zamknij(); invalidujEvCache(); renderKalendarz(); if (PLEMIE_KAL) renderPlemieKalendarz(); const wE = $("m-widok-ekran"); if (wE && wE.style.display !== "none" && typeof wczytajDzien === "function" && TRAVELER) wczytajDzien(); };
     if (ev.grupa_pending) {
       const gp = ev.grupa_pending;
       const nowy = gp.data_czas ? fmtT(gp.data_czas) : "(nowy termin)";
@@ -6117,7 +6133,7 @@ function oknoWydarzenia(opcje) {
     }
     if (error) { alert("Nie udało się zapisać: " + error.message); return; }
     zamknij();
-    renderKalendarz();
+    invalidujEvCache(); renderKalendarz();
     if (PLEMIE_KAL) renderPlemieKalendarz();
     { const wE = $("m-widok-ekran"); if (wE && wE.style.display !== "none" && typeof wczytajDzien === "function" && TRAVELER) wczytajDzien(); }
   });
@@ -6127,7 +6143,7 @@ function oknoWydarzenia(opcje) {
     const { error } = await supabase.from("events").delete().eq("id", ev.id);
     if (error) { alert("Nie udało się usunąć: " + error.message); return; }
     zamknij();
-    renderKalendarz();
+    invalidujEvCache(); renderKalendarz();
     if (PLEMIE_KAL) renderPlemieKalendarz();
     { const wE = $("m-widok-ekran"); if (wE && wE.style.display !== "none" && typeof wczytajDzien === "function" && TRAVELER) wczytajDzien(); }
   });
