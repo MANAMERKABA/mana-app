@@ -253,7 +253,7 @@
   .m-mcc { display: flex; flex-direction: column; }
   .m-mcc__dow { display: grid; grid-template-columns: repeat(7,1fr); padding: 0 2px 4px; }
   .m-mcc__dow > div { text-align: center; font-size: 11px; color: var(--ink-soft); }
-  .m-mcc__scroll { position: relative; max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .m-mcc__scroll { position: relative; max-height: 260px; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
   .m-mcc__mieslabel { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--turkus); padding: 14px 10px 2px; }
   .m-mcc__mieslabel:first-child { padding-top: 8px; }
   .m-mcc__tydz { display: grid; grid-template-columns: repeat(7,1fr); }
@@ -5739,35 +5739,42 @@ function miniMiesiacKal(rok, mies) {
   return w;
 }
 async function renderRokGrid(box, rokCentr) {
-  box.innerHTML = "";
-  const cont = el(`<div style="position:relative;overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 200px);padding:4px 4px 60px;"></div>`);
-  const sekcje = {};
-  for (let r = rokCentr - 8; r <= rokCentr + 8; r++) {
+  box.innerHTML = `<div style="position:relative;overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 200px);padding:4px 4px 60px;"></div>`;
+  const cont = box.firstChild;
+  const rokDzis = dzisWarszawa().getFullYear();
+  const sekcjaRoku = (r) => {
     const sek = el(`<div data-rok="${r}" style="margin-bottom:26px;">
-      <div style="font-size:22px;font-weight:700;color:${r === rokCentr ? "#1a7158" : "var(--ink)"};margin:4px 4px 12px;">${r}</div>
+      <div style="font-size:22px;font-weight:700;color:${r === rokDzis ? "#1a7158" : "var(--ink)"};margin:4px 4px 12px;">${r}</div>
       <div class="rok-mies-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px 12px;"></div>
     </div>`);
     const g = sek.querySelector(".rok-mies-grid");
     for (let m = 0; m < 12; m++) g.appendChild(miniMiesiacKal(r, m));
-    cont.appendChild(sek);
-    sekcje[r] = sek;
-  }
-  box.appendChild(cont);
-  // scroll → kotwica podąża za widocznym rokiem (żeby „Dziś" wiedział, na którym roku jesteś)
-  const sekArr = [...cont.querySelectorAll("[data-rok]")];
+    return sek;
+  };
+  // bufor ±2 lata; nieskończone dorastanie na krawędziach
+  let gornaR = rokCentr - 2, dolnaR = rokCentr + 2;
+  for (let r = gornaR; r <= dolnaR; r++) cont.appendChild(sekcjaRoku(r));
+  function prependR(n) { const h0 = cont.scrollHeight; for (let i = 0; i < n; i++) { gornaR--; cont.insertBefore(sekcjaRoku(gornaR), cont.firstChild); } cont.scrollTop += cont.scrollHeight - h0; }
+  function appendR(n) { for (let i = 0; i < n; i++) { dolnaR++; cont.appendChild(sekcjaRoku(dolnaR)); } }
+
   let tickR = false;
   cont.addEventListener("scroll", () => {
     if (tickR) return; tickR = true;
     requestAnimationFrame(() => {
       tickR = false;
+      if (cont.scrollTop < 300) prependR(2);
+      if (cont.scrollHeight - cont.scrollTop - cont.clientHeight < 300) appendR(2);
       const st = cont.scrollTop + 8;
-      let akt = sekArr[0];
-      for (const s of sekArr) { if (s.offsetTop <= st) akt = s; else break; }
+      const secs = cont.querySelectorAll("[data-rok]");
+      let akt = secs[0];
+      for (const s of secs) { if (s.offsetTop <= st) akt = s; else break; }
       if (akt) { const y = Number(akt.dataset.rok); if (y !== kotwica.getFullYear()) kotwica = new Date(y, kotwica.getMonth(), 1); }
     });
   });
-  const t = sekcje[rokCentr];
-  if (t) requestAnimationFrame(() => { cont.scrollTop = t.offsetTop - 4; });
+  requestAnimationFrame(() => {
+    const t = [...cont.querySelectorAll("[data-rok]")].find((s) => Number(s.dataset.rok) === rokCentr);
+    if (t) cont.scrollTop = t.offsetTop - 4;
+  });
 }
 async function renderMiesiacGrid(box, od) {
   const rok = od.getFullYear(), mies = od.getMonth();
@@ -5868,66 +5875,79 @@ async function renderMiesiacGrid(box, od) {
    Najwyższy widoczny tydzień wyznacza miesiąc → pasek („‹ 2026" + nazwa) i lista pod spodem
    dostrajają się na żywo. „Dziś" recentruje na bieżący miesiąc. */
 const MIES_PL = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+const MIES_SKR = ["Sty","Lut","Mar","Kwi","Maj","Cze","Lip","Sie","Wrz","Paź","Lis","Gru"];
 async function renderMiesiacCiagly(box, od) {
   const dzis = czesciWarszawy(new Date());
   const dzisISO = `${dzis.rok}-${dwa(dzis.mies)}-${dwa(dzis.dzien)}`;
   const bazaRok = od.getFullYear(), bazaMies = od.getMonth();
-  const start = new Date(bazaRok, bazaMies - 3, 1);
-  const end = new Date(bazaRok, bazaMies + 9, 0); // ostatni dzień miesiąca +8
-  const wszystko = await wczytajWydarzeniaZakres(start, new Date(bazaRok, bazaMies + 9, 1));
 
-  // mapa dni z wydarzeniami: ISO -> Set kolorów plemion (pusty Set = zwykłe wydarzenie)
-  const mapaDni = new Map();
-  const dodaj = (iso, kol) => { if (!mapaDni.has(iso)) mapaDni.set(iso, new Set()); if (kol) mapaDni.get(iso).add(kol); };
-  for (const e of wszystko) {
-    const kol = (e.plemie_id && PLEMIE_MAP[e.plemie_id]) ? (PLEMIE_MAP[e.plemie_id].kolor || "#1f9e8f") : null;
-    if (e.caly_dzien) { for (const iso of dniCalodzienne(e)) dodaj(iso, kol); }
-    else { const cz = czesciWarszawy(e.data_czas); dodaj(`${cz.rok}-${dwa(cz.mies)}-${dwa(cz.dzien)}`, kol); }
-  }
-
-  let html = `<div class="m-mcc"><div class="m-mcc__dow">${["Pn","Wt","Śr","Cz","Pt","So","Nd"].map((d) => `<div>${d}</div>`).join("")}</div><div class="m-mcc__scroll" id="mcc-scroll">`;
-  let cur = new Date(start);
-  cur.setDate(cur.getDate() - ((cur.getDay() + 6) % 7)); // cofnij do poniedziałku
-  let lastLabel = -1;
-  while (cur <= end) {
-    const dni = [];
-    for (let i = 0; i < 7; i++) { dni.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
-    for (const dd of dni) {
-      if (dd.getDate() === 1) {
-        const mk = dd.getFullYear() * 12 + dd.getMonth();
-        if (mk !== lastLabel) { lastLabel = mk; html += `<div class="m-mcc__mieslabel" data-rok="${dd.getFullYear()}" data-mies="${dd.getMonth()}">${MIES_PL[dd.getMonth()]} ${dd.getFullYear()}</div>`; }
-      }
-    }
-    html += `<div class="m-mcc__tydz">`;
-    for (const dd of dni) {
-      const iso = `${dd.getFullYear()}-${dwa(dd.getMonth() + 1)}-${dwa(dd.getDate())}`;
-      const set = mapaDni.get(iso);
-      let kropki = "";
-      if (set && set.size) kropki = `<span class="m-mcc__kropki">${[...set].slice(0, 3).map((c) => `<span style="background:${c}"></span>`).join("")}</span>`;
-      else if (set) kropki = `<span class="m-mcc__kropki"><span></span></span>`;
-      html += `<div class="m-mcc__d${iso === dzisISO ? " m-mcc__d--dzis" : ""}" data-iso="${iso}"><span class="m-mcc__dnum">${dd.getDate()}</span>${kropki}</div>`;
-    }
-    html += `</div>`;
-  }
-  html += `</div><div class="m-mlist" id="mcc-lista"></div></div>`;
-  box.innerHTML = html;
-
-  box.querySelectorAll(".m-mcc__d").forEach((c) => c.addEventListener("click", () => {
-    const [Y, M, D] = c.dataset.iso.split("-").map(Number);
-    kotwica = new Date(Y, M - 1, D); widokKal = "dzis"; renderKalendarz();
-  }));
-
+  box.innerHTML = `<div class="m-mcc"><div class="m-mcc__dow">${["Pn","Wt","Śr","Cz","Pt","So","Nd"].map((d) => `<div>${d}</div>`).join("")}</div><div class="m-mcc__scroll" id="mcc-scroll"></div><div class="m-mlist" id="mcc-lista"></div></div>`;
   const scroll = box.querySelector("#mcc-scroll");
   const listaEl = box.querySelector("#mcc-lista");
-  let miesTeraz = -1;
 
-  function budujListe(rok, mies) {
-    const biezacy = (rok === dzis.rok && mies === dzis.mies - 1);
-    const wMies = wszystko.filter((e) => {
-      if (e.caly_dzien) return dniCalodzienne(e).some((iso) => { const [Y, M] = iso.split("-").map(Number); return Y === rok && M - 1 === mies; });
-      const cz = czesciWarszawy(e.data_czas); return cz.rok === rok && cz.mies - 1 === mies;
+  // KROPKI: ładowane raz na miesiąc (leniwie, gdy miesiąc wchodzi do DOM); mapa ISO -> Set kolorów plemion
+  const mapaDni = new Map();
+  const zaladMies = new Set();
+  const dodajDot = (iso, kol) => { if (!mapaDni.has(iso)) mapaDni.set(iso, new Set()); if (kol) mapaDni.get(iso).add(kol); };
+  async function zaladujKropki(rok, mies) {
+    const key = rok * 12 + mies;
+    if (zaladMies.has(key)) return; zaladMies.add(key);
+    const evs = await wczytajWydarzeniaZakres(new Date(rok, mies, 1), new Date(rok, mies + 1, 1));
+    for (const e of evs) {
+      const kol = (e.plemie_id && PLEMIE_MAP[e.plemie_id]) ? (PLEMIE_MAP[e.plemie_id].kolor || "#1f9e8f") : null;
+      if (e.caly_dzien) { for (const iso of dniCalodzienne(e)) { const [Y, M] = iso.split("-").map(Number); if (Y === rok && M - 1 === mies) dodajDot(iso, kol); } }
+      else { const cz = czesciWarszawy(e.data_czas); if (cz.rok === rok && cz.mies - 1 === mies) dodajDot(`${cz.rok}-${dwa(cz.mies)}-${dwa(cz.dzien)}`, kol); }
+    }
+    scroll.querySelectorAll(`.m-mcc__d[data-mk="${key}"]`).forEach((cell) => {
+      const set = mapaDni.get(cell.dataset.iso);
+      if (set && set.size && !cell.querySelector(".m-mcc__kropki"))
+        cell.appendChild(el(`<span class="m-mcc__kropki">${[...set].slice(0, 3).map((c) => `<span style="background:${c}"></span>`).join("")}</span>`));
     });
-    wMies.sort((a, b) => new Date(a.data_czas) - new Date(b.data_czas));
+  }
+
+  const mondayOf = (d) => { const m = new Date(d); m.setDate(d.getDate() - ((d.getDay() + 6) % 7)); m.setHours(0, 0, 0, 0); return m; };
+  function dolozTydzien(mon, gdzie) {
+    const frag = document.createDocumentFragment();
+    const dni = [];
+    for (let i = 0; i < 7; i++) { const d = new Date(mon); d.setDate(mon.getDate() + i); dni.push(d); }
+    for (const dd of dni) if (dd.getDate() === 1)
+      frag.appendChild(el(`<div class="m-mcc__mieslabel" data-rok="${dd.getFullYear()}" data-mies="${dd.getMonth()}">${MIES_SKR[dd.getMonth()]}</div>`));
+    const row = el(`<div class="m-mcc__tydz"></div>`);
+    for (const dd of dni) {
+      const iso = `${dd.getFullYear()}-${dwa(dd.getMonth() + 1)}-${dwa(dd.getDate())}`;
+      const mk = dd.getFullYear() * 12 + dd.getMonth();
+      const set = mapaDni.get(iso);
+      const kropki = (set && set.size) ? `<span class="m-mcc__kropki">${[...set].slice(0, 3).map((c) => `<span style="background:${c}"></span>`).join("")}</span>` : "";
+      const cell = el(`<div class="m-mcc__d${iso === dzisISO ? " m-mcc__d--dzis" : ""}" data-iso="${iso}" data-mk="${mk}"><span class="m-mcc__dnum">${dd.getDate()}</span>${kropki}</div>`);
+      const Y = dd.getFullYear(), M = dd.getMonth(), D = dd.getDate();
+      cell.addEventListener("click", () => { kotwica = new Date(Y, M, D); widokKal = "dzis"; renderKalendarz(); });
+      row.appendChild(cell);
+    }
+    frag.appendChild(row);
+    if (gdzie === "gora") scroll.insertBefore(frag, scroll.firstChild); else scroll.appendChild(frag);
+    dni.forEach((dd) => zaladujKropki(dd.getFullYear(), dd.getMonth()));
+  }
+
+  // start: bufor ~miesiąc wstecz i ~miesiąc w przód wokół bazowego
+  let gorna = mondayOf(new Date(bazaRok, bazaMies - 1, 1));
+  let dolna = mondayOf(new Date(bazaRok, bazaMies + 2, 0));
+  for (let cur = new Date(gorna); cur <= dolna; cur.setDate(cur.getDate() + 7)) dolozTydzien(new Date(cur), "dol");
+
+  function prepend(n) {
+    const h0 = scroll.scrollHeight;
+    for (let i = 0; i < n; i++) { gorna = new Date(gorna); gorna.setDate(gorna.getDate() - 7); dolozTydzien(new Date(gorna), "gora"); }
+    scroll.scrollTop += scroll.scrollHeight - h0; // zachowaj pozycję po doklejeniu u góry
+  }
+  function appendW(n) {
+    for (let i = 0; i < n; i++) { dolna = new Date(dolna); dolna.setDate(dolna.getDate() + 7); dolozTydzien(new Date(dolna), "dol"); }
+  }
+
+  let miesTeraz = -1;
+  async function budujListe(rok, mies) {
+    const mkLok = rok * 12 + mies;
+    const biezacy = (rok === dzis.rok && mies === dzis.mies - 1);
+    const wMies = await wczytajWydarzeniaZakres(new Date(rok, mies, 1), new Date(rok, mies + 1, 1));
+    if (miesTeraz !== mkLok) return; // przewinięto dalej — porzuć nieaktualny wynik
     let doPok = wMies, ukryte = 0;
     if (biezacy && !_miesPokazPrzeszle) {
       const prog = new Date(rok, mies, dzis.dzien); prog.setHours(0, 0, 0, 0);
@@ -5968,19 +5988,26 @@ async function renderMiesiacCiagly(box, od) {
     budujListe(rok, mies);
   }
 
-  const labels = [...box.querySelectorAll(".m-mcc__mieslabel")];
   let tick = false;
-  function przeliczMiesiac() {
-    const st = scroll.scrollTop + 6;
-    let akt = labels[0];
-    for (const l of labels) { if (l.offsetTop <= st) akt = l; else break; }
-    if (akt) ustawMiesiac(Number(akt.dataset.rok), Number(akt.dataset.mies));
-  }
-  scroll.addEventListener("scroll", () => { if (tick) return; tick = true; requestAnimationFrame(() => { tick = false; przeliczMiesiac(); }); });
+  scroll.addEventListener("scroll", () => {
+    if (tick) return; tick = true;
+    requestAnimationFrame(() => {
+      tick = false;
+      if (scroll.scrollTop < 250) prepend(6);
+      if (scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 250) appendW(6);
+      const st = scroll.scrollTop + 6;
+      const labs = scroll.querySelectorAll(".m-mcc__mieslabel");
+      let akt = labs[0];
+      for (const l of labs) { if (l.offsetTop <= st) akt = l; else break; }
+      if (akt) ustawMiesiac(Number(akt.dataset.rok), Number(akt.dataset.mies));
+    });
+  });
 
   ustawMiesiac(bazaRok, bazaMies);
-  const startLabel = labels.find((l) => Number(l.dataset.rok) === bazaRok && Number(l.dataset.mies) === bazaMies);
-  requestAnimationFrame(() => { if (startLabel) scroll.scrollTop = startLabel.offsetTop; });
+  requestAnimationFrame(() => {
+    const lab = [...scroll.querySelectorAll(".m-mcc__mieslabel")].find((l) => Number(l.dataset.rok) === bazaRok && Number(l.dataset.mies) === bazaMies);
+    if (lab) scroll.scrollTop = lab.offsetTop;
+  });
 }
 
 /* --- widok Dziś / 3 dni / Tydzień: siatka czasu --- */
