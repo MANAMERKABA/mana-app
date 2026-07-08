@@ -5283,9 +5283,9 @@ async function otworzHoryzont(opcje) {
 }
 
 /* --- okres bieżącego widoku --- */
-// TYLKO telefon w poziomie (orientacja landscape + niski ekran) rozwija widok dnia do pełnego tygodnia.
-// Desktop tego NIE robi — tam widok dnia zostaje sterowany przełącznikiem 1/3.
-function czySzeroki() { return window.matchMedia("(orientation: landscape) and (max-height: 540px)").matches; }
+// TYLKO telefon w poziomie rozwija widok dnia do pełnego tygodnia (poziomo + krótki bok ≤520px = telefon,
+// nie desktop/tablet). Desktop NIE — tam widok dnia zostaje sterowany przełącznikiem 1/3.
+function czySzeroki() { const w = window.innerWidth, h = window.innerHeight; return w > h && Math.min(w, h) <= 520; }
 function zakresOkresu() {
   const k = new Date(kotwica.getFullYear(), kotwica.getMonth(), kotwica.getDate());
   if (widokKal === "rok")
@@ -5314,15 +5314,19 @@ function przesunOkres(kier) {
 }
 // obrót telefonu / zmiana szerokości okna → przerysuj widok dnia (poziomo pokazuje pełny tydzień)
 let _szerokiStan = (typeof window !== "undefined") ? czySzeroki() : false;
-function _obsluzZmianeSzer() {
+function _rerenderDzien() {
+  const w = document.getElementById("m-widok-horyzont");
+  if (w && w.style.display !== "none" && (widokKal === "dzis" || widokKal === "3dni" || widokKal === "tydzien")) renderKalendarz();
+}
+window.addEventListener("resize", () => {
   const teraz = czySzeroki();
   if (teraz === _szerokiStan) return;
   _szerokiStan = teraz;
-  const w = document.getElementById("m-widok-horyzont");
-  if (w && w.style.display !== "none" && (widokKal === "dzis" || widokKal === "3dni")) renderKalendarz();
-}
-window.addEventListener("resize", _obsluzZmianeSzer);
-window.addEventListener("orientationchange", _obsluzZmianeSzer);
+  _rerenderDzien();
+});
+window.addEventListener("orientationchange", () => {
+  setTimeout(() => { _szerokiStan = czySzeroki(); _rerenderDzien(); }, 300); // wymiary aktualizują się z opóźnieniem po obrocie
+});
 function etykietaOkresu(z) {
   if (z.rok) return String(z.od.getFullYear());
   if (z.miesiac)
@@ -5388,8 +5392,15 @@ async function renderKalendarz() {
       else { kotwica = t; widokKal = "dzis"; }                                                  // dziś w oknie → zejdź do 1 dnia
     } else if (widokKal === "dzis") {
       widokKal = "3dni";                                                                        // przycisk pokazuje „3" → wróć do 3 dni (data bez zmian)
+    } else if (widokKal === "tydzien") {
+      const dow = (kotwica.getDay() + 6) % 7;
+      const s = new Date(kotwica.getFullYear(), kotwica.getMonth(), kotwica.getDate() - dow); s.setHours(0, 0, 0, 0);
+      const e = new Date(s); e.setDate(e.getDate() + 6);
+      const td = new Date(t); td.setHours(0, 0, 0, 0);
+      if (td < s || td > e) kotwica = t;                                                        // dziś poza tygodniem → recentruj na dziś
+      else { kotwica = t; widokKal = "3dni"; }                                                  // dziś w tygodniu → zejdź do 3 dni
     } else {
-      kotwica = t;                                                                              // tydzień → skok na dziś
+      kotwica = t;
     }
     renderKalendarz();
   });
