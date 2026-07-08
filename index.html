@@ -6098,15 +6098,20 @@ async function renderSiatka(box, od, dni) {
   const dowLit = ["P", "W", "Ś", "C", "P", "S", "N"];
   const pon = new Date(od); pon.setDate(od.getDate() - ((od.getDay() + 6) % 7));
   const odISO2 = dataKalISO(od), konISO2 = dataKalISO(new Date(od.getTime() + (dni - 1) * 86400000));
-  let stripTydz = `<div class="m-kal-tydz" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:6px 8px 8px;border-bottom:1px solid var(--line);">`;
+  let stripTydz = `<div class="m-kal-tydz" style="display:grid;grid-template-columns:${pokazNumeryTygodni ? "26px " : ""}repeat(7,1fr);gap:2px;padding:6px 8px 8px;border-bottom:1px solid var(--line);">`;
+  if (pokazNumeryTygodni) stripTydz += `<div style="font-size:10px;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;">T${numerTygodniaISO(pon)}</div>`;
   for (let i = 0; i < 7; i++) {
     const d = new Date(pon.getTime() + i * 86400000);
     const iso = dataKalISO(d);
     const wZak = iso >= odISO2 && iso <= konISO2;
     const jestDzis2 = iso === dzisISO;
+    // dziś: czerwone kółko TYLKO gdy w oknie; po zsunięciu zostaje sama czerwona cyfra
+    const stylNum = jestDzis2
+      ? (wZak ? "background:#d23b3b;color:#fff;border-radius:50%;" : "color:#d23b3b;font-weight:700;")
+      : "color:var(--ink);";
     stripTydz += `<button class="m-ktd" data-iso="${d.toISOString()}" style="border:none;background:${wZak ? "rgba(26,113,88,0.18)" : "transparent"};border-radius:12px;padding:3px 0 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;">
       <span style="font-size:9.5px;color:var(--ink-soft);">${dowLit[i]}</span>
-      <span style="font-size:14px;font-weight:600;width:27px;height:27px;display:flex;align-items:center;justify-content:center;${jestDzis2 ? "background:#d23b3b;color:#fff;border-radius:50%;" : "color:var(--ink);"}">${d.getDate()}</span>
+      <span style="font-size:14px;font-weight:600;width:27px;height:27px;display:flex;align-items:center;justify-content:center;${stylNum}">${d.getDate()}</span>
     </button>`;
   }
   stripTydz += `</div>`;
