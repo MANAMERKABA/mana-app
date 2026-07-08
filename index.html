@@ -291,7 +291,7 @@
   .m-tg__hdr { text-align: center; font-size: 11px; color: var(--ink-soft); padding: 4px 2px 6px; cursor: pointer; }
   .m-tg__hdr b { display: block; font-size: 15px; color: var(--ink); font-weight: 600; }
   .m-tg__hdr--dzis b { color: #d23b3b; }
-  .m-tg__scroll { max-height: 64vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); touch-action: pan-y; }
+  .m-tg__scroll { max-height: 70vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); touch-action: pan-y; }
   .m-tg__plansza { display: grid; grid-template-columns: 38px 1fr; }
   .m-tg__godz { font-size: 10px; color: var(--ink-soft); text-align: right; padding-right: 5px; box-sizing: border-box; }
   .m-tg__kolumny { display: grid; }
@@ -6067,12 +6067,17 @@ async function renderSiatka(box, od, dni) {
       + `<b>${dz.getDate()}</b></div>`;
   }
 
-  // strip całodzienny — wyjazdy, wakacje, konferencje (bary po dniach, w których wpis trwa)
+  // PASMO CAŁODZIENNE — delikatny wiersz na płaszczyźnie godzin: etykieta dnia per kolumna
+  // („śr – 8 lip", dziś czerwony) + bary całodzienne. Interaktywne: pojawia się i rośnie z wpisami
+  // całodniowymi, znika całkiem gdy ich nie ma.
   let stripHtml = "";
   if (calodzienne.length) {
     let kolumnyStrip = `<div></div>`;
     for (let i = 0; i < dni; i++) {
       const dayISO = dniISO[i];
+      const dz = new Date(od.getTime() + i * 86400000);
+      const jestDzis = dayISO === dzisISO;
+      const et = dz.toLocaleDateString("pl-PL", { weekday: "short" }) + " – " + dz.getDate() + " " + dz.toLocaleDateString("pl-PL", { month: "short" });
       const pasujace = calodzienne.filter((e) => dniCalodzienne(e).includes(dayISO));
       let bary = "";
       for (const e of pasujace) {
@@ -6081,7 +6086,7 @@ async function renderSiatka(box, od, dni) {
           + `style="background:${kKol};border-left:3px solid ${kKol}" `
           + `title="${esc(e.tytul)}">${esc(e.tytul)}</div>`;
       }
-      kolumnyStrip += `<div class="m-tg__caly-dzien-kol">${bary}</div>`;
+      kolumnyStrip += `<div class="m-tg__caly-dzien-kol"><div style="text-align:center;font-size:11px;padding:2px 0 5px;${jestDzis ? "color:#d23b3b;font-weight:700;" : "color:var(--ink-soft);"}">${esc(et)}</div>${bary}</div>`;
     }
     stripHtml = `<div class="m-tg__caly-dzien-strip" style="grid-template-columns:38px repeat(${dni},1fr)">${kolumnyStrip}</div>`;
   }
