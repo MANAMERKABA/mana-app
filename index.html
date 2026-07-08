@@ -305,10 +305,10 @@
 
   /* strip całodzienny u góry siatki (wyjazdy, wakacje, konferencje) */
   .m-tg__caly-dzien-strip {
-    display: grid; gap: 2px; padding: 4px 2px;
+    display: grid; gap: 0; padding: 4px 0;
     background: #faf8f2; border-bottom: 1px solid var(--line);
   }
-  .m-tg__caly-dzien-kol { display: flex; flex-direction: column; gap: 2px; min-height: 22px; padding: 0 2px; }
+  .m-tg__caly-dzien-kol { display: flex; flex-direction: column; gap: 2px; min-height: 22px; padding: 2px 3px; border-left: 1px solid #efeadd; }
   .m-tg__caly-dzien-bar {
     color: #fff; border-radius: 4px; padding: 3px 7px; font-size: 11px; line-height: 1.2;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
@@ -6071,7 +6071,7 @@ async function renderSiatka(box, od, dni) {
   // („śr – 8 lip", dziś czerwony) + bary całodzienne. Interaktywne: pojawia się i rośnie z wpisami
   // całodniowymi, znika całkiem gdy ich nie ma.
   let stripHtml = "";
-  if (dni > 1 || calodzienne.length) { // etykieta dnia ZAWSZE w widoku wielodniowym; pasmo rośnie o bary całodzienne
+  { // etykieta dnia ZAWSZE (1 dzień i 3 dni); pasmo rośnie o bary całodzienne
     let kolumnyStrip = `<div></div>`;
     for (let i = 0; i < dni; i++) {
       const dayISO = dniISO[i];
