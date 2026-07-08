@@ -263,6 +263,7 @@
   .m-mcc__kropki { display: flex; gap: 2px; min-height: 5px; }
   .m-mcc__kropki > span { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-soft); }
   #mcc-lista { max-height: 40vh; overflow-y: auto; margin-top: 6px; }
+  .m-mcc__wk { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--ink-soft); border-top: 1px solid var(--line); }
   .m-kalmenu-panel { position: absolute; top: 40px; left: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.14); padding: 6px; z-index: 40; min-width: 190px; }
   .m-kalmenu-panel button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 9px 12px; font-size: 14px; font-family: var(--font-body); color: var(--ink); cursor: pointer; border-radius: 8px; }
   .m-kalmenu-panel button:hover { background: var(--turkus-bg); }
@@ -5245,7 +5246,16 @@ let _evCache = null, _evCacheTs = 0, _kalKier = 0;
 let _miesOstatni = null, _miesPokazPrzeszle = false;
 function invalidujEvCache() { _evCache = null; }
 let pokazRocznice = true;
+let pokazNumeryTygodni = false; // ISO 8601; opcja (MANA off, gospodarz może on) — mechanizm przez lustro
 let zapytanieSzukaj = "";
+// numer tygodnia ISO 8601 (tydzień od poniedziałku; tydzień 1 zawiera pierwszy czwartek roku)
+function numerTygodniaISO(d) {
+  const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dow = (dt.getUTCDay() + 6) % 7;
+  dt.setUTCDate(dt.getUTCDate() - dow + 3); // czwartek tego tygodnia
+  const pierwszyCzw = new Date(Date.UTC(dt.getUTCFullYear(), 0, 4));
+  return 1 + Math.round((dt - pierwszyCzw) / (7 * 86400000));
+}
 
 function pasujeDoSzukania(e, q) {
   if (!q) return true;
@@ -5445,13 +5455,16 @@ function otworzMenuKal() {
   ).join("");
   const panel = el(`<div class="m-kalmenu-panel" id="kal-menu-panel">
     <button data-toggle="rocznice">${pokazRocznice ? "✓ " : ""}Rocznice i urodziny</button>
+    <button data-toggle="tygodnie">${pokazNumeryTygodni ? "✓ " : ""}Numery tygodni</button>
     <div class="m-kalmenu-sep"></div>
     ${chipyKat}
     ${chipyPlem ? `<div class="m-kalmenu-sep"></div>${chipyPlem}` : ""}
   </div>`);
-  panel.querySelector("button[data-toggle]").addEventListener("click", () => {
-    pokazRocznice = !pokazRocznice; panel.remove(); renderKalendarz();
-  });
+  panel.querySelectorAll("button[data-toggle]").forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.toggle === "rocznice") pokazRocznice = !pokazRocznice;
+    else if (b.dataset.toggle === "tygodnie") pokazNumeryTygodni = !pokazNumeryTygodni;
+    panel.remove(); renderKalendarz();
+  }));
   panel.querySelectorAll("button[data-kat]").forEach((b) => {
     b.addEventListener("click", () => {
       const k = b.dataset.kat;
@@ -5880,7 +5893,8 @@ async function renderMiesiacCiagly(box, od) {
   const dzisISO = `${dzis.rok}-${dwa(dzis.mies)}-${dwa(dzis.dzien)}`;
   const bazaRok = od.getFullYear(), bazaMies = od.getMonth();
 
-  box.innerHTML = `<div class="m-mcc"><div class="m-mcc__dow">${["Pn","Wt","Śr","Cz","Pt","So","Nd"].map((d) => `<div>${d}</div>`).join("")}</div><div class="m-mcc__scroll" id="mcc-scroll"></div><div class="m-mlist" id="mcc-lista"></div></div>`;
+  const wkKol = pokazNumeryTygodni ? "grid-template-columns:26px repeat(7,1fr);" : "";
+  box.innerHTML = `<div class="m-mcc"><div class="m-mcc__dow" style="${wkKol}">${pokazNumeryTygodni ? '<div></div>' : ''}${["Pn","Wt","Śr","Cz","Pt","So","Nd"].map((d) => `<div>${d}</div>`).join("")}</div><div class="m-mcc__scroll" id="mcc-scroll"></div><div class="m-mlist" id="mcc-lista"></div></div>`;
   const scroll = box.querySelector("#mcc-scroll");
   const listaEl = box.querySelector("#mcc-lista");
 
@@ -5912,7 +5926,8 @@ async function renderMiesiacCiagly(box, od) {
     for (const dd of dni) if (dd.getDate() === 1)
       frag.appendChild(el(`<div class="m-mcc__mieslabel" data-rok="${dd.getFullYear()}" data-mies="${dd.getMonth()}">${MIES_SKR[dd.getMonth()]}</div>`));
     const monISO = `${mon.getFullYear()}-${dwa(mon.getMonth() + 1)}-${dwa(mon.getDate())}`;
-    const row = el(`<div class="m-mcc__tydz" data-mon="${monISO}"></div>`);
+    const row = el(`<div class="m-mcc__tydz" data-mon="${monISO}" style="${pokazNumeryTygodni ? "grid-template-columns:26px repeat(7,1fr);" : ""}"></div>`);
+    if (pokazNumeryTygodni) row.appendChild(el(`<div class="m-mcc__wk">${numerTygodniaISO(mon)}</div>`));
     for (const dd of dni) {
       const iso = `${dd.getFullYear()}-${dwa(dd.getMonth() + 1)}-${dwa(dd.getDate())}`;
       const mk = dd.getFullYear() * 12 + dd.getMonth();
