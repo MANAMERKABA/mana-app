@@ -5326,15 +5326,13 @@ async function renderKalendarz() {
   else if (z.miesiac) tytulHtml = `<button class="m-kalcrumb" id="kal-do-rok">&#8249;&nbsp;${rokN}</button><span class="m-kaltyt" id="kal-mies-tyt">${esc(miesCap)}</span>`;
   else tytulHtml = `<button class="m-kalcrumb" id="kal-do-rok">&#8249;&nbsp;${rokN}</button><button class="m-kaltyt-btn" id="kal-do-mies">${esc(miesCap)}</button>`;
   const pokazNav = !z.rok && !z.miesiac;
-  const czyDzien = widokKal === "dzis" || widokKal === "3dni"; // przełącznik liczby dni tylko w widoku dnia
   wrap.innerHTML = `
     <div class="m-kalbar">
       ${tytulHtml}
       <span class="m-kalspacer"></span>
       ${pokazNav ? '<button class="m-kalnav" data-k="-1" aria-label="Wstecz">&#8249;</button>' : ""}
-      <button class="m-kaldzis" id="kal-dzis">Dziś</button>
+      <button class="m-kaldzis" id="kal-dzis">${widokKal === "dzis" ? "3" : "Dziś"}</button>
       ${pokazNav ? '<button class="m-kalnav" data-k="1" aria-label="Naprzód">&#8250;</button>' : ""}
-      ${czyDzien ? '<button class="m-kalmenu" id="kal-dni" aria-label="Liczba dni" title="Przełącz 1 / 3 dni">' + (widokKal === "3dni" ? "1" : "3") + '</button>' : ""}
       <button class="m-kalmenu" id="kal-menu" aria-label="Podgląd">&#9776;</button>
       <button class="m-kalmenu" id="kal-szukaj" aria-label="Szukaj">&#128269;</button>
       <button class="m-kalmenu" id="kal-plus" aria-label="Nowe wydarzenie" style="font-weight:700;">&#65291;</button>
@@ -5358,14 +5356,15 @@ async function renderKalendarz() {
       const td = new Date(t); td.setHours(0, 0, 0, 0);
       if (td < s || td > e) kotwica = t;                                                        // dziś poza oknem → recentruj okno na dziś
       else { kotwica = t; widokKal = "dzis"; }                                                  // dziś w oknie → zejdź do 1 dnia
+    } else if (widokKal === "dzis") {
+      widokKal = "3dni";                                                                        // przycisk pokazuje „3" → wróć do 3 dni (data bez zmian)
     } else {
-      kotwica = t;                                                                              // 1 dzień / tydzień → skok na dziś
+      kotwica = t;                                                                              // tydzień → skok na dziś
     }
     renderKalendarz();
   });
   const doRok = $("kal-do-rok"); if (doRok) doRok.addEventListener("click", () => { widokKal = "rok"; renderKalendarz(); });
   const doMies = $("kal-do-mies"); if (doMies) doMies.addEventListener("click", () => { widokKal = "miesiac"; renderKalendarz(); });
-  const dniBtn = $("kal-dni"); if (dniBtn) dniBtn.addEventListener("click", () => { widokKal = (widokKal === "3dni") ? "dzis" : "3dni"; renderKalendarz(); });
   $("kal-menu").addEventListener("click", (e) => { e.stopPropagation(); otworzMenuKal(); });
   $("kal-plus").addEventListener("click", () => oknoWydarzenia({ data: new Date(kotwica) }));
   $("kal-szukaj").addEventListener("click", () => { const si = $("hyz-szukaj"); if (!si) return; const pokaz = si.style.display === "none"; si.style.display = pokaz ? "" : "none"; if (pokaz) { si.focus(); si.scrollIntoView({ block: "center", behavior: "smooth" }); } });
