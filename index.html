@@ -6071,7 +6071,7 @@ async function renderSiatka(box, od, dni) {
   // („śr – 8 lip", dziś czerwony) + bary całodzienne. Interaktywne: pojawia się i rośnie z wpisami
   // całodniowymi, znika całkiem gdy ich nie ma.
   let stripHtml = "";
-  if (calodzienne.length) {
+  if (dni > 1 || calodzienne.length) { // etykieta dnia ZAWSZE w widoku wielodniowym; pasmo rośnie o bary całodzienne
     let kolumnyStrip = `<div></div>`;
     for (let i = 0; i < dni; i++) {
       const dayISO = dniISO[i];
