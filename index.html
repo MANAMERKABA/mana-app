@@ -1605,7 +1605,7 @@ async function otworzPanelAdmina() {
     const st = (s) => s === "przyjete" ? `<span style="color:#1a7158;font-weight:600;">przyjęte</span>` : s === "oczekujace" ? `<span style="color:#8a6416;">oczekujące</span>` : esc(s || "—");
     const rows = (data.zaproszenia || []).map((z) => `<tr>
       <td ${TD} style="white-space:nowrap;">${dt(z.kiedy)}</td>
-      <td ${TD}>${esc(z.email || "przez link")}${z.gosc ? `<div style="font-size:11px;color:var(--ink-soft);">gość</div>` : ""}${z.wiadomosc ? `<div style="font-size:11px;color:var(--ink-soft);">„${esc(z.wiadomosc)}"</div>` : ""}</td>
+      <td ${TD}><b>${esc(z.dla_kogo || z.email || "przez link")}</b>${z.dla_kogo && z.email ? `<div style="font-size:11px;color:var(--ink-soft);">${esc(z.email)}</div>` : ""}${!z.email && z.dla_kogo ? `<div style="font-size:11px;color:var(--ink-soft);">przez link</div>` : ""}${z.gosc ? `<div style="font-size:11px;color:var(--ink-soft);">gość</div>` : ""}${z.wiadomosc ? `<div style="font-size:11px;color:var(--ink-soft);">„${esc(z.wiadomosc)}"</div>` : ""}</td>
       <td ${TD}>${esc(z.plemie || "—")}</td>
       <td ${TD}>${st(z.status)}</td>
       <td ${TD} style="font-size:11px;color:var(--ink-soft);">${esc(z.zapraszajacy || "")}</td>
@@ -2886,7 +2886,7 @@ async function zaprosKontakt(k) {
     b.disabled = true;
     let data, error;
     if (email) ({ data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: b.dataset.id, p_email: email }));
-    else ({ data, error } = await supabase.rpc("zapros_link", { p_plemie: b.dataset.id }));
+    else ({ data, error } = await supabase.rpc("zapros_link", { p_plemie: b.dataset.id, p_dla_kogo: (k.imie || k.telefon || null) }));
     if (error) { trzosToast("Błąd: " + error.message); b.disabled = false; return; }
     if (!data || !data.ok) { trzosToast((data && data.error) || "Nie wysłano."); b.disabled = false; return; }
     zamknij();
