@@ -6089,14 +6089,13 @@ async function renderSiatka(box, od, dni) {
     const iso = dataKalISO(d);
     const wZak = iso >= odISO2 && iso <= konISO2;
     const jestDzis2 = iso === dzisISO;
-    stripTydz += `<button class="m-ktd" data-iso="${d.toISOString()}" style="border:none;background:${wZak ? "#eaf1ee" : "transparent"};border-radius:12px;padding:3px 0 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;">
+    stripTydz += `<button class="m-ktd" data-iso="${d.toISOString()}" style="border:none;background:${wZak ? "rgba(26,113,88,0.18)" : "transparent"};border-radius:12px;padding:3px 0 4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;">
       <span style="font-size:9.5px;color:var(--ink-soft);">${dowLit[i]}</span>
       <span style="font-size:14px;font-weight:600;width:27px;height:27px;display:flex;align-items:center;justify-content:center;${jestDzis2 ? "background:#d23b3b;color:#fff;border-radius:50%;" : "color:var(--ink);"}">${d.getDate()}</span>
     </button>`;
   }
   stripTydz += `</div>`;
   box.innerHTML = `${stripTydz}<div class="m-tg">
-    ${dni > 1 ? `<div class="m-tg__naglowki" style="grid-template-columns:38px repeat(${dni},1fr)">${naglowki}</div>` : ""}
     ${stripHtml}
     <div class="m-tg__scroll"><div class="m-tg__plansza">
       <div class="m-tg__godziny">${godziny}</div>
