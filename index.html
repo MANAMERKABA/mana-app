@@ -5340,12 +5340,19 @@ async function renderKalendarz() {
     <div class="m-kaltresc" id="kal-tresc"></div>`;
   wrap.querySelectorAll(".m-kalnav").forEach((b) =>
     b.addEventListener("click", () => przesunOkres(Number(b.dataset.k))));
-  // „Dziś" = zoom W DÓŁ ku teraz: rok → bieżący miesiąc; miesiąc → dzisiejszy dzień; dzień → skok na dziś
+  // „Dziś" = najpierw wróć do TERAZ na obecnym poziomie (jeśli odpłynąłeś), a dopiero
+  // kolejnym naciśnięciem zejdź o poziom niżej: rok → (bieżący rok) → miesiąc → dzień.
   $("kal-dzis").addEventListener("click", () => {
-    kotwica = dzisWarszawa();
-    if (widokKal === "rok") widokKal = "miesiac";
-    else if (widokKal === "miesiac") widokKal = "dzis";
-    renderKalendarz();
+    const t = dzisWarszawa();
+    if (widokKal === "rok") {
+      if (kotwica.getFullYear() !== t.getFullYear()) { kotwica = t; renderKalendarz(); }      // wróć do bieżącego roku, zostań w roku
+      else { kotwica = t; widokKal = "miesiac"; renderKalendarz(); }                            // już na bieżącym → zejdź do miesiąca
+    } else if (widokKal === "miesiac") {
+      if (kotwica.getFullYear() !== t.getFullYear() || kotwica.getMonth() !== t.getMonth()) { kotwica = t; renderKalendarz(); } // wróć do bieżącego miesiąca
+      else { kotwica = t; widokKal = "dzis"; renderKalendarz(); }                              // już na bieżącym → zejdź do dnia
+    } else {
+      kotwica = t; renderKalendarz();                                                          // dzień/tydzień → skok na dziś
+    }
   });
   const doRok = $("kal-do-rok"); if (doRok) doRok.addEventListener("click", () => { widokKal = "rok"; renderKalendarz(); });
   const doMies = $("kal-do-mies"); if (doMies) doMies.addEventListener("click", () => { widokKal = "miesiac"; renderKalendarz(); });
@@ -5733,10 +5740,10 @@ function miniMiesiacKal(rok, mies) {
 }
 async function renderRokGrid(box, rokCentr) {
   box.innerHTML = "";
-  const cont = el(`<div style="overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 200px);padding:4px 4px 60px;"></div>`);
+  const cont = el(`<div style="position:relative;overflow-y:auto;-webkit-overflow-scrolling:touch;max-height:calc(100vh - 200px);padding:4px 4px 60px;"></div>`);
   const sekcje = {};
-  for (let r = rokCentr - 3; r <= rokCentr + 3; r++) {
-    const sek = el(`<div style="margin-bottom:26px;">
+  for (let r = rokCentr - 8; r <= rokCentr + 8; r++) {
+    const sek = el(`<div data-rok="${r}" style="margin-bottom:26px;">
       <div style="font-size:22px;font-weight:700;color:${r === rokCentr ? "#1a7158" : "var(--ink)"};margin:4px 4px 12px;">${r}</div>
       <div class="rok-mies-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px 12px;"></div>
     </div>`);
@@ -5746,6 +5753,19 @@ async function renderRokGrid(box, rokCentr) {
     sekcje[r] = sek;
   }
   box.appendChild(cont);
+  // scroll → kotwica podąża za widocznym rokiem (żeby „Dziś" wiedział, na którym roku jesteś)
+  const sekArr = [...cont.querySelectorAll("[data-rok]")];
+  let tickR = false;
+  cont.addEventListener("scroll", () => {
+    if (tickR) return; tickR = true;
+    requestAnimationFrame(() => {
+      tickR = false;
+      const st = cont.scrollTop + 8;
+      let akt = sekArr[0];
+      for (const s of sekArr) { if (s.offsetTop <= st) akt = s; else break; }
+      if (akt) { const y = Number(akt.dataset.rok); if (y !== kotwica.getFullYear()) kotwica = new Date(y, kotwica.getMonth(), 1); }
+    });
+  });
   const t = sekcje[rokCentr];
   if (t) requestAnimationFrame(() => { cont.scrollTop = t.offsetTop - 4; });
 }
