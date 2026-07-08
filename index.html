@@ -1379,7 +1379,7 @@ async function pokazBannerZaproszenia() {
 async function wejdz() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: trav } = await supabase
-    .from("travels").select("id, nick, uklad_pokoi, jezyk, tryb_gosc, telefon, email").eq("auth_user_id", session.user.id).maybeSingle();
+    .from("travels").select("id, nick, uklad_pokoi, jezyk, tryb_gosc, telefon, email, is_admin").eq("auth_user_id", session.user.id).maybeSingle();
   if (!trav) { $("m-loader").textContent = "Nie znaleziono profilu podróżnika."; return; }
   TRAVELER = trav;
   $("m-loader").style.display = "none";
@@ -1499,6 +1499,14 @@ function renderHeader() {
     s.style.cursor = "pointer";
     if (!s._wiz) { s._wiz = true; s.addEventListener("click", otworzWizytowke); }
   });
+  /* Panel Administratora — napis MANA klikalny TYLKO dla admina (TRAVELER.is_admin). */
+  const marka = document.querySelector("#m-widok-ekran .m-brand__name");
+  if (marka && TRAVELER && TRAVELER.is_admin && !marka._adm) {
+    marka._adm = true;
+    marka.style.cursor = "pointer";
+    marka.title = "Panel Administratora";
+    marka.addEventListener("click", otworzPanelAdmina);
+  }
 }
 function otworzWizytowke() {
   const t = TRAVELER || {};
@@ -1543,6 +1551,76 @@ function otworzWizytowke() {
 $("m-logout").addEventListener("click", async () => {
   await supabase.auth.signOut(); location.reload();
 });
+
+/* ════════════════════════════════════════════════════════════════════
+   PANEL ADMINISTRATORA — otwierany tapnięciem w napis MANA (tylko admin).
+   Dane z RPC admin_panel_dane() (SECURITY DEFINER, sprawdza is_admin):
+   użytkownicy (rejestracja/ostatnio/ile logowań), logowania, zaproszenia.
+   ════════════════════════════════════════════════════════════════════ */
+async function otworzPanelAdmina() {
+  const stary = document.getElementById("m-adm-ovl"); if (stary) { stary.remove(); return; }
+  const ov = el(`<div id="m-adm-ovl" class="m-overlay"><div class="m-modal" style="max-width:680px;width:min(680px,94vw);">
+    <div class="m-modal__head"><span class="m-modal__tytul">Panel Administratora</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div style="display:flex;gap:6px;margin:10px 0 12px;">
+      <button class="adm-tab" data-t="uz" style="flex:1;">Użytkownicy</button>
+      <button class="adm-tab" data-t="log" style="flex:1;">Logowania</button>
+      <button class="adm-tab" data-t="zap" style="flex:1;">Zaproszenia</button>
+    </div>
+    <div id="adm-tresc" style="max-height:min(62vh,560px);overflow:auto;font-size:13px;">Wczytuję…</div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zam = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zam);
+
+  const TABST = "border:1px solid var(--line);background:#f3efe6;color:var(--ink,#1f2421);border-radius:10px;padding:8px 6px;font-size:13px;cursor:pointer;";
+  const TABON = "border:1px solid #1a7158;background:#1a7158;color:#fff;border-radius:10px;padding:8px 6px;font-size:13px;cursor:pointer;";
+  const tresc = ov.querySelector("#adm-tresc");
+  const dt = (s) => { if (!s) return "—"; try { return new Date(s).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: TZ }); } catch (_) { return s; } };
+
+  const { data, error } = await supabase.rpc("admin_panel_dane");
+  if (error || !data) { tresc.innerHTML = `<div style="color:#a33;">Nie udało się pobrać danych${error ? ": " + esc(error.message) : ""}.</div>`; return; }
+
+  const TH = `style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-soft);font-weight:600;white-space:nowrap;"`;
+  const TD = `style="padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top;"`;
+  const renderUz = () => {
+    const rows = (data.uzytkownicy || []).map((u) => `<tr>
+      <td ${TD}><b>${esc(u.nick || "—")}</b><div style="font-size:11px;color:var(--ink-soft);">${esc(u.email || "")}${u.gosc ? " · gość" : ""}</div></td>
+      <td ${TD}>${dt(u.rejestracja)}</td>
+      <td ${TD}>${dt(u.ostatnio)}</td>
+      <td ${TD} align="right">${u.logowan || 0}</td>
+    </tr>`).join("");
+    tresc.innerHTML = `<table style="width:100%;border-collapse:collapse;"><tr><th ${TH}>Kto</th><th ${TH}>Rejestracja</th><th ${TH}>Ostatnio</th><th ${TH}>Logowań</th></tr>${rows}</table>`;
+  };
+  const renderLog = () => {
+    const rows = (data.logowania || []).map((l) => `<tr>
+      <td ${TD} style="white-space:nowrap;">${dt(l.kiedy)}</td>
+      <td ${TD}><b>${esc(l.kto || "—")}</b></td>
+      <td ${TD}>${l.ok ? "✓" : `<span style="color:#a33;">✗ ${esc(l.powod || "")}</span>`}</td>
+      <td ${TD} style="font-size:11px;color:var(--ink-soft);">${esc(l.metoda || "")}</td>
+    </tr>`).join("");
+    tresc.innerHTML = `<table style="width:100%;border-collapse:collapse;"><tr><th ${TH}>Kiedy</th><th ${TH}>Kto</th><th ${TH}>OK</th><th ${TH}>Metoda</th></tr>${rows}</table>`;
+  };
+  const renderZap = () => {
+    const st = (s) => s === "przyjete" ? `<span style="color:#1a7158;font-weight:600;">przyjęte</span>` : s === "oczekujace" ? `<span style="color:#8a6416;">oczekujące</span>` : esc(s || "—");
+    const rows = (data.zaproszenia || []).map((z) => `<tr>
+      <td ${TD} style="white-space:nowrap;">${dt(z.kiedy)}</td>
+      <td ${TD}>${esc(z.email || "(link)")}${z.gosc ? `<div style="font-size:11px;color:var(--ink-soft);">gość</div>` : ""}</td>
+      <td ${TD}>${st(z.status)}</td>
+      <td ${TD} style="font-size:11px;color:var(--ink-soft);">${esc(z.zapraszajacy || "")}</td>
+    </tr>`).join("");
+    tresc.innerHTML = `<table style="width:100%;border-collapse:collapse;"><tr><th ${TH}>Kiedy</th><th ${TH}>Do kogo</th><th ${TH}>Status</th><th ${TH}>Od</th></tr>${rows}</table>`;
+  };
+
+  const widoki = { uz: renderUz, log: renderLog, zap: renderZap };
+  const taby = ov.querySelectorAll(".adm-tab");
+  const pokazTab = (t) => {
+    taby.forEach((b) => { b.style.cssText = (b.dataset.t === t ? TABON : TABST) + "flex:1;"; });
+    widoki[t]();
+  };
+  taby.forEach((b) => b.addEventListener("click", () => pokazTab(b.dataset.t)));
+  pokazTab("uz");
+}
 
 /* ====================================================================
    PRZEŁĄCZANIE WIDOKÓW
@@ -5283,9 +5361,9 @@ async function otworzHoryzont(opcje) {
 }
 
 /* --- okres bieżącego widoku --- */
-// SPRAWDZONE: zwykła szerokość okna (bez orientacji/dotyku — te zawodziły). Telefon w poziomie ma
-// szerokość ~720–1000px → rozwija widok dnia do tygodnia. Pionowo ~<600 → 1/3. Desktop ≥1100 → 1/3.
-function czySzeroki() { return window.innerWidth >= 700 && window.innerWidth < 1100; }
+// Rotacja poziomo → tydzień: ODŁOŻONA (nie udało się dopiąć zdalnie). Zwraca false, więc widok dnia
+// zostaje przy 1/3 wszędzie — dokładnie stan, który działał. Do wznowienia z diagnostyką na urządzeniu.
+function czySzeroki() { return false; }
 function zakresOkresu() {
   const k = new Date(kotwica.getFullYear(), kotwica.getMonth(), kotwica.getDate());
   if (widokKal === "rok")
