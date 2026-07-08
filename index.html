@@ -263,7 +263,8 @@
   .m-mcc__kropki { display: flex; gap: 2px; min-height: 5px; }
   .m-mcc__kropki > span { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-soft); }
   #mcc-lista { max-height: 40vh; overflow-y: auto; margin-top: 6px; }
-  .m-mcc__wk { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--ink-soft); border-top: 1px solid var(--line); }
+  .m-mcc__wk { display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--ink-soft); border-top: 1px solid var(--line); cursor: pointer; }
+  .m-mcc__wk:hover { color: var(--turkus); background: var(--turkus-bg); }
   .m-kalmenu-panel { position: absolute; top: 40px; left: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.14); padding: 6px; z-index: 40; min-width: 190px; }
   .m-kalmenu-panel button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 9px 12px; font-size: 14px; font-family: var(--font-body); color: var(--ink); cursor: pointer; border-radius: 8px; }
   .m-kalmenu-panel button:hover { background: var(--turkus-bg); }
@@ -491,7 +492,7 @@
   .m-mini-filtr--off .m-mini-filtr__check { color: var(--line); }
 
   /* ---- DESKTOP — szerszy ekran ---- */
-  @media (min-width: 1024px) {
+  @media (min-width: 900px) and (min-height: 600px) {
     body { padding: 0 20px; }
     #m-app, #m-login { max-width: 1200px; }
     #m-widok-ekran { max-width: 540px; margin: 0 auto; }
@@ -5246,7 +5247,7 @@ let _evCache = null, _evCacheTs = 0, _kalKier = 0;
 let _miesOstatni = null, _miesPokazPrzeszle = false;
 function invalidujEvCache() { _evCache = null; }
 let pokazRocznice = true;
-let pokazNumeryTygodni = false; // ISO 8601; opcja (MANA off, gospodarz może on) — mechanizm przez lustro
+let pokazNumeryTygodni = true; // ISO 8601 — przypięty na stałe; numer tygodnia = przycisk → widok tygodnia
 let zapytanieSzukaj = "";
 // numer tygodnia ISO 8601 (tydzień od poniedziałku; tydzień 1 zawiera pierwszy czwartek roku)
 function numerTygodniaISO(d) {
@@ -5282,8 +5283,9 @@ async function otworzHoryzont(opcje) {
 }
 
 /* --- okres bieżącego widoku --- */
-// szeroki ekran = telefon poziomo LUB okno desktopu; wtedy widok dnia rozwija się do tygodnia
-function czySzeroki() { return window.innerWidth >= 720; }
+// TYLKO telefon w poziomie (orientacja landscape + niski ekran) rozwija widok dnia do pełnego tygodnia.
+// Desktop tego NIE robi — tam widok dnia zostaje sterowany przełącznikiem 1/3.
+function czySzeroki() { return window.matchMedia("(orientation: landscape) and (max-height: 540px)").matches; }
 function zakresOkresu() {
   const k = new Date(kotwica.getFullYear(), kotwica.getMonth(), kotwica.getDate());
   if (widokKal === "rok")
@@ -5473,7 +5475,6 @@ function otworzMenuKal() {
   ).join("");
   const panel = el(`<div class="m-kalmenu-panel" id="kal-menu-panel">
     <button data-toggle="rocznice">${pokazRocznice ? "✓ " : ""}Rocznice i urodziny</button>
-    <button data-toggle="tygodnie">${pokazNumeryTygodni ? "✓ " : ""}Numery tygodni</button>
     <div class="m-kalmenu-sep"></div>
     ${chipyKat}
     ${chipyPlem ? `<div class="m-kalmenu-sep"></div>${chipyPlem}` : ""}
@@ -5945,7 +5946,12 @@ async function renderMiesiacCiagly(box, od) {
       frag.appendChild(el(`<div class="m-mcc__mieslabel" data-rok="${dd.getFullYear()}" data-mies="${dd.getMonth()}">${MIES_SKR[dd.getMonth()]}</div>`));
     const monISO = `${mon.getFullYear()}-${dwa(mon.getMonth() + 1)}-${dwa(mon.getDate())}`;
     const row = el(`<div class="m-mcc__tydz" data-mon="${monISO}" style="${pokazNumeryTygodni ? "grid-template-columns:26px repeat(7,1fr);" : ""}"></div>`);
-    if (pokazNumeryTygodni) row.appendChild(el(`<div class="m-mcc__wk">${numerTygodniaISO(mon)}</div>`));
+    if (pokazNumeryTygodni) {
+      const wk = el(`<div class="m-mcc__wk" title="Pokaż tydzień">${numerTygodniaISO(mon)}</div>`);
+      const monKopia = new Date(mon);
+      wk.addEventListener("click", (ev) => { ev.stopPropagation(); kotwica = monKopia; widokKal = "tydzien"; renderKalendarz(); });
+      row.appendChild(wk);
+    }
     for (const dd of dni) {
       const iso = `${dd.getFullYear()}-${dwa(dd.getMonth() + 1)}-${dwa(dd.getDate())}`;
       const mk = dd.getFullYear() * 12 + dd.getMonth();
@@ -6122,7 +6128,7 @@ async function renderSiatka(box, od, dni) {
   const pon = new Date(od); pon.setDate(od.getDate() - ((od.getDay() + 6) % 7));
   const odISO2 = dataKalISO(od), konISO2 = dataKalISO(new Date(od.getTime() + (dni - 1) * 86400000));
   let stripTydz = `<div class="m-kal-tydz" style="display:grid;grid-template-columns:${pokazNumeryTygodni ? "26px " : ""}repeat(7,1fr);gap:2px;padding:6px 8px 8px;border-bottom:1px solid var(--line);">`;
-  if (pokazNumeryTygodni) stripTydz += `<div style="font-size:10px;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;">T${numerTygodniaISO(pon)}</div>`;
+  if (pokazNumeryTygodni) stripTydz += `<div class="kal-wk-btn" title="Pokaż tydzień" style="font-size:10px;color:var(--ink-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;">T${numerTygodniaISO(pon)}</div>`;
   for (let i = 0; i < 7; i++) {
     const d = new Date(pon.getTime() + i * 86400000);
     const iso = dataKalISO(d);
@@ -6146,6 +6152,8 @@ async function renderSiatka(box, od, dni) {
     </div></div>
   </div>`;
   box.querySelectorAll(".m-ktd").forEach((b) => b.addEventListener("click", () => { kotwica = new Date(b.dataset.iso); renderKalendarz(); }));
+  const wkBtn = box.querySelector(".kal-wk-btn");
+  if (wkBtn) wkBtn.addEventListener("click", () => { kotwica = new Date(pon); widokKal = "tydzien"; renderKalendarz(); });
 
   // kliknięcia na bary całodzienne — otwórz edycję
   box.querySelectorAll(".m-tg__caly-dzien-bar").forEach((b) => {
