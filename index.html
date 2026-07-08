@@ -5283,9 +5283,9 @@ async function otworzHoryzont(opcje) {
 }
 
 /* --- okres bieżącego widoku --- */
-// Telefon w poziomie = orientacja pozioma + wąski ekran (<1024px). Wtedy widok dnia rozwija się do
-// pełnego tygodnia. Desktop (szeroki >1024) tego NIE robi — tam zostaje przełącznik 1/3.
-function czySzeroki() { return window.matchMedia("(orientation: landscape) and (max-width: 1024px)").matches; }
+// SPRAWDZONE: zwykła szerokość okna (bez orientacji/dotyku — te zawodziły). Telefon w poziomie ma
+// szerokość ~720–1000px → rozwija widok dnia do tygodnia. Pionowo ~<600 → 1/3. Desktop ≥1100 → 1/3.
+function czySzeroki() { return window.innerWidth >= 700 && window.innerWidth < 1100; }
 function zakresOkresu() {
   const k = new Date(kotwica.getFullYear(), kotwica.getMonth(), kotwica.getDate());
   if (widokKal === "rok")
