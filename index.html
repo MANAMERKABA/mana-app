@@ -492,7 +492,7 @@
   .m-mini-filtr--off .m-mini-filtr__check { color: var(--line); }
 
   /* ---- DESKTOP — szerszy ekran ---- */
-  @media (min-width: 900px) and (min-height: 600px) {
+  @media (min-width: 900px) and (pointer: fine) {
     body { padding: 0 20px; }
     #m-app, #m-login { max-width: 1200px; }
     #m-widok-ekran { max-width: 540px; margin: 0 auto; }
@@ -5283,9 +5283,9 @@ async function otworzHoryzont(opcje) {
 }
 
 /* --- okres bieżącego widoku --- */
-// TYLKO telefon w poziomie rozwija widok dnia do pełnego tygodnia (poziomo + krótki bok ≤520px = telefon,
-// nie desktop/tablet). Desktop NIE — tam widok dnia zostaje sterowany przełącznikiem 1/3.
-function czySzeroki() { const w = window.innerWidth, h = window.innerHeight; return w > h && Math.min(w, h) <= 520; }
+// Dotyk w poziomie (telefon/tablet obrócony) → widok dnia rozwija się do pełnego tygodnia.
+// Desktop (mysz = pointer:fine) tego NIE robi — tam widok dnia zostaje sterowany przełącznikiem 1/3.
+function czySzeroki() { return window.matchMedia("(orientation: landscape) and (pointer: coarse)").matches; }
 function zakresOkresu() {
   const k = new Date(kotwica.getFullYear(), kotwica.getMonth(), kotwica.getDate());
   if (widokKal === "rok")
