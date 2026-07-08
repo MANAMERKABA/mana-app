@@ -246,6 +246,10 @@
   .m-kalnav { flex: 0 0 auto; background: none; border: 1px solid var(--line); border-radius: 9px; width: 30px; height: 34px; font-size: 16px; color: var(--ink); cursor: pointer; }
   .m-kaldzis { flex: 0 0 auto; background: none; border: 1px solid var(--line); border-radius: 9px; height: 34px; padding: 0 10px; font-size: 12px; color: var(--ink-soft); cursor: pointer; font-family: var(--font-body); }
   .m-kaltresc { touch-action: pan-y; }
+  .m-kalspacer { flex: 1 1 auto; }
+  .m-kalcrumb { flex: 0 0 auto; background: none; border: none; font-family: var(--font-display); font-size: 15px; color: var(--turkus); cursor: pointer; padding: 0 3px; }
+  .m-kaltyt { flex: 0 0 auto; font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--ink); text-transform: capitalize; padding-left: 6px; }
+  .m-kaltyt-btn { flex: 0 0 auto; background: none; border: none; font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--ink); text-transform: capitalize; cursor: pointer; padding: 0 3px; }
   .m-kalmenu-panel { position: absolute; top: 40px; left: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.14); padding: 6px; z-index: 40; min-width: 190px; }
   .m-kalmenu-panel button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 9px 12px; font-size: 14px; font-family: var(--font-body); color: var(--ink); cursor: pointer; border-radius: 8px; }
   .m-kalmenu-panel button:hover { background: var(--turkus-bg); }
@@ -273,7 +277,7 @@
   .m-tg__hdr { text-align: center; font-size: 11px; color: var(--ink-soft); padding: 4px 2px 6px; cursor: pointer; }
   .m-tg__hdr b { display: block; font-size: 15px; color: var(--ink); font-weight: 600; }
   .m-tg__hdr--dzis b { color: #fff; background: var(--turkus); border-radius: 50%; width: 26px; height: 26px; line-height: 26px; margin: 2px auto 0; }
-  .m-tg__scroll { max-height: 54vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); touch-action: pan-y; }
+  .m-tg__scroll { max-height: 64vh; overflow-y: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); touch-action: pan-y; }
   .m-tg__plansza { display: grid; grid-template-columns: 38px 1fr; }
   .m-tg__godz { font-size: 10px; color: var(--ink-soft); text-align: right; padding-right: 5px; box-sizing: border-box; }
   .m-tg__kolumny { display: grid; }
@@ -616,7 +620,7 @@
     <div class="m-hyz-bar">
       <button class="m-back" id="m-back">&#8592; Ekran startowy</button>
       <span class="m-hyz-tytul">Horyzont</span>
-      <input type="search" id="hyz-szukaj" class="m-szukaj" placeholder="Szukaj… (/)" aria-label="Szukaj">
+      <input type="search" id="hyz-szukaj" class="m-szukaj" placeholder="Szukaj… (/)" aria-label="Szukaj" style="display:none">
       <span class="m-user" style="margin-left:8px;"></span>
     </div>
     <aside class="m-hyz-side" id="m-hyz-side" aria-label="Boczny panel">
@@ -3904,16 +3908,21 @@ $("hyz-szukaj").addEventListener("input", (ev) => {
     wczytajZadaniaHoryzont();
   }
 });
+// puste pole traci fokus → chowa się (szukanie na żądanie, „w spoczynku czysto")
+$("hyz-szukaj").addEventListener("blur", () => {
+  const si = $("hyz-szukaj");
+  if (si && !si.value.trim()) si.style.display = "none";
+});
 
 /* skróty klawiszowe w Horyzoncie: N = nowe, T = dziś, ←/→ = okres, / = szukaj */
 document.addEventListener("keydown", (ev) => {
   if ($("m-widok-horyzont").style.display === "none") return;
   const tag = (document.activeElement && document.activeElement.tagName) || "";
   const wInpucie = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-  if (ev.key === "/" && !wInpucie) { ev.preventDefault(); $("hyz-szukaj").focus(); return; }
+  if (ev.key === "/" && !wInpucie) { ev.preventDefault(); $("hyz-szukaj").style.display = ""; $("hyz-szukaj").focus(); return; }
   if (ev.key === "Escape" && document.activeElement === $("hyz-szukaj")) {
     $("hyz-szukaj").value = ""; zapytanieSzukaj = "";
-    renderKalendarz(); wczytajZadaniaHoryzont(); $("hyz-szukaj").blur(); return;
+    renderKalendarz(); wczytajZadaniaHoryzont(); $("hyz-szukaj").blur(); $("hyz-szukaj").style.display = "none"; return;
   }
   if (wInpucie) return;
   if (ev.key === "n" || ev.key === "N") { ev.preventDefault(); oknoWydarzenia({ data: kotwica }); }
@@ -5295,25 +5304,42 @@ async function renderKalendarz() {
     const sb = $("kal-tresc");
     if (sb && sb.children.length) { staraTresc = document.createElement("div"); staraTresc.style.cssText = "flex:0 0 50%;min-width:0;will-change:transform;"; while (sb.firstChild) staraTresc.appendChild(sb.firstChild); }
   }
+  // Kontekstowy tytuł: rok → pusto (rok żyje na siatce); miesiąc → „‹ 2026" + duża nazwa
+  // miesiąca; dzień/tydzień → breadcrumb „‹ 2026  Lipiec" (oba klikalne, każdy na swój poziom).
+  const rokN = z.od.getFullYear();
+  const miesRaw = z.od.toLocaleDateString("pl-PL", { month: "long" });
+  const miesCap = miesRaw.charAt(0).toUpperCase() + miesRaw.slice(1);
+  let tytulHtml = "";
+  if (z.rok) tytulHtml = "";
+  else if (z.miesiac) tytulHtml = `<button class="m-kalcrumb" id="kal-do-rok">&#8249;&nbsp;${rokN}</button><span class="m-kaltyt">${esc(miesCap)}</span>`;
+  else tytulHtml = `<button class="m-kalcrumb" id="kal-do-rok">&#8249;&nbsp;${rokN}</button><button class="m-kaltyt-btn" id="kal-do-mies">${esc(miesCap)}</button>`;
+  const pokazNav = !z.rok && !z.miesiac;
   wrap.innerHTML = `
     <div class="m-kalbar">
-      <button class="m-kalrok" id="kal-rok" title="Widok roku" style="border:none;background:none;font-size:13px;font-weight:700;color:#1a7158;cursor:pointer;padding:0 4px;">${z.od.getFullYear()}</button>
-      <span class="m-kaletyk">${esc(etykietaOkresu(z))}</span>
-      ${z.rok ? "" : '<button class="m-kalnav" data-k="-1" aria-label="Wstecz">&#8249;</button>'}
+      ${tytulHtml}
+      <span class="m-kalspacer"></span>
+      ${pokazNav ? '<button class="m-kalnav" data-k="-1" aria-label="Wstecz">&#8249;</button>' : ""}
       <button class="m-kaldzis" id="kal-dzis">Dziś</button>
-      ${z.rok ? "" : '<button class="m-kalnav" data-k="1" aria-label="Naprzód">&#8250;</button>'}
-      <button class="m-kalmenu" id="kal-menu" aria-label="Podgląd" style="margin-left:auto;">&#9776;</button>
+      ${pokazNav ? '<button class="m-kalnav" data-k="1" aria-label="Naprzód">&#8250;</button>' : ""}
+      <button class="m-kalmenu" id="kal-menu" aria-label="Podgląd">&#9776;</button>
       <button class="m-kalmenu" id="kal-szukaj" aria-label="Szukaj">&#128269;</button>
       <button class="m-kalmenu" id="kal-plus" aria-label="Nowe wydarzenie" style="font-weight:700;">&#65291;</button>
     </div>
     <div class="m-kaltresc" id="kal-tresc"></div>`;
   wrap.querySelectorAll(".m-kalnav").forEach((b) =>
     b.addEventListener("click", () => przesunOkres(Number(b.dataset.k))));
-  $("kal-dzis").addEventListener("click", () => { kotwica = dzisWarszawa(); renderKalendarz(); });
-  $("kal-rok").addEventListener("click", () => { widokKal = "rok"; renderKalendarz(); });
+  // „Dziś" = zoom W DÓŁ ku teraz: rok → bieżący miesiąc; miesiąc → dzisiejszy dzień; dzień → skok na dziś
+  $("kal-dzis").addEventListener("click", () => {
+    kotwica = dzisWarszawa();
+    if (widokKal === "rok") widokKal = "miesiac";
+    else if (widokKal === "miesiac") widokKal = "dzis";
+    renderKalendarz();
+  });
+  const doRok = $("kal-do-rok"); if (doRok) doRok.addEventListener("click", () => { widokKal = "rok"; renderKalendarz(); });
+  const doMies = $("kal-do-mies"); if (doMies) doMies.addEventListener("click", () => { widokKal = "miesiac"; renderKalendarz(); });
   $("kal-menu").addEventListener("click", (e) => { e.stopPropagation(); otworzMenuKal(); });
   $("kal-plus").addEventListener("click", () => oknoWydarzenia({ data: new Date(kotwica) }));
-  $("kal-szukaj").addEventListener("click", () => { const si = $("hyz-szukaj"); if (si) { si.scrollIntoView({ block: "center", behavior: "smooth" }); si.focus(); } });
+  $("kal-szukaj").addEventListener("click", () => { const si = $("hyz-szukaj"); if (!si) return; const pokaz = si.style.display === "none"; si.style.display = pokaz ? "" : "none"; if (pokaz) { si.focus(); si.scrollIntoView({ block: "center", behavior: "smooth" }); } });
   const box = $("kal-tresc");
   if (!z.rok) podepnijSwipe(box); // w widoku roku tylko góra/dół (pion), bez lewo/prawo
   const nowy = el(`<div style="flex:0 0 50%;min-width:0;will-change:transform;"></div>`);
