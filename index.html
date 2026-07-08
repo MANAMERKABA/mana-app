@@ -250,6 +250,18 @@
   .m-kalcrumb { flex: 0 0 auto; background: none; border: none; font-family: var(--font-display); font-size: 15px; color: var(--turkus); cursor: pointer; padding: 0 3px; }
   .m-kaltyt { flex: 0 0 auto; font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--ink); text-transform: capitalize; padding-left: 6px; }
   .m-kaltyt-btn { flex: 0 0 auto; background: none; border: none; font-family: var(--font-display); font-size: 15px; font-weight: 600; color: var(--ink); text-transform: capitalize; cursor: pointer; padding: 0 3px; }
+  .m-mcc { display: flex; flex-direction: column; }
+  .m-mcc__dow { display: grid; grid-template-columns: repeat(7,1fr); padding: 0 2px 4px; }
+  .m-mcc__dow > div { text-align: center; font-size: 11px; color: var(--ink-soft); }
+  .m-mcc__scroll { position: relative; max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .m-mcc__mieslabel { font-family: var(--font-display); font-size: 16px; font-weight: 700; color: var(--turkus); padding: 14px 10px 2px; }
+  .m-mcc__mieslabel:first-child { padding-top: 8px; }
+  .m-mcc__tydz { display: grid; grid-template-columns: repeat(7,1fr); }
+  .m-mcc__d { position: relative; min-height: 44px; display: flex; flex-direction: column; align-items: center; gap: 1px; padding-top: 5px; font-size: 14px; color: var(--ink); cursor: pointer; border-top: 1px solid var(--line); }
+  .m-mcc__dnum { width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+  .m-mcc__d--dzis .m-mcc__dnum { background: #e23b2e; color: #fff; border-radius: 50%; }
+  .m-mcc__kropki { display: flex; gap: 2px; min-height: 5px; }
+  .m-mcc__kropki > span { width: 5px; height: 5px; border-radius: 50%; background: var(--ink-soft); }
   .m-kalmenu-panel { position: absolute; top: 40px; left: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.14); padding: 6px; z-index: 40; min-width: 190px; }
   .m-kalmenu-panel button { display: block; width: 100%; text-align: left; background: none; border: none; padding: 9px 12px; font-size: 14px; font-family: var(--font-body); color: var(--ink); cursor: pointer; border-radius: 8px; }
   .m-kalmenu-panel button:hover { background: var(--turkus-bg); }
@@ -5311,7 +5323,7 @@ async function renderKalendarz() {
   const miesCap = miesRaw.charAt(0).toUpperCase() + miesRaw.slice(1);
   let tytulHtml = "";
   if (z.rok) tytulHtml = "";
-  else if (z.miesiac) tytulHtml = `<button class="m-kalcrumb" id="kal-do-rok">&#8249;&nbsp;${rokN}</button><span class="m-kaltyt">${esc(miesCap)}</span>`;
+  else if (z.miesiac) tytulHtml = `<button class="m-kalcrumb" id="kal-do-rok">&#8249;&nbsp;${rokN}</button><span class="m-kaltyt" id="kal-mies-tyt">${esc(miesCap)}</span>`;
   else tytulHtml = `<button class="m-kalcrumb" id="kal-do-rok">&#8249;&nbsp;${rokN}</button><button class="m-kaltyt-btn" id="kal-do-mies">${esc(miesCap)}</button>`;
   const pokazNav = !z.rok && !z.miesiac;
   wrap.innerHTML = `
@@ -5341,10 +5353,10 @@ async function renderKalendarz() {
   $("kal-plus").addEventListener("click", () => oknoWydarzenia({ data: new Date(kotwica) }));
   $("kal-szukaj").addEventListener("click", () => { const si = $("hyz-szukaj"); if (!si) return; const pokaz = si.style.display === "none"; si.style.display = pokaz ? "" : "none"; if (pokaz) { si.focus(); si.scrollIntoView({ block: "center", behavior: "smooth" }); } });
   const box = $("kal-tresc");
-  if (!z.rok) podepnijSwipe(box); // w widoku roku tylko góra/dół (pion), bez lewo/prawo
+  if (!z.rok && !z.miesiac) podepnijSwipe(box); // rok i miesiąc = przewijanie w pionie, bez swipe lewo/prawo
   const nowy = el(`<div style="flex:0 0 50%;min-width:0;will-change:transform;"></div>`);
   if (z.rok) await renderRokGrid(nowy, z.od.getFullYear());
-  else if (z.miesiac) await renderMiesiacGrid(nowy, z.od);
+  else if (z.miesiac) await renderMiesiacCiagly(nowy, z.od);
   else await renderSiatka(nowy, z.od, z.dni);
   if (kier && staraTresc) {
     box.style.overflow = "hidden"; box.style.position = "relative";
@@ -5830,6 +5842,125 @@ async function renderMiesiacGrid(box, od) {
     }
   }
   box.appendChild(lista);
+}
+
+/* MIESIĄC CIĄGŁY — pionowe przewijanie tydzień-za-tygodniem przez szeroki pas (~12 mies).
+   Najwyższy widoczny tydzień wyznacza miesiąc → pasek („‹ 2026" + nazwa) i lista pod spodem
+   dostrajają się na żywo. „Dziś" recentruje na bieżący miesiąc. */
+const MIES_PL = ["Styczeń","Luty","Marzec","Kwiecień","Maj","Czerwiec","Lipiec","Sierpień","Wrzesień","Październik","Listopad","Grudzień"];
+async function renderMiesiacCiagly(box, od) {
+  const dzis = czesciWarszawy(new Date());
+  const dzisISO = `${dzis.rok}-${dwa(dzis.mies)}-${dwa(dzis.dzien)}`;
+  const bazaRok = od.getFullYear(), bazaMies = od.getMonth();
+  const start = new Date(bazaRok, bazaMies - 3, 1);
+  const end = new Date(bazaRok, bazaMies + 9, 0); // ostatni dzień miesiąca +8
+  const wszystko = await wczytajWydarzeniaZakres(start, new Date(bazaRok, bazaMies + 9, 1));
+
+  // mapa dni z wydarzeniami: ISO -> Set kolorów plemion (pusty Set = zwykłe wydarzenie)
+  const mapaDni = new Map();
+  const dodaj = (iso, kol) => { if (!mapaDni.has(iso)) mapaDni.set(iso, new Set()); if (kol) mapaDni.get(iso).add(kol); };
+  for (const e of wszystko) {
+    const kol = (e.plemie_id && PLEMIE_MAP[e.plemie_id]) ? (PLEMIE_MAP[e.plemie_id].kolor || "#1f9e8f") : null;
+    if (e.caly_dzien) { for (const iso of dniCalodzienne(e)) dodaj(iso, kol); }
+    else { const cz = czesciWarszawy(e.data_czas); dodaj(`${cz.rok}-${dwa(cz.mies)}-${dwa(cz.dzien)}`, kol); }
+  }
+
+  let html = `<div class="m-mcc"><div class="m-mcc__dow">${["Pn","Wt","Śr","Cz","Pt","So","Nd"].map((d) => `<div>${d}</div>`).join("")}</div><div class="m-mcc__scroll" id="mcc-scroll">`;
+  let cur = new Date(start);
+  cur.setDate(cur.getDate() - ((cur.getDay() + 6) % 7)); // cofnij do poniedziałku
+  let lastLabel = -1;
+  while (cur <= end) {
+    const dni = [];
+    for (let i = 0; i < 7; i++) { dni.push(new Date(cur)); cur.setDate(cur.getDate() + 1); }
+    for (const dd of dni) {
+      if (dd.getDate() === 1) {
+        const mk = dd.getFullYear() * 12 + dd.getMonth();
+        if (mk !== lastLabel) { lastLabel = mk; html += `<div class="m-mcc__mieslabel" data-rok="${dd.getFullYear()}" data-mies="${dd.getMonth()}">${MIES_PL[dd.getMonth()]} ${dd.getFullYear()}</div>`; }
+      }
+    }
+    html += `<div class="m-mcc__tydz">`;
+    for (const dd of dni) {
+      const iso = `${dd.getFullYear()}-${dwa(dd.getMonth() + 1)}-${dwa(dd.getDate())}`;
+      const set = mapaDni.get(iso);
+      let kropki = "";
+      if (set && set.size) kropki = `<span class="m-mcc__kropki">${[...set].slice(0, 3).map((c) => `<span style="background:${c}"></span>`).join("")}</span>`;
+      else if (set) kropki = `<span class="m-mcc__kropki"><span></span></span>`;
+      html += `<div class="m-mcc__d${iso === dzisISO ? " m-mcc__d--dzis" : ""}" data-iso="${iso}"><span class="m-mcc__dnum">${dd.getDate()}</span>${kropki}</div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div><div class="m-mlist" id="mcc-lista"></div></div>`;
+  box.innerHTML = html;
+
+  box.querySelectorAll(".m-mcc__d").forEach((c) => c.addEventListener("click", () => {
+    const [Y, M, D] = c.dataset.iso.split("-").map(Number);
+    kotwica = new Date(Y, M - 1, D); widokKal = "dzis"; renderKalendarz();
+  }));
+
+  const scroll = box.querySelector("#mcc-scroll");
+  const listaEl = box.querySelector("#mcc-lista");
+  let miesTeraz = -1;
+
+  function budujListe(rok, mies) {
+    const biezacy = (rok === dzis.rok && mies === dzis.mies - 1);
+    const wMies = wszystko.filter((e) => {
+      if (e.caly_dzien) return dniCalodzienne(e).some((iso) => { const [Y, M] = iso.split("-").map(Number); return Y === rok && M - 1 === mies; });
+      const cz = czesciWarszawy(e.data_czas); return cz.rok === rok && cz.mies - 1 === mies;
+    });
+    wMies.sort((a, b) => new Date(a.data_czas) - new Date(b.data_czas));
+    let doPok = wMies, ukryte = 0;
+    if (biezacy && !_miesPokazPrzeszle) {
+      const prog = new Date(rok, mies, dzis.dzien); prog.setHours(0, 0, 0, 0);
+      const przeszly = (e) => new Date(e.koniec || e.data_czas) < prog;
+      ukryte = wMies.filter(przeszly).length;
+      doPok = wMies.filter((e) => !przeszly(e));
+    }
+    listaEl.innerHTML = "";
+    if (biezacy && (ukryte > 0 || _miesPokazPrzeszle)) {
+      const btn = el(`<button style="border:1px solid var(--line);background:var(--surface);border-radius:9px;font-size:12px;padding:5px 11px;margin:8px 4px;cursor:pointer;color:var(--ink-soft);">${_miesPokazPrzeszle ? "↑ Tylko nadchodzące" : `Pokaż wszystkie (${ukryte} minione)`}</button>`);
+      btn.addEventListener("click", () => { _miesPokazPrzeszle = !_miesPokazPrzeszle; budujListe(rok, mies); });
+      listaEl.appendChild(btn);
+    }
+    if (!doPok.length) {
+      listaEl.appendChild(el(`<div class="m-pusto" style="padding:10px 4px">${biezacy ? "Nic już przed Tobą w tym miesiącu." : "Brak wydarzeń w tym miesiącu."}</div>`));
+    } else {
+      for (const e of doPok) {
+        const zakres = etykietaZakresuCalodziennego(e);
+        const kiedy = zakres ? zakres : fmtData(e.data_czas, { day: "numeric", month: "short" }) + (e.caly_dzien ? "" : " · " + fmtGodz(e.data_czas));
+        const sub = liniaPlemie(e) || obcaStrefaLinia(e);
+        const plKol = e.plemie_id && PLEMIE_MAP[e.plemie_id] ? PLEMIE_MAP[e.plemie_id].kolor : null;
+        const wier = el(`<div class="m-poz"><span class="m-poz__czas">${esc(kiedy)}</span><span class="m-poz__tytul"><span class="m-kat-kropka" style="background:${kolorKategorii(e)}"></span>${plKol ? `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${plKol};margin-right:4px;vertical-align:middle;"></span>` : ""}${esc(e.tytul)}${sub ? ` <span class="m-poz__obca">${esc(sub)}</span>` : ""}</span></div>`);
+        wier.style.cursor = "pointer";
+        wier.addEventListener("click", () => oknoWydarzenia({ event: e }));
+        listaEl.appendChild(wier);
+      }
+    }
+  }
+
+  function ustawMiesiac(rok, mies) {
+    const mk = rok * 12 + mies;
+    if (mk === miesTeraz) return;
+    miesTeraz = mk;
+    _miesPokazPrzeszle = false;
+    kotwica = new Date(rok, mies, 1);
+    const doRok = $("kal-do-rok"); if (doRok) doRok.innerHTML = "&#8249;&nbsp;" + rok;
+    const tyt = $("kal-mies-tyt"); if (tyt) tyt.textContent = MIES_PL[mies];
+    budujListe(rok, mies);
+  }
+
+  const labels = [...box.querySelectorAll(".m-mcc__mieslabel")];
+  let tick = false;
+  function przeliczMiesiac() {
+    const st = scroll.scrollTop + 6;
+    let akt = labels[0];
+    for (const l of labels) { if (l.offsetTop <= st) akt = l; else break; }
+    if (akt) ustawMiesiac(Number(akt.dataset.rok), Number(akt.dataset.mies));
+  }
+  scroll.addEventListener("scroll", () => { if (tick) return; tick = true; requestAnimationFrame(() => { tick = false; przeliczMiesiac(); }); });
+
+  ustawMiesiac(bazaRok, bazaMies);
+  const startLabel = labels.find((l) => Number(l.dataset.rok) === bazaRok && Number(l.dataset.mies) === bazaMies);
+  requestAnimationFrame(() => { if (startLabel) scroll.scrollTop = startLabel.offsetTop; });
 }
 
 /* --- widok Dziś / 3 dni / Tydzień: siatka czasu --- */
