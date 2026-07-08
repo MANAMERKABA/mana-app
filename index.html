@@ -1605,11 +1605,12 @@ async function otworzPanelAdmina() {
     const st = (s) => s === "przyjete" ? `<span style="color:#1a7158;font-weight:600;">przyjęte</span>` : s === "oczekujace" ? `<span style="color:#8a6416;">oczekujące</span>` : esc(s || "—");
     const rows = (data.zaproszenia || []).map((z) => `<tr>
       <td ${TD} style="white-space:nowrap;">${dt(z.kiedy)}</td>
-      <td ${TD}>${esc(z.email || "(link)")}${z.gosc ? `<div style="font-size:11px;color:var(--ink-soft);">gość</div>` : ""}</td>
+      <td ${TD}>${esc(z.email || "przez link")}${z.gosc ? `<div style="font-size:11px;color:var(--ink-soft);">gość</div>` : ""}${z.wiadomosc ? `<div style="font-size:11px;color:var(--ink-soft);">„${esc(z.wiadomosc)}"</div>` : ""}</td>
+      <td ${TD}>${esc(z.plemie || "—")}</td>
       <td ${TD}>${st(z.status)}</td>
       <td ${TD} style="font-size:11px;color:var(--ink-soft);">${esc(z.zapraszajacy || "")}</td>
     </tr>`).join("");
-    tresc.innerHTML = `<table style="width:100%;border-collapse:collapse;"><tr><th ${TH}>Kiedy</th><th ${TH}>Do kogo</th><th ${TH}>Status</th><th ${TH}>Od</th></tr>${rows}</table>`;
+    tresc.innerHTML = `<table style="width:100%;border-collapse:collapse;"><tr><th ${TH}>Kiedy</th><th ${TH}>Do kogo</th><th ${TH}>Plemię</th><th ${TH}>Status</th><th ${TH}>Od</th></tr>${rows}</table>`;
   };
 
   const widoki = { uz: renderUz, log: renderLog, zap: renderZap };
