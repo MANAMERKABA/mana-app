@@ -3026,6 +3026,7 @@ function kartaPlemienia(p) {
       <b style="font-size:15px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escP(p.nazwa)}</b>
       <span class="pl-glowa-kropka" style="display:none;min-width:16px;height:16px;line-height:16px;text-align:center;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;padding:0 4px;flex:none;"></span>
       <span style="font-size:11px;color:var(--ink-soft);white-space:nowrap;flex:none;">${czl.length} os.</span>
+      <button class="pl-glowa-rozm" title="Rozmowa plemienia" style="width:32px;height:32px;border:none;border-radius:50%;background:#1a7158;color:#fff;font-size:15px;line-height:1;cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center;">💬</button>
       <span class="pl-chev" style="color:var(--ink-soft);font-size:15px;line-height:1;flex:none;">▸</span>
     </div>
     <div class="pl-body" style="display:none;">
@@ -3036,6 +3037,8 @@ function kartaPlemienia(p) {
   </div>`);
   { const _g = card.querySelector(".pl-glowa"), _b = card.querySelector(".pl-body"), _c = card.querySelector(".pl-chev");
     _g.addEventListener("click", () => { const open = _b.style.display !== "none"; _b.style.display = open ? "none" : "block"; _c.textContent = open ? "▸" : "▾"; }); }
+  { const _r = card.querySelector(".pl-glowa-rozm");
+    if (_r) _r.addEventListener("click", (e) => { e.stopPropagation(); otworzRozmowe(p); }); }
   const czlBox = card.querySelector(".pl-czl");
   czl.forEach((c) => {
     const dziecko = !!c.zarzadzany;
