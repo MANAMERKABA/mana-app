@@ -1504,6 +1504,8 @@ function alarmAudioOdblokuj() {
 }
 document.addEventListener("click", alarmAudioOdblokuj, { capture: true });
 document.addEventListener("touchstart", alarmAudioOdblokuj, { capture: true });
+/* diagnostyka z konsoli (skrypt jest modułem, więc bez tego funkcje są niewidoczne) */
+window.testDzwieku = () => { alarmAudioOdblokuj(); alarmDzwiek(); return _alarmCtx ? _alarmCtx.state : "brak kontekstu"; };
 function alarmDzwiek() {
   try {
     if (!_alarmCtx) return; // jeszcze bez interakcji — przeglądarka i tak by nie zagrała
@@ -1705,12 +1707,13 @@ async function otworzPanelAdmina() {
     </tr>`).join("");
     tresc.innerHTML = `<table style="width:100%;border-collapse:collapse;"><tr><th ${TH}>Kto</th><th ${TH}>Rejestracja</th><th ${TH}>Ostatnio</th><th ${TH}>Logowań</th></tr>${rows}</table>`;
   };
+  const METODA_PL = { login_email_password: "logowanie", signup_email_password: "rejestracja ★", login_failed: "nieudane", logout: "wylogowanie" };
   const renderLog = () => {
     const rows = (data.logowania || []).map((l) => `<tr>
       <td ${TD} style="white-space:nowrap;">${dt(l.kiedy)}</td>
       <td ${TD}><b>${esc(l.kto || "—")}</b></td>
       <td ${TD}>${l.ok ? "✓" : `<span style="color:#a33;">✗ ${esc(l.powod || "")}</span>`}</td>
-      <td ${TD} style="font-size:11px;color:var(--ink-soft);">${esc(l.metoda || "")}</td>
+      <td ${TD} style="font-size:11px;color:var(--ink-soft);">${esc(METODA_PL[l.metoda] || l.metoda || "")}</td>
     </tr>`).join("");
     tresc.innerHTML = `<table style="width:100%;border-collapse:collapse;"><tr><th ${TH}>Kiedy</th><th ${TH}>Kto</th><th ${TH}>OK</th><th ${TH}>Metoda</th></tr>${rows}</table>`;
   };
@@ -3007,10 +3010,36 @@ async function zaprosKontakt(k) {
       trzosToast("Zaproszenie wysłane ✓");
     } else {
       const link = location.origin + "/?zaproszenie=" + data.zaproszenie_id;
-      const kanal = k.telefon ? "SMS / WhatsApp" : "e-mail / czat";
-      prompt(`Wyślij ten link do „${k.imie || email || k.telefon}" (${kanal}) — po rejestracji dołączy do grupy:`, link);
+      const grupa = (moje.find((x) => x.id === b.dataset.id) || {}).nazwa || "grupy";
+      pokazLinkZaproszenia(k, link, grupa);
     }
   }));
+}
+/* Link zaproszenia do ręcznego wysłania — przyciski WhatsApp / SMS / E-mail / Kopiuj (zamiast prompt, który na telefonie bywał niewidoczny). */
+function pokazLinkZaproszenia(k, link, grupa) {
+  const msg = `Zapraszam Cię do grupy „${grupa}" w MANA: ${link}`;
+  const tel = (k.telefon || "").replace(/[^\d]/g, "");
+  const B = `display:block;width:100%;text-align:center;text-decoration:none;border:none;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;box-sizing:border-box;`;
+  let akcje = "";
+  if (tel) akcje += `<a href="https://wa.me/${tel}?text=${encodeURIComponent(msg)}" target="_blank" rel="noopener" style="${B}background:#1a9e5f;color:#fff;">WhatsApp</a>`;
+  if (k.telefon) akcje += `<a href="sms:${escP(k.telefon)}?body=${encodeURIComponent(msg)}" style="${B}background:#1a7158;color:#fff;">SMS</a>`;
+  if (k.email) akcje += `<a href="mailto:${encodeURIComponent(k.email)}?subject=${encodeURIComponent("Zaproszenie do MANA")}&body=${encodeURIComponent(msg)}" style="${B}background:var(--turkus,#1f9e8f);color:#fff;">E-mail</a>`;
+  const sheet = el(`<div class="m-overlay" style="align-items:flex-end;">
+    <div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:14px 16px 20px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
+      <div style="font-size:13px;font-weight:600;margin-bottom:2px;">Wyślij zaproszenie: ${escP(k.imie || "kontakt")}</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">Link jest jednorazowy, tylko dla tej osoby. Po rejestracji dołączy do „${escP(grupa)}".</div>
+      ${akcje}
+      <button class="zl-kopiuj" style="${B}background:var(--surface);border:1px solid var(--line);color:var(--ink);">Kopiuj link</button>
+      <button class="zl-x" style="${B}background:none;color:var(--ink-soft);margin-bottom:0;">Zamknij</button>
+    </div></div>`);
+  document.body.appendChild(sheet);
+  const zam = () => sheet.remove();
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) zam(); });
+  sheet.querySelector(".zl-x").addEventListener("click", zam);
+  sheet.querySelector(".zl-kopiuj").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(link); trzosToast("Link skopiowany ✓"); }
+    catch (e) { prompt("Skopiuj link:", link); }
+  });
 }
 async function dodajZPlemienia() {
   const [{ data: pls }, { data: istn = [] }] = await Promise.all([
