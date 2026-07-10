@@ -1478,13 +1478,75 @@ function odswiezRozmowyLive() {
     const rz = $("wiezi-sekcja-roz"); if (rz && rz.style.display !== "none" && typeof renderRozmowyInbox === "function") renderRozmowyInbox();
   }, 400);
 }
+/* ════════════════════════════════════════════════════════════════════
+   ALARMY WIADOMOŚCI — dwa poziomy:
+   1) apka otwarta, inna rozmowa/pokój → dźwięk + klikalny dymek,
+   2) karta w tle → powiadomienie systemowe (Notification API, zgoda raz).
+   Nie alarmuje, gdy patrzysz właśnie na tę rozmowę albo wiadomość jest Twoja.
+   ════════════════════════════════════════════════════════════════════ */
+let _alarmCache = null;
+async function alarmDane() {
+  if (_alarmCache) return _alarmCache;
+  try {
+    const { data } = await supabase.rpc("moje_plemiona_full");
+    _alarmCache = {};
+    (data || []).forEach((p) => { const m = {}; (p.czlonkowie || []).forEach((c) => { m[c.traveler_id] = c.nick; }); _alarmCache[p.id] = { nazwa: p.nazwa, typ: p.typ, czl: m }; });
+  } catch (e) { _alarmCache = null; return {}; }
+  return _alarmCache;
+}
+function alarmDzwiek() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type = "sine"; o.frequency.value = 880; g.gain.value = 0.06;
+    o.start(); o.frequency.setValueAtTime(660, ctx.currentTime + 0.12);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+    o.stop(ctx.currentTime + 0.4);
+    setTimeout(() => { try { ctx.close(); } catch (e) {} }, 600);
+  } catch (e) {}
+}
+async function alarmNowaWiadomosc(w) {
+  if (!w || !TRAVELER || w.traveler_id === TRAVELER.id) return;
+  if (window._otwartaRozmowa === w.plemie_id && !document.hidden) return; // patrzę na tę rozmowę
+  let d = await alarmDane();
+  if (!d[w.plemie_id]) { _alarmCache = null; d = await alarmDane(); } // nowa rozmowa → odśwież raz
+  const info = d[w.plemie_id] || {};
+  const kto = (info.czl || {})[w.traveler_id] || "Ktoś";
+  const skad = info.typ === "rozmowa" ? "" : (info.nazwa ? " · " + info.nazwa : "");
+  const tekst = `${kto}${skad}: ${(w.tresc || "").slice(0, 90)}`;
+  if (document.hidden) {
+    if ("Notification" in window && Notification.permission === "granted") {
+      try {
+        const n = new Notification("MANA — nowa wiadomość", { body: tekst, tag: "mana-czat-" + w.plemie_id, renotify: true });
+        n.onclick = () => { try { window.focus(); } catch (e) {} n.close(); otworzRozmowaPoId(w.plemie_id); };
+      } catch (e) {}
+    }
+  } else {
+    alarmDzwiek();
+    const ist = $("mana-alarm-toast"); if (ist) ist.remove();
+    const b = el(`<div id="mana-alarm-toast" style="position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#1f2421;color:#fff;padding:10px 16px;border-radius:12px;font-size:13.5px;z-index:9999;box-shadow:0 6px 20px rgba(0,0,0,.25);display:flex;align-items:center;gap:9px;max-width:92%;cursor:pointer;"><span style="flex:none;">💬</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escP(tekst)}</span></div>`);
+    b.addEventListener("click", () => { b.remove(); otworzRozmowaPoId(w.plemie_id); });
+    document.body.appendChild(b);
+    setTimeout(() => { try { b.remove(); } catch (e) {} }, 6000);
+  }
+}
+function alarmPoprosZgode() {
+  if (!("Notification" in window) || Notification.permission !== "default") return;
+  const raz = () => { try { Notification.requestPermission(); } catch (e) {} };
+  document.addEventListener("click", raz, { once: true });
+}
 function subskrybujRealtime() {
   if (_kanalRealtime) return;
+  alarmPoprosZgode();
   _kanalRealtime = supabase
     .channel("mana-live")
     .on("postgres_changes", { event: "*", schema: "public", table: "events" }, odswiezKalendarzeLive)
     .on("postgres_changes", { event: "*", schema: "public", table: "plemie_czlonkowie" }, odswiezKalendarzeLive)
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "wiadomosci" }, odswiezRozmowyLive)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "wiadomosci" }, (payload) => {
+      odswiezRozmowyLive();
+      alarmNowaWiadomosc(payload && payload.new);
+    })
     .subscribe();
 }
 
@@ -3536,6 +3598,7 @@ const inicjalyPl = (n) => { const cz = String(n || "").trim().split(/\s+/).filte
    MVP: wątek na żywo (realtime) + oznaczanie przeczytania. */
 let _kanalRozmowa = null;
 async function otworzRozmowe(p) {
+  window._otwartaRozmowa = p.id;
   const czl = p.czlonkowie || [];
   const mojeId = TRAVELER && TRAVELER.id;
   const nickOf = (id) => { const c = czl.find((x) => x.traveler_id === id); return c ? (c.nick || "uczestnik") : "ktoś"; };
@@ -3701,6 +3764,7 @@ async function otworzRozmowe(p) {
   malujTryb();
   aktualizujLive();
   const zamknij = () => {
+    window._otwartaRozmowa = null;
     if (_kanalRozmowa) { try { supabase.removeChannel(_kanalRozmowa); } catch (e) {} _kanalRozmowa = null; }
     overlay.remove();
     if (typeof renderNieprzeczytaneStart === "function") renderNieprzeczytaneStart();
