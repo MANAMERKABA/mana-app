@@ -3859,9 +3859,34 @@ async function otworzRozmowe(p) {
     if (!czyt.length) return;
     const tekst = inni.length === 1
       ? `✓✓ Przeczytane · ${fmtGodz(ODCZYTY[czyt[0].traveler_id])}`
-      : `✓✓ ${czyt.map((c) => (c.nick || "uczestnik") + " " + fmtGodz(ODCZYTY[c.traveler_id])).join(", ")}`;
-    ost.row.appendChild(el(`<div class="rz-odczyt" style="font-size:10.5px;color:#1a7158;margin-top:1px;">${escP(tekst)}</div>`));
+      : `✓✓ przeczytało ${czyt.length} z ${inni.length}`;
+    const zn = el(`<button class="rz-odczyt" style="border:none;background:none;padding:0 2px;font-size:10.5px;color:#1a7158;margin-top:1px;cursor:pointer;font-family:inherit;">${escP(tekst)}</button>`);
+    zn.addEventListener("click", () => pokazOdczyty(ost.w));
+    ost.row.appendChild(zn);
   };
+  /* Tap w ✓✓ → lista: kto otworzył rozmowę po tej wiadomości (i o której), kto jeszcze nie. */
+  function pokazOdczyty(w) {
+    const inni = czl.filter((c) => c.traveler_id !== mojeId);
+    const czyt = inni.filter((c) => ODCZYTY[c.traveler_id] && new Date(ODCZYTY[c.traveler_id]).getTime() >= new Date(w.created_at).getTime());
+    const nieCzyt = inni.filter((c) => !czyt.includes(c));
+    const wiersz = (ico, kolor, nick, kiedy) => `<div style="display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid var(--line);font-size:14px;">
+      <span style="color:${kolor};flex:none;width:26px;">${ico}</span><span style="flex:1;">${escP(nick)}</span><span style="color:var(--ink-soft);font-size:12.5px;">${escP(kiedy)}</span></div>`;
+    let ht = "";
+    czyt.sort((a, b) => new Date(ODCZYTY[a.traveler_id]) - new Date(ODCZYTY[b.traveler_id]));
+    czyt.forEach((c) => { ht += wiersz("✓✓", "#1a7158", c.nick || "uczestnik", fmtGodz(ODCZYTY[c.traveler_id])); });
+    nieCzyt.forEach((c) => { ht += wiersz("✓", "var(--ink-soft)", c.nick || "uczestnik", "jeszcze nie"); });
+    const sheet = el(`<div class="m-overlay" style="align-items:flex-end;">
+      <div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:14px 16px 20px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
+        <div style="font-size:13px;font-weight:600;margin-bottom:2px;">Kto przeczytał</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">czyli otworzył rozmowę po tej wiadomości (${escP(fmtGodz(w.created_at))})</div>
+        ${ht}
+        <button class="od-x" style="width:100%;border:none;background:none;color:var(--ink-soft);border-radius:12px;padding:10px;font-size:14px;cursor:pointer;margin-top:6px;">Zamknij</button>
+      </div></div>`);
+    document.body.appendChild(sheet);
+    const zam = () => sheet.remove();
+    sheet.addEventListener("click", (e) => { if (e.target === sheet) zam(); });
+    sheet.querySelector(".od-x").addEventListener("click", zam);
+  }
   const wczytajOdczyty = async () => {
     try {
       const { data: odcz } = await supabase.from("plemie_przeczytane").select("traveler_id, ostatnio").eq("plemie_id", p.id);
