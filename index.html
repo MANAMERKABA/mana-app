@@ -2886,7 +2886,7 @@ async function zaprosKontakt(k) {
     b.disabled = true;
     let data, error;
     if (email) ({ data, error } = await supabase.rpc("zapros_do_plemienia", { p_plemie: b.dataset.id, p_email: email }));
-    else ({ data, error } = await supabase.rpc("zapros_link", { p_plemie: b.dataset.id, p_dla_kogo: (k.imie || k.telefon || null) }));
+    else ({ data, error } = await supabase.rpc("zapros_link", { p_plemie: b.dataset.id, p_dla_kogo: (k.imie || k.telefon || null), p_kontakt: (k.id || null) }));
     if (error) { trzosToast("Błąd: " + error.message); b.disabled = false; return; }
     if (!data || !data.ok) { trzosToast((data && data.error) || "Nie wysłano."); b.disabled = false; return; }
     zamknij();
@@ -3758,6 +3758,7 @@ async function otworzRozmowe(p) {
       </div>
     </div>`);
     row.querySelector(".rz-flag").addEventListener("click", () => flagujWiadomosc(w, row));
+    row.querySelector(".rz-bubble").addEventListener("click", () => flagujWiadomosc(w, row));
     lista.appendChild(row);
     const item = { w, row, bubbleEl: row.querySelector(".rz-bubble"), moje };
     bubbles.push(item);
@@ -3771,6 +3772,7 @@ async function otworzRozmowe(p) {
       <div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:14px 16px 20px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
         <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Wiadomość (${escP(kontekst)}):</div>
         <div style="background:#efece3;border-radius:10px;padding:8px 11px;font-size:13px;margin-bottom:12px;max-height:80px;overflow:auto;white-space:pre-wrap;word-break:break-word;">${escP(w.tresc)}</div>
+        <div class="fl-odczyt"></div>
         <div class="fl-akcje"></div>
         <button class="fl-x" style="width:100%;border:none;background:none;color:var(--ink-soft);border-radius:12px;padding:9px;font-size:14px;cursor:pointer;">Anuluj</button>
       </div></div>`);
@@ -3778,6 +3780,17 @@ async function otworzRozmowe(p) {
     const zamknijSheet = () => sheet.remove();
     sheet.addEventListener("click", (e) => { if (e.target === sheet) zamknijSheet(); });
     sheet.querySelector(".fl-x").addEventListener("click", zamknijSheet);
+    /* Kto przeczytał (tylko moje wiadomości): ✓✓ z godziną + kto jeszcze nie */
+    if (moje) {
+      const inni = czl.filter((c) => c.traveler_id !== mojeId);
+      const czyt = inni.filter((c) => ODCZYTY[c.traveler_id] && new Date(ODCZYTY[c.traveler_id]).getTime() >= new Date(w.created_at).getTime());
+      const nieCzyt = inni.filter((c) => !czyt.includes(c));
+      let ht = "";
+      if (czyt.length) ht += `<span style="color:#1a7158;">✓✓ ${czyt.map((c) => escP((c.nick || "uczestnik") + " · " + fmtGodz(ODCZYTY[c.traveler_id]))).join(", ")}</span>`;
+      if (nieCzyt.length) ht += (ht ? "<br>" : "") + `<span style="color:var(--ink-soft);">✓ jeszcze nie: ${nieCzyt.map((c) => escP(c.nick || "uczestnik")).join(", ")}</span>`;
+      const box = sheet.querySelector(".fl-odczyt");
+      if (box && ht) box.innerHTML = `<div style="font-size:12px;margin-bottom:12px;line-height:1.6;">${ht}</div>`;
+    }
     const akc = sheet.querySelector(".fl-akcje");
     const przycisk = (label, primary) => { const b = el(`<button style="width:100%;border:${primary ? "none" : "1px solid var(--line)"};background:${primary ? "var(--turkus,#1f9e8f)" : "var(--surface)"};color:${primary ? "#fff" : "var(--ink)"};border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">${label}</button>`); akc.appendChild(b); return b; };
     if (moje) {
@@ -3834,6 +3847,29 @@ async function otworzRozmowe(p) {
     try { await supabase.from("plemie_przeczytane").upsert({ traveler_id: mojeId, plemie_id: p.id, ostatnio: new Date().toISOString() }, { onConflict: "traveler_id,plemie_id" }); } catch (e) {}
   };
 
+  /* Potwierdzenia przeczytania: ODCZYTY[traveler_id]=ostatnio; ✓✓ pod moją ostatnią wiadomością. */
+  const ODCZYTY = {};
+  const renderOdczyty = () => {
+    lista.querySelectorAll(".rz-odczyt").forEach((e) => e.remove());
+    const mojeB = bubbles.filter((b) => b.moje);
+    if (!mojeB.length) return;
+    const ost = mojeB[mojeB.length - 1];
+    const inni = czl.filter((c) => c.traveler_id !== mojeId);
+    const czyt = inni.filter((c) => ODCZYTY[c.traveler_id] && new Date(ODCZYTY[c.traveler_id]).getTime() >= new Date(ost.w.created_at).getTime());
+    if (!czyt.length) return;
+    const tekst = inni.length === 1
+      ? `✓✓ Przeczytane · ${fmtGodz(ODCZYTY[czyt[0].traveler_id])}`
+      : `✓✓ ${czyt.map((c) => (c.nick || "uczestnik") + " " + fmtGodz(ODCZYTY[c.traveler_id])).join(", ")}`;
+    ost.row.appendChild(el(`<div class="rz-odczyt" style="font-size:10.5px;color:#1a7158;margin-top:1px;">${escP(tekst)}</div>`));
+  };
+  const wczytajOdczyty = async () => {
+    try {
+      const { data: odcz } = await supabase.from("plemie_przeczytane").select("traveler_id, ostatnio").eq("plemie_id", p.id);
+      (odcz || []).forEach((o) => { if (o.traveler_id !== mojeId) ODCZYTY[o.traveler_id] = o.ostatnio; });
+      renderOdczyty();
+    } catch (e) {}
+  };
+
   try { await supabase.rpc("sprzataj_znikajace", { p_plemie: p.id }); } catch (e) {}
   const { data: wiad = [], error } = await supabase
     .from("wiadomosci").select("id, traveler_id, tresc, created_at")
@@ -3844,6 +3880,7 @@ async function otworzRozmowe(p) {
   else { wiad.forEach(dodajWiersz); }
   doDolu();
   oznaczPrzeczytane();
+  wczytajOdczyty();
   const kropka = document.querySelector(`.pl-rozm-btn[data-plemie="${p.id}"] .rz-kropka`); if (kropka) kropka.remove();
   const znane = new Set(wiad.map((w) => w.id));
 
@@ -3852,8 +3889,13 @@ async function otworzRozmowe(p) {
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "wiadomosci", filter: "plemie_id=eq." + p.id }, (payload) => {
       const w = payload.new; if (!w || znane.has(w.id)) return; znane.add(w.id);
       const pusto = lista.querySelector("div[style*='text-align:center']"); if (pusto) pusto.remove();
-      dodajWiersz(w); doDolu(); oznaczPrzeczytane();
+      dodajWiersz(w); doDolu(); oznaczPrzeczytane(); renderOdczyty();
       const b = document.querySelector(`.pl-rozm-btn[data-plemie="${p.id}"] .rz-kropka`); if (b) b.remove();
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "plemie_przeczytane", filter: "plemie_id=eq." + p.id }, (payload) => {
+      const o = payload.new; if (!o || !o.traveler_id || o.traveler_id === mojeId) return;
+      ODCZYTY[o.traveler_id] = o.ostatnio;
+      renderOdczyty();
     })
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wiadomosci", filter: "plemie_id=eq." + p.id }, (payload) => {
       const w = payload.new; if (!w) return;
