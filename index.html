@@ -2811,7 +2811,7 @@ function renderOfertyKontaktow(box, oferty) {
     </div>`);
     row.querySelector(".of-przyj").addEventListener("click", async () => {
       const { data, error } = await supabase.rpc("przyjmij_kontakt", { p_oferta_id: o.oferta_id });
-      if (error || (data && data.ok === false)) { trzosToast("Błąd: " + ((data && data.error) || (error && error.message) || "")); return; }
+      if (error || (data && data.ok === false)) { trzosToast("Błąd: " + ((data && data.error) || (error && error.message) || "")); renderKontakty(); return; } // odśwież — karta mogła być nieaktualna
       trzosToast((data && data.istnial) ? "Już masz ten kontakt ✓" : "Przyjęto — kontakt jest teraz Twój ✓"); renderKontakty();
     });
     row.querySelector(".of-odrz").addEventListener("click", async () => {
@@ -3156,9 +3156,10 @@ function kartaPlemienia(p) {
   czl.forEach((c) => {
     const dziecko = !!c.zarzadzany;
     const mojWard = c.opiekun === mojeId; // moje dziecko — z loginem lub bez
-    const chip = el(`<span style="font-size:12px;background:#efece3;border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;">${escP(c.nick || "uczestnik")}${c.rola === "zalozyciel" ? " · zał." : ""}${(mojWard || dziecko) ? " · dziecko" : ""}</span>`);
+    const etkZarz = (mojWard || dziecko) ? (c.birth_year ? " · dziecko" : " · bez loginu") : "";
+    const chip = el(`<span style="font-size:12px;background:#efece3;border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;">${escP(c.nick || "uczestnik")}${c.rola === "zalozyciel" ? " · zał." : ""}${etkZarz}</span>`);
     if (mojWard) {
-      const key = el(`<button title="Nadaj dziecku login / udostępnij link" style="border:none;background:none;cursor:pointer;font-size:13px;line-height:1;padding:0;">🔑</button>`);
+      const key = el(`<button title="Nadaj login / udostępnij link" style="border:none;background:none;cursor:pointer;font-size:13px;line-height:1;padding:0;">🔑</button>`);
       key.addEventListener("click", () => panelLoginDziecka(c, card));
       chip.appendChild(key);
       if (dziecko) {
@@ -3340,7 +3341,7 @@ async function otworzZadaniaPlemienia(p) {
       const form = row.querySelector(".zp-form");
       row.querySelector(".zp-przyp").addEventListener("click", () => {
         if (form.style.display === "block") { form.style.display = "none"; return; }
-        const opcje = czl.map((c) => `<label style="display:flex;align-items:center;gap:7px;font-size:13.5px;padding:3px 0;"><input type="checkbox" value="${c.traveler_id}" style="width:16px;height:16px;"> ${escP(c.nick || "uczestnik")}${c.zarzadzany ? " · dziecko" : ""}</label>`).join("");
+        const opcje = czl.map((c) => `<label style="display:flex;align-items:center;gap:7px;font-size:13.5px;padding:3px 0;"><input type="checkbox" value="${c.traveler_id}" style="width:16px;height:16px;"> ${escP(c.nick || "uczestnik")}${c.zarzadzany ? (c.birth_year ? " · dziecko" : " · bez loginu") : ""}</label>`).join("");
         form.innerHTML = `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Komu przypisać?</div>${opcje}
           <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;margin-top:6px;color:var(--ink-soft);"><input type="checkbox" class="zp-kopie" style="width:16px;height:16px;"> każdemu osobno (kopie — każdy ma własne)</label>
           <div style="font-size:11px;color:var(--ink-soft);margin:4px 0 8px;">Jedna osoba = przeniesienie. Kilka osób bez „kopie" też zrobi kopie. „Razem, ktokolwiek zrobi" → użyj trybu Wspólne.</div>
