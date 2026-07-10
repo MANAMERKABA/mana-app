@@ -1494,16 +1494,32 @@ async function alarmDane() {
   } catch (e) { _alarmCache = null; return {}; }
   return _alarmCache;
 }
+let _alarmCtx = null;
+function alarmAudioOdblokuj() {
+  /* przeglądarka pozwala grać dopiero po interakcji — odblokowujemy kontekst pierwszym kliknięciem/dotykiem */
+  try {
+    if (!_alarmCtx) _alarmCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (_alarmCtx.state === "suspended") _alarmCtx.resume();
+  } catch (e) {}
+}
+document.addEventListener("click", alarmAudioOdblokuj, { capture: true });
+document.addEventListener("touchstart", alarmAudioOdblokuj, { capture: true });
 function alarmDzwiek() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.connect(g); g.connect(ctx.destination);
-    o.type = "sine"; o.frequency.value = 880; g.gain.value = 0.06;
-    o.start(); o.frequency.setValueAtTime(660, ctx.currentTime + 0.12);
-    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
-    o.stop(ctx.currentTime + 0.4);
-    setTimeout(() => { try { ctx.close(); } catch (e) {} }, 600);
+    if (!_alarmCtx) return; // jeszcze bez interakcji — przeglądarka i tak by nie zagrała
+    if (_alarmCtx.state === "suspended") { _alarmCtx.resume(); }
+    const ctx = _alarmCtx;
+    const graj = (kiedy, hz) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.type = "sine"; o.frequency.value = hz;
+      g.gain.setValueAtTime(0.001, kiedy);
+      g.gain.exponentialRampToValueAtTime(0.14, kiedy + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, kiedy + 0.28);
+      o.start(kiedy); o.stop(kiedy + 0.3);
+    };
+    graj(ctx.currentTime, 880);      // bum
+    graj(ctx.currentTime + 0.18, 660); // bum
   } catch (e) {}
 }
 async function alarmNowaWiadomosc(w) {
@@ -1533,12 +1549,47 @@ async function alarmNowaWiadomosc(w) {
 }
 function alarmPoprosZgode() {
   if (!("Notification" in window) || Notification.permission !== "default") return;
-  const raz = () => { try { Notification.requestPermission(); } catch (e) {} };
+  const raz = () => { try { Notification.requestPermission().then((p) => { if (p === "granted") pushZarejestruj(); }); } catch (e) {} };
   document.addEventListener("click", raz, { once: true });
+}
+/* ── WEB PUSH (poziom 3): subskrypcja tej przeglądarki → tabela push_subskrypcje.
+   Wysyłką zajmuje się edge function push-czat (wołana po każdej wysłanej wiadomości). ── */
+const VAPID_PUB = "BPLbpqzrI9hp5QC9TVDTqEQgJWlHrT2DEPoIKXcM00jH7n4JOzOt9TTXuyl7BIdeu5S9RSUA0txT_f-uenMP9gI";
+function b64doU8(b64) {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const s = (b64 + pad).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(s);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+async function pushZarejestruj() {
+  try {
+    if (!TRAVELER || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64doU8(VAPID_PUB) });
+    const j = sub.toJSON();
+    if (!j || !j.keys) return;
+    await supabase.from("push_subskrypcje").upsert(
+      { traveler_id: TRAVELER.id, endpoint: sub.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: (navigator.userAgent || "").slice(0, 200) },
+      { onConflict: "endpoint" });
+  } catch (e) {}
+}
+async function pushPoWiadomosci(wiadomoscId) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session || !session.access_token) return;
+    fetch(`${SUPABASE_URL}/functions/v1/push-czat`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ wiadomosc_id: wiadomoscId }),
+    }).catch(() => {});
+  } catch (e) {}
 }
 function subskrybujRealtime() {
   if (_kanalRealtime) return;
   alarmPoprosZgode();
+  pushZarejestruj();
   _kanalRealtime = supabase
     .channel("mana-live")
     .on("postgres_changes", { event: "*", schema: "public", table: "events" }, odswiezKalendarzeLive)
@@ -4008,6 +4059,7 @@ async function otworzRozmowe(p) {
       .insert({ plemie_id: p.id, traveler_id: mojeId, tresc }).select("id, traveler_id, tresc, created_at").single();
     if (error) { trzosToast("Nie wysłano: " + error.message); input.value = tresc; return; }
     if (data && !znane.has(data.id)) { znane.add(data.id); const pusto = lista.querySelector("div[style*='text-align:center']"); if (pusto) pusto.remove(); dodajWiersz(data); doDolu(); }
+    if (data && typeof pushPoWiadomosci === "function") pushPoWiadomosci(data.id); // push do reszty plemienia (zamknięte apki)
   }
   btn.addEventListener("click", wyslij);
   input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); wyslij(); } });
