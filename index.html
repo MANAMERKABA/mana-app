@@ -1532,7 +1532,8 @@ async function alarmNowaWiadomosc(w) {
   const info = d[w.plemie_id] || {};
   const kto = (info.czl || {})[w.traveler_id] || "Ktoś";
   const skad = info.typ === "rozmowa" ? "" : (info.nazwa ? " · " + info.nazwa : "");
-  const tekst = `${kto}${skad}: ${(w.tresc || "").slice(0, 90)}`;
+  const trescAlarmu = w.tresc || (w.zalacznik ? (w.zalacznik.typ === "pdf" ? "📄 dokument" : "📷 zdjęcie") : "");
+  const tekst = `${kto}${skad}: ${trescAlarmu.slice(0, 90)}`;
   if (document.hidden) {
     if ("Notification" in window && Notification.permission === "granted") {
       try {
@@ -3714,6 +3715,8 @@ async function otworzRozmowe(p) {
     <div style="border-top:1px solid var(--line);padding:10px 12px;display:flex;flex-direction:column;gap:6px;">
       <div class="rz-live" style="display:none;font-size:12.5px;color:var(--ink-soft);font-style:italic;padding:0 2px;white-space:pre-wrap;word-break:break-word;"></div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
+        <input class="rz-plik" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" style="display:none">
+        <button type="button" class="rz-zalacz" title="Wyślij zdjęcie lub dokument" style="border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px 11px;font-size:16px;line-height:1;cursor:pointer;flex:none;">📎</button>
         <textarea class="rz-input" rows="1" placeholder="Napisz wiadomość…" style="flex:1;resize:none;max-height:110px;border:1px solid var(--line);border-radius:12px;padding:9px 11px;font:inherit;font-size:14px;background:var(--surface);color:var(--ink);"></textarea>
         <button type="button" class="rz-nauka" title="Podgląd tłumaczenia podczas pisania (nauka)" style="border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px 11px;font-size:16px;line-height:1;cursor:pointer;flex:none;opacity:.5;">🎓</button>
         <button class="rz-wyslij" style="border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:10px 15px;font-size:14px;cursor:pointer;flex:none;">Wyślij</button>
@@ -3898,19 +3901,36 @@ async function otworzRozmowe(p) {
   const dodajWiersz = (w) => {
     const moje = w.traveler_id === mojeId;
     const czas = fmtGodz(w.created_at);
+    const z = w.zalacznik || null;
+    let zawartosc;
+    if (z && z.typ === "zdjecie") {
+      zawartosc = `<img class="rz-zal-img" src="${z.mini ? escP(z.mini) : ""}" alt="zdjęcie" style="display:block;width:200px;max-width:56vw;aspect-ratio:4/3;object-fit:cover;border-radius:10px;background:#0002;cursor:pointer;">${w.tresc ? `<div style="margin-top:6px;">${escP(w.tresc)}</div>` : ""}`;
+    } else if (z && z.typ === "pdf") {
+      zawartosc = `<span class="rz-zal-pdf" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;"><span style="font-size:22px;">📄</span><span style="text-decoration:underline;">${escP(z.nazwa || "dokument.pdf")}</span></span>`;
+    } else {
+      zawartosc = escP(w.tresc);
+    }
     const row = el(`<div data-wid="${w.id}" style="display:flex;flex-direction:column;align-items:${moje ? "flex-end" : "flex-start"};">
-      <div class="rz-bubble" style="max-width:80%;background:${moje ? "var(--turkus,#1f9e8f)" : "#efece3"};color:${moje ? "#fff" : "var(--ink)"};border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;word-break:break-word;white-space:pre-wrap;">${escP(w.tresc)}</div>
+      <div class="rz-bubble" style="max-width:80%;background:${moje ? "var(--turkus,#1f9e8f)" : "#efece3"};color:${moje ? "#fff" : "var(--ink)"};border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;word-break:break-word;white-space:pre-wrap;">${zawartosc}</div>
       <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;display:flex;gap:6px;align-items:center;">
         <span>${moje ? "" : escP(nickOf(w.traveler_id)) + " · "}${escP(czas)}<span class="rz-edyt">${w.edytowano ? " · edytowano" : ""}</span></span>
         <button class="rz-flag" title="Akcje wiadomości" style="border:none;background:none;cursor:pointer;color:var(--ink-soft);font-size:14px;line-height:1;padding:0 3px;">⋯</button>
       </div>
     </div>`);
     row.querySelector(".rz-flag").addEventListener("click", () => flagujWiadomosc(w, row));
-    row.querySelector(".rz-bubble").addEventListener("click", () => flagujWiadomosc(w, row));
+    if (z && z.typ === "zdjecie") {
+      const img = row.querySelector(".rz-zal-img");
+      img.addEventListener("click", () => pokazZdjecie(z));
+      if (z.sciezka) urlZalacznika(z.sciezka).then((u) => { if (u && img.isConnected) { img.src = u; img.style.aspectRatio = "auto"; img.style.objectFit = "contain"; img.style.width = "auto"; img.style.maxWidth = "min(240px,56vw)"; img.style.maxHeight = "240px"; } });
+    } else if (z && z.typ === "pdf") {
+      row.querySelector(".rz-zal-pdf").addEventListener("click", () => otworzPdf(z));
+    } else {
+      row.querySelector(".rz-bubble").addEventListener("click", () => flagujWiadomosc(w, row));
+    }
     lista.appendChild(row);
     const item = { w, row, bubbleEl: row.querySelector(".rz-bubble"), moje };
     bubbles.push(item);
-    if (tlumaczOn) { if (moje) podgladNadawcy(item); else tlumaczBubble(item); }
+    if (tlumaczOn && !z) { if (moje) podgladNadawcy(item); else tlumaczBubble(item); }
   };
   function flagujWiadomosc(w, row) {
     const moje = w.traveler_id === mojeId;
@@ -3919,7 +3939,7 @@ async function otworzRozmowe(p) {
     const sheet = el(`<div class="m-overlay" style="align-items:flex-end;">
       <div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:14px 16px 20px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
         <div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px;">Wiadomość (${escP(kontekst)}):</div>
-        <div style="background:#efece3;border-radius:10px;padding:8px 11px;font-size:13px;margin-bottom:12px;max-height:80px;overflow:auto;white-space:pre-wrap;word-break:break-word;">${escP(w.tresc)}</div>
+        <div style="background:#efece3;border-radius:10px;padding:8px 11px;font-size:13px;margin-bottom:12px;max-height:80px;overflow:auto;white-space:pre-wrap;word-break:break-word;">${escP(w.tresc || (w.zalacznik ? (w.zalacznik.typ === "pdf" ? "📄 " + (w.zalacznik.nazwa || "dokument") : "📷 zdjęcie") : ""))}</div>
         <div class="fl-odczyt"></div>
         <div class="fl-akcje"></div>
         <button class="fl-x" style="width:100%;border:none;background:none;color:var(--ink-soft);border-radius:12px;padding:9px;font-size:14px;cursor:pointer;">Anuluj</button>
@@ -3942,12 +3962,13 @@ async function otworzRozmowe(p) {
     const akc = sheet.querySelector(".fl-akcje");
     const przycisk = (label, primary) => { const b = el(`<button style="width:100%;border:${primary ? "none" : "1px solid var(--line)"};background:${primary ? "var(--turkus,#1f9e8f)" : "var(--surface)"};color:${primary ? "#fff" : "var(--ink)"};border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">${label}</button>`); akc.appendChild(b); return b; };
     if (moje) {
-      przycisk("✏️ Edytuj").addEventListener("click", () => { zamknijSheet(); edytujWiadomosc(w, row); });
+      if (!w.zalacznik) przycisk("✏️ Edytuj").addEventListener("click", () => { zamknijSheet(); edytujWiadomosc(w, row); });
       przycisk("🗑 Usuń").addEventListener("click", async () => {
         zamknijSheet();
-        if (!confirm("Usunąć tę wiadomość?")) return;
+        if (!confirm(w.zalacznik ? "Usunąć ten plik z rozmowy?" : "Usunąć tę wiadomość?")) return;
         const { error } = await supabase.from("wiadomosci").delete().eq("id", w.id);
         if (error) { trzosToast("Nie usunięto: " + error.message); return; }
+        if (w.zalacznik && w.zalacznik.sciezka) { try { await supabase.storage.from("czat-pliki").remove([w.zalacznik.sciezka]); } catch (e) {} } // integralność: plik znika z wiadomością
         if (row) row.remove();
       });
     } else {
@@ -3991,6 +4012,96 @@ async function otworzRozmowe(p) {
     });
   }
   const doDolu = () => { lista.scrollTop = lista.scrollHeight; };
+
+  /* ════ ZAŁĄCZNIKI (model przekaźnika): zdjęcie/PDF → kompresja → Storage; miniaturka
+     base64 zostaje w wiadomości NA ZAWSZE, oryginał wygasa po 30 dniach. ════ */
+  const _urlZal = {};
+  async function urlZalacznika(sciezka) {
+    const c = _urlZal[sciezka];
+    if (c && c.wazny > Date.now()) return c.url;
+    try {
+      const { data, error } = await supabase.storage.from("czat-pliki").createSignedUrl(sciezka, 3600);
+      if (error || !data) return null;
+      _urlZal[sciezka] = { url: data.signedUrl, wazny: Date.now() + 3300000 };
+      return data.signedUrl;
+    } catch (e) { return null; }
+  }
+  function skalujObraz(zrodlo, maxBok, jakosc) {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => {
+        const skala = Math.min(1, maxBok / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(img.width * skala));
+        c.height = Math.max(1, Math.round(img.height * skala));
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        res(c);
+      };
+      img.onerror = () => rej(new Error("Nie udało się odczytać obrazu."));
+      img.src = zrodlo;
+    });
+  }
+  async function wyslijZalacznik(file) {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { trzosToast("Plik za duży (max 10 MB)."); return; }
+    const jestPdf = file.type === "application/pdf";
+    const jestObraz = /^image\/(jpeg|png|webp)$/.test(file.type);
+    if (!jestPdf && !jestObraz) { trzosToast("Obsługiwane: zdjęcia (JPG/PNG/WebP) i PDF."); return; }
+    const info = el(`<div style="align-self:center;color:var(--ink-soft);font-size:12.5px;padding:6px 0;">⏳ Wysyłam ${jestPdf ? "dokument" : "zdjęcie"}…</div>`);
+    lista.appendChild(info); doDolu();
+    try {
+      let blob = file, mini = null;
+      if (jestObraz) {
+        const src = URL.createObjectURL(file);
+        const duzy = await skalujObraz(src, 1600, 0.8);
+        blob = await new Promise((res, rej) => duzy.toBlob((b) => b ? res(b) : rej(new Error("kompresja")), "image/jpeg", 0.8));
+        const maly = await skalujObraz(src, 28, 0.5);
+        mini = maly.toDataURL("image/jpeg", 0.5);
+        URL.revokeObjectURL(src);
+      }
+      const ext = jestPdf ? "pdf" : "jpg";
+      const sciezka = `${p.id}/${crypto.randomUUID()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("czat-pliki")
+        .upload(sciezka, blob, { contentType: jestPdf ? "application/pdf" : "image/jpeg" });
+      if (upErr) { trzosToast("Nie wysłano: " + upErr.message); return; }
+      const zalacznik = { sciezka, typ: jestPdf ? "pdf" : "zdjecie", nazwa: (file.name || "").slice(0, 120), rozmiar: blob.size, mini };
+      const { data, error } = await supabase.from("wiadomosci")
+        .insert({ plemie_id: p.id, traveler_id: mojeId, tresc: "", zalacznik })
+        .select("id, traveler_id, tresc, created_at, zalacznik").single();
+      if (error) { try { await supabase.storage.from("czat-pliki").remove([sciezka]); } catch (_) {} trzosToast("Nie wysłano: " + error.message); return; }
+      if (data && !znane.has(data.id)) { znane.add(data.id); dodajWiersz(data); doDolu(); }
+      if (data && typeof pushPoWiadomosci === "function") pushPoWiadomosci(data.id);
+    } catch (e) { trzosToast("Nie wysłano: " + (e.message || e)); }
+    finally { info.remove(); }
+  }
+  {
+    const bz = overlay.querySelector(".rz-zalacz"), fp = overlay.querySelector(".rz-plik");
+    if (bz && fp) {
+      bz.addEventListener("click", () => fp.click());
+      fp.addEventListener("change", () => { const f = fp.files && fp.files[0]; fp.value = ""; if (f) wyslijZalacznik(f); });
+    }
+  }
+  /* pełny ekran zdjęcia + Zapisz; obsługa wygasłych oryginałów */
+  async function pokazZdjecie(z) {
+    const url = z.sciezka ? await urlZalacznika(z.sciezka) : null;
+    const sheet = el(`<div class="m-overlay" style="background:rgba(15,18,16,.93);z-index:10000;flex-direction:column;gap:12px;">
+      ${url ? `<img src="${escP(url)}" style="max-width:94vw;max-height:78vh;border-radius:12px;object-fit:contain;">`
+            : `<div style="color:#ddd;font-size:14px;text-align:center;padding:30px 20px;">To zdjęcie wygasło (media rozmów żyją 30 dni).<br>Poproś o ponowne wysłanie.</div>`}
+      <div style="display:flex;gap:10px;">
+        ${url ? `<a href="${escP(url)}" download="${escP(z.nazwa || "zdjecie.jpg")}" target="_blank" rel="noopener" style="background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:11px 18px;font-size:14px;text-decoration:none;">⬇ Zapisz</a>` : ""}
+        <button class="zj-x" style="background:none;border:1px solid #666;color:#ddd;border-radius:12px;padding:11px 18px;font-size:14px;cursor:pointer;">Zamknij</button>
+      </div></div>`);
+    document.body.appendChild(sheet);
+    const zam = () => sheet.remove();
+    sheet.addEventListener("click", (e) => { if (e.target === sheet) zam(); });
+    sheet.querySelector(".zj-x").addEventListener("click", zam);
+  }
+  async function otworzPdf(z) {
+    const url = z.sciezka ? await urlZalacznika(z.sciezka) : null;
+    if (!url) { trzosToast("Ten dokument wygasł (media rozmów żyją 30 dni)."); return; }
+    window.open(url, "_blank", "noopener");
+  }
+
   const oznaczPrzeczytane = async () => {
     try { await supabase.from("plemie_przeczytane").upsert({ traveler_id: mojeId, plemie_id: p.id, ostatnio: new Date().toISOString() }, { onConflict: "traveler_id,plemie_id" }); } catch (e) {}
   };
@@ -4045,7 +4156,7 @@ async function otworzRozmowe(p) {
 
   try { await supabase.rpc("sprzataj_znikajace", { p_plemie: p.id }); } catch (e) {}
   const { data: wiad = [], error } = await supabase
-    .from("wiadomosci").select("id, traveler_id, tresc, created_at")
+    .from("wiadomosci").select("id, traveler_id, tresc, created_at, zalacznik")
     .eq("plemie_id", p.id).order("created_at", { ascending: true }).limit(300);
   lista.innerHTML = "";
   if (error) { lista.innerHTML = `<div style="color:#c4513a;font-size:13px;">Błąd: ${escP(error.message)}</div>`; }
@@ -4071,7 +4182,7 @@ async function otworzRozmowe(p) {
       renderOdczyty();
     })
     .on("postgres_changes", { event: "UPDATE", schema: "public", table: "wiadomosci", filter: "plemie_id=eq." + p.id }, (payload) => {
-      const w = payload.new; if (!w) return;
+      const w = payload.new; if (!w || w.zalacznik) return; // załączników nie nadpisujemy tekstem
       const r = lista.querySelector(`[data-wid="${w.id}"]`); if (!r) return;
       const b = r.querySelector(".rz-bubble"); if (b) b.textContent = w.tresc;
       const e = r.querySelector(".rz-edyt"); if (e) e.textContent = w.edytowano ? " · edytowano" : "";
