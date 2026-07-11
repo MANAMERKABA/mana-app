@@ -4572,6 +4572,7 @@ function renderBrief(ileWyd, ileZad) {
   const stream = $("m-stream");
   stream.innerHTML = "";
   stream.appendChild(el(`<div class="m-msg m-msg--asystent">${esc(tekst)}</div>`));
+  _briefTekst = tekst; _briefPowiedziany = false; if (typeof powiedzBrief === "function") powiedzBrief(false);
 }
 
 /* etykieta dnia: Dziś / Jutro / „środa 27 maja" */
@@ -5497,8 +5498,9 @@ function egzTestKoniec(zCzasu) {
   });
 }
 
-/* czytanie odpowiedzi asystenta na głos (TTS) */
+/* czytanie odpowiedzi asystenta na głos (TTS) — wybór ZAPAMIĘTANY między wizytami */
 let czytajGlosno = false;
+try { czytajGlosno = localStorage.getItem("mana_glos") === "1"; } catch (e) {}
 function powiedz(tekst) {
   if (!czytajGlosno || !window.speechSynthesis) return;
   try {
@@ -5507,15 +5509,37 @@ function powiedz(tekst) {
     const czyste = String(tekst).replace(/\*\*/g, "").replace(/^\s*[-*•]\s+/gm, "");
     const u = new SpeechSynthesisUtterance(czyste);
     u.lang = "pl-PL"; u.rate = 1.0; u.pitch = 1.0;
+    // najlepszy dostępny polski głos (domyślny bywa najgorszy): premium/enhanced > Google/Microsoft > pierwszy pl
+    const glosy = window.speechSynthesis.getVoices().filter((v) => (v.lang || "").toLowerCase().startsWith("pl"));
+    const lepszy = glosy.find((v) => /premium|enhanced|natural|neural/i.test(v.name))
+      || glosy.find((v) => /google|microsoft/i.test(v.name))
+      || glosy.find((v) => /zosia|ewa|paulina|marek/i.test(v.name))
+      || glosy[0];
+    if (lepszy) u.voice = lepszy;
     window.speechSynthesis.speak(u);
   } catch (err) { console.warn("TTS:", err); }
 }
 $("m-glos").addEventListener("click", () => {
   czytajGlosno = !czytajGlosno;
+  try { localStorage.setItem("mana_glos", czytajGlosno ? "1" : "0"); } catch (e) {}
   $("m-glos").classList.toggle("m-glos--on", czytajGlosno);
   $("m-glos").setAttribute("aria-pressed", czytajGlosno ? "true" : "false");
   if (!czytajGlosno && window.speechSynthesis) window.speechSynthesis.cancel();
+  if (czytajGlosno) powiedzBrief(true); // włączyłeś głos = kliknięcie, można od razu przywitać
 });
+if (czytajGlosno) { $("m-glos").classList.add("m-glos--on"); $("m-glos").setAttribute("aria-pressed", "true"); }
+
+/* Powitanie GŁOSEM przy wejściu (gdy głośnik włączony). Telefon pozwala mówić dopiero
+   po pierwszej interakcji — więc czekamy na pierwsze dotknięcie i wtedy witamy. */
+var _briefTekst = null, _briefPowiedziany = false;
+function powiedzBrief(wymus) {
+  if (_briefPowiedziany || !_briefTekst || !czytajGlosno) return;
+  if (!wymus && !window._bylaInterakcja) return;
+  _briefPowiedziany = true;
+  powiedz(_briefTekst);
+}
+document.addEventListener("click", () => { window._bylaInterakcja = true; powiedzBrief(true); }, { capture: true });
+document.addEventListener("touchstart", () => { window._bylaInterakcja = true; powiedzBrief(true); }, { capture: true });
 const Rozpoznanie = window.SpeechRecognition || window.webkitSpeechRecognition;
 const mik = $("m-mik");
 if (Rozpoznanie) {
