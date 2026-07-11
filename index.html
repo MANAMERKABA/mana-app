@@ -4171,13 +4171,31 @@ async function otworzRozmowe(p) {
       ${url ? `<img src="${escP(url)}" style="max-width:94vw;max-height:78vh;border-radius:12px;object-fit:contain;">`
             : `<div style="color:#ddd;font-size:14px;text-align:center;padding:30px 20px;">To zdjęcie wygasło (media rozmów żyją 30 dni).<br>Poproś o ponowne wysłanie.</div>`}
       <div style="display:flex;gap:10px;">
-        ${url ? `<a href="${escP(url)}" download="${escP(z.nazwa || "zdjecie.jpg")}" target="_blank" rel="noopener" style="background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:11px 18px;font-size:14px;text-decoration:none;">⬇ Zapisz</a>` : ""}
+        ${url ? `<button class="zj-zapisz" style="background:var(--turkus,#1f9e8f);border:none;color:#fff;border-radius:12px;padding:11px 18px;font-size:14px;cursor:pointer;">⬇ Zapisz</button>` : ""}
         <button class="zj-x" style="background:none;border:1px solid #666;color:#ddd;border-radius:12px;padding:11px 18px;font-size:14px;cursor:pointer;">Zamknij</button>
       </div></div>`);
     document.body.appendChild(sheet);
     const zam = () => sheet.remove();
     sheet.addEventListener("click", (e) => { if (e.target === sheet) zam(); });
     sheet.querySelector(".zj-x").addEventListener("click", zam);
+    const bz = sheet.querySelector(".zj-zapisz");
+    if (bz && url) bz.addEventListener("click", async () => {
+      bz.disabled = true; bz.textContent = "…";
+      try {
+        const blob = await (await fetch(url)).blob();
+        const nazwa = z.nazwa && /\.(jpe?g|png|webp)$/i.test(z.nazwa) ? z.nazwa : "zdjecie.jpg";
+        const plik = new File([blob], nazwa, { type: blob.type || "image/jpeg" });
+        if (navigator.canShare && navigator.canShare({ files: [plik] })) {
+          await navigator.share({ files: [plik] }); // iPhone/Android: arkusz z „Zapisz obraz" → Biblioteka Zdjęć
+        } else {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob); a.download = nazwa;
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        }
+      } catch (e) { /* anulowanie arkusza to nie błąd */ }
+      bz.disabled = false; bz.textContent = "⬇ Zapisz";
+    });
   }
   async function otworzPdf(z) {
     const url = z.sciezka ? await urlZalacznika(z.sciezka) : null;
@@ -5692,9 +5710,9 @@ function egzTestKoniec(zCzasu) {
   });
 }
 
-/* czytanie odpowiedzi asystenta na głos (TTS) — wybór ZAPAMIĘTANY między wizytami */
-let czytajGlosno = false;
-try { czytajGlosno = localStorage.getItem("mana_glos") === "1"; } catch (e) {}
+/* czytanie odpowiedzi asystenta na głos (TTS) — DOMYŚLNIE WŁĄCZONE, użytkownik może wyciszyć (wybór zapamiętany) */
+let czytajGlosno = true;
+try { czytajGlosno = localStorage.getItem("mana_glos") !== "0"; } catch (e) {}
 function powiedz(tekst) {
   if (!czytajGlosno || !window.speechSynthesis) return;
   try {
