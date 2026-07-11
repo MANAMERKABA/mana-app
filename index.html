@@ -13,7 +13,8 @@
 <meta name="apple-mobile-web-app-title" content="MANA">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" type="image/png" href="icon-192.png">
-<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}</script>
+<script>if("serviceWorker" in navigator){window.addEventListener("load",function(){navigator.serviceWorker.register("sw.js").catch(function(){});});}
+window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();window._instPrompt=e;});</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&display=swap" rel="stylesheet">
@@ -1479,6 +1480,87 @@ function odswiezRozmowyLive() {
   }, 400);
 }
 /* ════════════════════════════════════════════════════════════════════
+   BANER INSTALACJI — MANA w przeglądarce na telefonie proponuje zapisanie
+   na ekranie (iPhone: kroki z ikonkami; Android: natywny przycisk Zainstaluj).
+   Znika po instalacji; „nie teraz" wycisza na 7 dni.
+   ════════════════════════════════════════════════════════════════════ */
+function jestZainstalowana() {
+  try { return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; } catch (e) { return false; }
+}
+function pokazBanerInstalacji() {
+  try {
+    if (jestZainstalowana()) return;
+    const ua = navigator.userAgent || "";
+    const iOS = /iphone|ipad|ipod/i.test(ua);
+    const android = /android/i.test(ua);
+    if (!iOS && !android) return; // komputer — nie zawracamy głowy
+    try { const cicho = Number(localStorage.getItem("mana_inst_cicho") || 0); if (cicho > Date.now()) return; } catch (e) {}
+    if (document.getElementById("m-inst-banner")) return;
+    const widok = document.getElementById("m-widok-ekran"); if (!widok) return;
+    const nav = document.getElementById("m-rooms");
+    const b = el(`<div id="m-inst-banner" style="margin:10px 14px 0;background:#e7f3f0;border:1px solid #b9ddd5;border-radius:14px;padding:11px 13px;display:flex;align-items:center;gap:10px;">
+      <span style="font-size:22px;flex:none;">📲</span>
+      <div style="flex:1;min-width:0;font-size:13px;line-height:1.4;"><b>Zapisz MANA na ekranie telefonu</b><br><span style="color:var(--ink-soft);font-size:12px;">otwiera się jak aplikacja i dostajesz powiadomienia</span></div>
+      <button class="inst-jak" style="border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:10px;padding:9px 12px;font-size:13px;cursor:pointer;flex:none;">Pokaż jak</button>
+      <button class="inst-x" style="border:none;background:none;color:var(--ink-soft);font-size:16px;cursor:pointer;flex:none;padding:2px 4px;">✕</button>
+    </div>`);
+    if (nav) widok.insertBefore(b, nav); else widok.appendChild(b);
+    b.querySelector(".inst-x").addEventListener("click", () => {
+      try { localStorage.setItem("mana_inst_cicho", String(Date.now() + 7 * 86400000)); } catch (e) {}
+      b.remove();
+    });
+    b.querySelector(".inst-jak").addEventListener("click", () => pokazInstrukcjeInstalacji(iOS));
+  } catch (e) {}
+}
+function pokazInstrukcjeInstalacji(iOS) {
+  const IKONA_UDOSTEPNIJ = `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#1a7158" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><rect x="4" y="11" width="16" height="10" rx="2"/></svg>`;
+  const IKONA_PLUS = `<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="#1a7158" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M12 8v8M8 12h8"/></svg>`;
+  const IKONA_KROPKI = `<svg viewBox="0 0 24 24" width="26" height="26" fill="#1a7158"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>`;
+  const krok = (nr, ikona, tekst) => `<div style="display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--line);">
+    <span style="width:26px;height:26px;border-radius:50%;background:#1a7158;color:#fff;font-size:14px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none;">${nr}</span>
+    <span class="inst-iko" style="flex:none;display:flex;">${ikona}</span>
+    <span style="font-size:14px;line-height:1.45;">${tekst}</span></div>`;
+  let kroki, tytul, przyciskNatywny = "";
+  if (iOS) {
+    tytul = "iPhone — 3 kroki";
+    kroki = krok(1, IKONA_UDOSTEPNIJ, `Na dole Safari dotknij <b>Udostępnij</b> (kwadrat ze strzałką)`)
+      + krok(2, IKONA_PLUS, `Przewiń w dół i wybierz <b>„Do ekranu początkowego"</b>`)
+      + krok(3, `<span style="font-size:22px;">💚</span>`, `Dotknij <b>Dodaj</b> — ikona MANA pojawi się na ekranie. Otwieraj MANA z tej ikony i <b>zezwól na powiadomienia</b>, gdy zapyta`);
+  } else {
+    tytul = "Android — 3 kroki";
+    kroki = krok(1, IKONA_KROPKI, `Dotknij <b>trzech kropek</b> w prawym górnym rogu Chrome`)
+      + krok(2, IKONA_PLUS, `Wybierz <b>„Dodaj do ekranu głównego"</b> (czasem „Zainstaluj aplikację")`)
+      + krok(3, `<span style="font-size:22px;">💚</span>`, `Potwierdź — ikona MANA pojawi się na ekranie. Otwieraj z niej i <b>zezwól na powiadomienia</b>`);
+    if (window._instPrompt) przyciskNatywny = `<button class="inst-teraz" style="width:100%;border:none;background:var(--turkus,#1f9e8f);color:#fff;border-radius:12px;padding:13px;font-size:15px;cursor:pointer;margin-top:12px;">⬇ Zainstaluj teraz (bez kroków)</button>`;
+  }
+  const sheet = el(`<div class="m-overlay" style="align-items:flex-end;">
+    <div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px 22px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
+      <div style="font-size:15px;font-weight:600;margin-bottom:4px;">📲 ${tytul}</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">MANA zapisana na ekranie działa jak aplikacja — pełny ekran i powiadomienia o wiadomościach.</div>
+      ${kroki}${przyciskNatywny}
+      <button class="inst-zam" style="width:100%;border:none;background:none;color:var(--ink-soft);border-radius:12px;padding:11px;font-size:14px;cursor:pointer;margin-top:8px;">Zamknij</button>
+    </div></div>`);
+  document.body.appendChild(sheet);
+  const zam = () => sheet.remove();
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) zam(); });
+  sheet.querySelector(".inst-zam").addEventListener("click", zam);
+  const nat = sheet.querySelector(".inst-teraz");
+  if (nat) nat.addEventListener("click", async () => {
+    try {
+      const p = window._instPrompt; window._instPrompt = null;
+      if (p) { p.prompt(); await p.userChoice; }
+      zam();
+      const ban = document.getElementById("m-inst-banner"); if (ban) ban.remove();
+    } catch (e) {}
+  });
+  /* delikatna animacja WhatsApp-style: pulsowanie ikon kroków */
+  sheet.querySelectorAll(".inst-iko").forEach((ik, i) => {
+    ik.animate([{ transform: "scale(1)" }, { transform: "scale(1.25)" }, { transform: "scale(1)" }],
+      { duration: 900, delay: 500 + i * 900, iterations: 2 });
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════
    ALARMY WIADOMOŚCI — dwa poziomy:
    1) apka otwarta, inna rozmowa/pokój → dźwięk + klikalny dymek,
    2) karta w tle → powiadomienie systemowe (Notification API, zgoda raz).
@@ -1593,6 +1675,7 @@ function subskrybujRealtime() {
   if (_kanalRealtime) return;
   alarmPoprosZgode();
   pushZarejestruj();
+  pokazBanerInstalacji();
   _kanalRealtime = supabase
     .channel("mana-live")
     .on("postgres_changes", { event: "*", schema: "public", table: "events" }, odswiezKalendarzeLive)
