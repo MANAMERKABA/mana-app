@@ -2302,6 +2302,41 @@ async function renderPuls() {
   const { data: wpisy = [], error } = await supabase.from("puls_wpisy").select("*").order("created_at", { ascending: false }).limit(200);
   box.innerHTML = "";
   await renderPropozycjePuls(box);
+  /* ── WYNIKI BADAŃ — tabela porównawcza (parametry × daty badań, strzałki trendu, czerwone poza normą) ── */
+  try {
+    const { data: bad = [] } = await supabase.from("badania_wyniki").select("*").order("badanie_data", { ascending: true });
+    if (bad.length) {
+      const daty = [...new Set(bad.map((b) => b.badanie_data))].sort().slice(-4); // ostatnie 4 badania
+      const parametry = [...new Set(bad.map((b) => b.parametr))];
+      const mapa = {}; bad.forEach((b) => { (mapa[b.parametr] = mapa[b.parametr] || {})[b.badanie_data] = b; });
+      const fD = (d) => new Date(d + "T12:00").toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit", year: "2-digit" });
+      const TH = `style="text-align:right;padding:5px 8px;border-bottom:1px solid var(--line);font-size:11px;color:var(--ink-soft);white-space:nowrap;"`;
+      const wierszP = (p) => {
+        const kom = daty.map((d, i) => {
+          const b = mapa[p][d];
+          if (!b) return `<td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;color:var(--ink-soft);">—</td>`;
+          let strz = "";
+          for (let j = i - 1; j >= 0; j--) { const prev = mapa[p][daty[j]]; if (prev && prev.wartosc != null && b.wartosc != null) { strz = b.wartosc > prev.wartosc ? " ↑" : b.wartosc < prev.wartosc ? " ↓" : " →"; break; } }
+          const kol = b.poza_norma ? "#c0392b" : "var(--ink)";
+          const waga = b.poza_norma ? "600" : "400";
+          const w = b.wartosc != null ? b.wartosc : (b.wartosc_tekst || "—");
+          return `<td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;color:${kol};font-weight:${waga};white-space:nowrap;">${esc(String(w))}${strz}${b.poza_norma ? " (" + b.poza_norma + ")" : ""}</td>`;
+        }).join("");
+        const ost = mapa[p][daty[daty.length - 1]] || Object.values(mapa[p]).pop();
+        const norma = ost && (ost.norma_od != null || ost.norma_do != null) ? `${ost.norma_od ?? ""}–${ost.norma_do ?? ""}` : (ost && ost.norma_tekst) || "";
+        return `<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);font-size:12.5px;">${esc(p)}<div style="font-size:10px;color:var(--ink-soft);">${esc(ost && ost.jednostka || "")}${norma ? " · norma " + esc(norma) : ""}</div></td>${kom}</tr>`;
+      };
+      box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">🔬 Wyniki badań — porównanie</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">↑↓ względem poprzedniego badania · <span style="color:#c0392b;font-weight:600;">czerwone</span> poza normą (H wysokie / L niskie)</div>
+        <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);font-size:11px;color:var(--ink-soft);">Parametr</th>${daty.map((d) => `<th ${TH}>${fD(d)}</th>`).join("")}</tr>
+          ${parametry.map(wierszP).join("")}
+        </table></div>
+      </div>`));
+    }
+  } catch (e) {}
+
   /* ── POMIARY I OBJAWY (zasilane głosem przez asystenta: „ciśnienie 132 na 85") ── */
   try {
     const { data: pom = [] } = await supabase.from("puls_pomiary").select("*").order("zmierzono_at", { ascending: false }).limit(30);
@@ -2373,7 +2408,10 @@ async function kartaPuls(w) {
     <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">${escP(data)}</div>
     ${w.tekst ? `<div style="font-size:14px;white-space:pre-wrap;">${esc(w.tekst)}</div>` : ""}
     <div class="puls-foto-box" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:${w.tekst ? "8" : "0"}px;"></div>
-    <button class="puls-usun" style="border:none;background:none;color:#c0392b;font-size:11.5px;cursor:pointer;padding:5px 0 0;">Usuń</button>
+    <div style="display:flex;gap:12px;align-items:center;">
+      ${Array.isArray(w.zdjecia) && w.zdjecia.length ? `<button class="puls-odczytaj" style="border:none;background:none;color:#1a7158;font-size:11.5px;cursor:pointer;padding:5px 0 0;font-weight:600;">🔬 Odczytaj wyniki badań</button>` : ""}
+      <button class="puls-usun" style="border:none;background:none;color:#c0392b;font-size:11.5px;cursor:pointer;padding:5px 0 0;">Usuń</button>
+    </div>
   </div>`);
   const fb = card.querySelector(".puls-foto-box");
   const zdj = Array.isArray(w.zdjecia) ? w.zdjecia : [];
@@ -2385,6 +2423,22 @@ async function kartaPuls(w) {
     if (zdj.length) { try { await supabase.storage.from("dokumenty").remove(zdj); } catch (e) {} }
     await supabase.from("puls_wpisy").delete().eq("id", w.id);
     trzosToast("Usunięto."); renderPuls();
+  });
+  const bo = card.querySelector(".puls-odczytaj");
+  if (bo) bo.addEventListener("click", async () => {
+    bo.disabled = true; bo.textContent = "🔬 Czytam… (do minuty)";
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/badanie-analiza`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${session.access_token}`, "apikey": SUPABASE_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ wpis_id: w.id }),
+      });
+      const d = await res.json();
+      if (!d.ok) { trzosToast("Nie odczytano: " + (d.error || res.status)); bo.disabled = false; bo.textContent = "🔬 Odczytaj wyniki badań"; return; }
+      trzosToast(`Odczytano ${d.parametrow} parametrów z ${d.badanie_data}${d.poza_norma ? " · " + d.poza_norma + " poza normą" : ""} ✓`);
+      renderPuls();
+    } catch (e) { trzosToast("Błąd odczytu: " + (e.message || e)); bo.disabled = false; bo.textContent = "🔬 Odczytaj wyniki badań"; }
   });
   return card;
 }
