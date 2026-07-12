@@ -550,8 +550,8 @@ window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();win
   <!-- ===== WIDOK: EKRAN STARTOWY ===== -->
   <div id="m-widok-ekran">
     <header class="m-header">
-      <button class="m-logo" id="m-mana-btn" aria-label="Wszystkie pokoje MANA" title="Wszystkie pokoje MANA">
-        <svg viewBox="0 0 48 48" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M24 34c-2.4-2-11-7-11-14 0-3.6 2.9-6 6-6 2.1 0 4 1.1 5 3 1-1.9 2.9-3 5-3 3.1 0 6 2.4 6 6 0 7-8.6 12-11 14z"/></svg>
+      <button class="m-logo" id="m-mana-btn" aria-label="Wszystkie pokoje MANA" title="Wszystkie pokoje MANA" style="padding:0;overflow:hidden;">
+        <img src="mana_logo_ikona.svg" alt="MANA" style="width:100%;height:100%;object-fit:cover;display:block;">
       </button>
       <div class="m-brand__srodek">
         <div class="m-brand__name">MANA</div>
@@ -1052,6 +1052,7 @@ function montujEkranLogowania(kontener, opcje) {
   wstrzyknijStyleLog();
   kontener.innerHTML = `
     <div class="mlog-wrap">
+      <img src="mana_logo_ikona.svg" alt="" style="width:88px;height:88px;border-radius:22px;display:block;margin:0 auto 12px;box-shadow:0 4px 14px rgba(0,0,0,.10);">
       <div class="mlog-tytul">MANA</div>
       <div class="mlog-pod">Wejście</div>
       <div class="mlog-taby" id="mlog-taby">
