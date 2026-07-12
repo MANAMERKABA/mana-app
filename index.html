@@ -2356,6 +2356,57 @@ async function renderPuls() {
       box.appendChild(sekcja);
     }
   } catch (e) {}
+  /* ── RYTM DNIA — chronologiczna oś dzisiejszych zdarzeń + widoczne LUKI (posiłki, woda) ── */
+  try {
+    const dzisR = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+    const odR = isoZWarszawy(dzisR, "00:00");
+    const { data: dzien = [] } = await supabase.from("puls_pomiary").select("*").gte("zmierzono_at", odR).order("zmierzono_at", { ascending: true });
+    const ETYK_R = { cisnienie: "🩺", tetno: "💓", cukier: "🩸", waga: "⚖️", temperatura: "🌡", saturacja: "🫁", sen: "😴", nastroj: "🙂", energia: "⚡", stres: "😖", objaw: "🤕", stolec: "🚽", mocz: "💧", woda: "🥤", posilek: "🍽", lek: "💊", suplement: "🌿", aktywnosc: "🏃", pot: "💦", inne: "📌" };
+    const godzTeraz = Number(new Date().toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: TZ }));
+    const opisR = (p) => {
+      if (p.typ === "cisnienie") return `ciśnienie ${p.wartosc}/${p.wartosc2}`;
+      if (p.typ === "posilek") return `${escP(p.kontekst || "posiłek")}: ${escP(p.nazwa || "")}`;
+      if (p.typ === "lek" || p.typ === "suplement") return `${p.typ}: ${escP(p.nazwa || "")}`;
+      if (p.typ === "aktywnosc") return `${escP(p.nazwa || "aktywność")}${p.wartosc ? " " + p.wartosc + " min" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "woda") return `woda${p.wartosc ? " " + p.wartosc + " ml" : ""}`;
+      if (p.typ === "objaw") return `${escP(p.nazwa || "objaw")}${p.wartosc != null ? " " + p.wartosc + "/10" : ""}`;
+      if (p.typ === "mocz" || p.typ === "pot") return `${p.typ}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      return `${p.typ}${p.wartosc != null ? " " + p.wartosc : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+    };
+    const gOf = (p) => Number(new Date(p.zmierzono_at).toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: TZ }));
+    const pasma = [["🌅 Rano", (g) => g < 12], ["☀️ Dzień", (g) => g >= 12 && g < 18], ["🌙 Wieczór", (g) => g >= 18]];
+    const wodaSuma = dzien.filter((p) => p.typ === "woda").reduce((s, p) => s + (Number(p.wartosc) || 0), 0);
+    const posilkiMa = new Set(dzien.filter((p) => p.typ === "posilek").map((p) => (p.kontekst || "").toLowerCase()));
+    const luki = [];
+    if (godzTeraz >= 10 && ![...posilkiMa].some((k) => k.includes("śniadanie"))) luki.push("śniadanie");
+    if (godzTeraz >= 15 && ![...posilkiMa].some((k) => k.includes("obiad"))) luki.push("obiad");
+    if (godzTeraz >= 20 && ![...posilkiMa].some((k) => k.includes("kolacja"))) luki.push("kolacja");
+    if (!dzien.some((p) => p.typ === "sen") && godzTeraz >= 9) luki.push("sen (ile godzin?)");
+    const sekR = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;"><span style="font-size:13px;font-weight:600;">🗓 Rytm dnia — dziś</span><span style="font-size:11px;color:var(--ink-soft);margin-left:auto;">🥤 ${wodaSuma ? wodaSuma + " ml" : "0 ml"}</span></div>
+      <div class="rytm-tresc"></div>
+      ${luki.length ? `<div style="margin-top:8px;padding:8px 10px;background:#fff8ec;border:1px dashed #e4c9a0;border-radius:9px;font-size:12px;color:#8a5a12;">○ Brak dziś wpisu: <b>${luki.map(escP).join(", ")}</b> — powiedz asystentowi, uzupełni w sekundę.</div>` : ""}
+    </div>`);
+    const tr = sekR.querySelector(".rytm-tresc");
+    if (!dzien.length) {
+      tr.appendChild(el(`<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 0;">Dzień jeszcze pusty. Mów w ciągu dnia: „napełniłem butelkę", „byłem na spacerze pół godziny", „mocz miał intensywny zapach" — tu ułoży się z tego oś dnia.</div>`));
+    } else {
+      for (const [naz, test] of pasma) {
+        const wp = dzien.filter((p) => test(gOf(p)));
+        if (!wp.length) continue;
+        tr.appendChild(el(`<div style="font-size:11px;font-weight:600;color:var(--ink-soft);margin:7px 0 2px;text-transform:uppercase;letter-spacing:.04em;">${naz}</div>`));
+        for (const p of wp) {
+          const g = new Date(p.zmierzono_at).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+          tr.appendChild(el(`<div style="display:flex;gap:8px;padding:3px 2px;font-size:13px;align-items:baseline;">
+            <span style="color:var(--ink-soft);font-size:11.5px;flex:none;width:38px;">${g}</span>
+            <span style="flex:none;">${ETYK_R[p.typ] || "📌"}</span>
+            <span style="min-width:0;">${opisR(p)}${p.notatka ? ` <span style="color:var(--ink-soft);font-size:11.5px;">· ${escP(p.notatka)}</span>` : ""}</span>
+          </div>`));
+        }
+      }
+    }
+    box.appendChild(sekR);
+  } catch (e) {}
   /* ── WYNIKI BADAŃ — tabela porównawcza (parametry × daty badań, strzałki trendu, czerwone poza normą) ── */
   try {
     const { data: bad = [] } = await supabase.from("badania_wyniki").select("*").order("badanie_data", { ascending: true });
@@ -2395,7 +2446,7 @@ async function renderPuls() {
   try {
     const { data: pom = [] } = await supabase.from("puls_pomiary").select("*").order("zmierzono_at", { ascending: false }).limit(30);
     if (pom.length) {
-      const ETYK = { cisnienie: "🩺 ciśnienie", tetno: "💓 tętno", cukier: "🩸 cukier", waga: "⚖️ waga", temperatura: "🌡 temperatura", saturacja: "🫁 saturacja", sen: "😴 sen", nastroj: "🙂 nastrój", energia: "⚡ energia", stres: "😖 stres", objaw: "🤕", stolec: "🚽 stolec", mocz: "💧 mocz", woda: "🥤 woda", posilek: "🍽 posiłek", lek: "💊 lek", suplement: "🌿 suplement", inne: "📌" };
+      const ETYK = { cisnienie: "🩺 ciśnienie", tetno: "💓 tętno", cukier: "🩸 cukier", waga: "⚖️ waga", temperatura: "🌡 temperatura", saturacja: "🫁 saturacja", sen: "😴 sen", nastroj: "🙂 nastrój", energia: "⚡ energia", stres: "😖 stres", objaw: "🤕", stolec: "🚽 stolec", mocz: "💧 mocz", woda: "🥤 woda", posilek: "🍽 posiłek", lek: "💊 lek", suplement: "🌿 suplement", aktywnosc: "🏃 aktywność", pot: "💦 pot", inne: "📌" };
       const wiersz = (p) => {
         let opis;
         if (p.typ === "cisnienie") opis = `${p.wartosc}/${p.wartosc2}`;
@@ -4860,13 +4911,13 @@ async function wczytajDzien() {
   // wydarzenia dziś + jutro
   const { data: wydOkno = [] } = await supabase
     .from("events").select("*")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
+    .eq("traveler_id", TRAVELER.id).is("org_id", null).eq("typ", "wydarzenie")
     .gte("data_czas", s.toISOString()).lte("data_czas", koniecJutra.toISOString())
     .order("data_czas", { ascending: true });
 
   const { data: zadaniaWlasne = [] } = await supabase
     .from("events").select("*")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie").eq("wspolne", false)
+    .eq("traveler_id", TRAVELER.id).is("org_id", null).eq("typ", "zadanie").eq("wspolne", false)
     .eq("status", "planowane")
     .order("pozycja", { ascending: true, nullsFirst: false });
   // rollup otwartych zadań plemion (nie moich) + plemiona do nazw/kolorów
@@ -4877,7 +4928,7 @@ async function wczytajDzien() {
 
   const { data: caloDniowe = [] } = await supabase
     .from("events").select("tytul, data_czas")
-    .eq("traveler_id", TRAVELER.id).eq("caly_dzien", true)
+    .eq("traveler_id", TRAVELER.id).is("org_id", null).eq("caly_dzien", true)
     .gte("data_czas", s.toISOString()).lt("data_czas", oknoDo.toISOString())
     .order("data_czas", { ascending: true }).limit(1);
 
@@ -4955,17 +5006,73 @@ function odswiezNajblizsze() {
 setInterval(odswiezNajblizsze, 60000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) odswiezNajblizsze(); });
 
+/* ŻYWY BRIEF — towarzysz, nie automat: pora dnia, zmiany od ostatniego otwarcia,
+   rotacja wariantów bez powtórek, czasem myśl dnia. Pamięć w localStorage mana_brief. */
+const MYSLI_DNIA = [
+  "Małe kroki też idą do przodu.",
+  "Nie musisz dziś wszystkiego — wystarczy to, co ważne.",
+  "Dobry plan to połowa spokoju.",
+  "Czasem najlepsze, co można zrobić z listą, to skreślić z niej jedno.",
+  "Dzień należy do tych, którzy zaczynają.",
+  "Spokój to też decyzja.",
+  "Woda, oddech, jeden krok — reszta przyjdzie.",
+  "To, co odkładasz, waży więcej niż to, co robisz.",
+  "Nie każdy dzień musi być wielki. Wystarczy, że jest Twój.",
+  "Zacznij od najmniejszej rzeczy — ona pociągnie resztę.",
+  "Ciało pamięta, że o nie dbasz.",
+  "Porządek w planie robi miejsce na przypadek.",
+];
 function renderBrief(ileWyd, ileZad) {
   const nick = TRAVELER.nick || "podróżniku";
-  let tekst;
-  if (ileWyd === 0 && ileZad === 0) {
-    tekst = `Dzień dobry, ${nick}. Dziś kalendarz i lista zadań są puste — spokojny dzień. Od czego zaczynamy?`;
-  } else {
+  const godz = Number(new Date().toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: TZ }));
+  const powitania = godz < 5 ? ["Późno już", "Nocny marek z Ciebie"] :
+    godz < 10 ? ["Dzień dobry", "Miłego poranka", "Witaj o poranku"] :
+    godz < 13 ? ["Witaj", "Dzień dobry", "Miło Cię widzieć"] :
+    godz < 18 ? ["Witaj po południu", "Cześć", "Dobrze Cię widzieć"] :
+    ["Dobry wieczór", "Witaj wieczorem", "Miłego wieczoru"];
+  let pam = {};
+  try { pam = JSON.parse(localStorage.getItem("mana_brief") || "{}"); } catch (e) {}
+  const dzisISO = czesciWarszawy(new Date()).dataISO;
+  const pierwszyDzis = pam.dzien !== dzisISO;
+  const dWyd = (typeof pam.wyd === "number") ? ileWyd - pam.wyd : null;
+  const dZad = (typeof pam.zad === "number") ? ileZad - pam.zad : null;
+  const uzyte = Array.isArray(pam.uzyte) ? pam.uzyte : [];
+
+  const stanTxt = () => {
     const cz = [];
     if (ileWyd) cz.push(`${ileWyd} ${odmiana(ileWyd, "wydarzenie", "wydarzenia", "wydarzeń")}`);
     if (ileZad) cz.push(`${ileZad} ${odmiana(ileZad, "zadanie", "zadania", "zadań")}`);
-    tekst = `Dzień dobry, ${nick}. Masz dziś ${cz.join(" i ")}. Od czego zaczynamy?`;
+    return cz.join(" i ");
+  };
+  const los = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const powit = los(powitania);
+
+  const warianty = [];
+  if (ileWyd === 0 && ileZad === 0) {
+    warianty.push(`${powit}, ${nick}. Czysty horyzont — ani wydarzeń, ani zadań. Taki dzień też jest potrzebny.`);
+    warianty.push(`${powit}, ${nick}. Pusto w planie. Może to dobry moment na coś, na co zwykle brakuje czasu?`);
+    warianty.push(`${powit}, ${nick}. Nic nie goni. Jestem, gdybyś czegoś potrzebował.`);
+  } else if (pierwszyDzis) {
+    warianty.push(`${powit}, ${nick}. Na dziś: ${stanTxt()}. Jak się dziś czujesz?`);
+    warianty.push(`${powit}, ${nick}. Dzień przynosi ${stanTxt()}. Od czego zaczynamy?`);
+    warianty.push(`${powit}, ${nick}. W planie ${stanTxt()} — wszystko poniżej. Co najpierw?`);
+  } else if (dZad !== null && dZad > 0) {
+    warianty.push(`${nick}, od ostatniego razu ${dZad === 1 ? "doszło jedno zadanie" : "doszły nowe zadania (" + dZad + ")"} — razem ${stanTxt()}.`);
+    warianty.push(`Coś nowego: +${dZad} na liście. Reszta bez zmian.`);
+  } else if (dZad !== null && dZad < 0) {
+    warianty.push(`${nick}, ubyło z listy — dobra robota. Zostało: ${stanTxt() || "nic!"}`);
+    warianty.push(`Lista chudnie ✓ ${stanTxt() ? "Jeszcze " + stanTxt() + "." : "Wszystko zrobione."}`);
+  } else {
+    warianty.push(`Wiesz, co masz — nie będę powtarzał. Jestem, gdyby coś.`);
+    warianty.push(`Bez zmian od ostatniego razu. Działamy?`);
+    warianty.push(`${nick}, wszystko po staremu: ${stanTxt()}. W czym mogę pomóc?`);
+    warianty.push(`Nic nowego nie doszło. Może odhaczymy coś z listy?`);
+    if (Math.random() < 0.4) warianty.push(`„${los(MYSLI_DNIA)}"`);
   }
+  const swieze = warianty.filter((w) => !uzyte.includes(w));
+  const tekst = los(swieze.length ? swieze : warianty);
+  try { localStorage.setItem("mana_brief", JSON.stringify({ dzien: dzisISO, wyd: ileWyd, zad: ileZad, uzyte: [tekst, ...uzyte].slice(0, 4) })); } catch (e) {}
+
   const stream = $("m-stream");
   stream.innerHTML = "";
   stream.appendChild(el(`<div class="m-msg m-msg--asystent">${esc(tekst)}</div>`));
@@ -6300,7 +6407,7 @@ async function renderMiniAgenda() {
   const oknoDo = new Date(s.getTime() + 14 * 86400000);
   const { data = [] } = await supabase
     .from("events").select("tytul, data_czas, koniec, caly_dzien, kategoria, strefa")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
+    .eq("traveler_id", TRAVELER.id).is("org_id", null).eq("typ", "wydarzenie")
     .gte("data_czas", s.toISOString()).lt("data_czas", oknoDo.toISOString())
     .order("data_czas", { ascending: true });
   const teraz = new Date();
@@ -6439,12 +6546,14 @@ async function wczytajWydarzeniaZakres(od, doData) {
     const wideOd = new Date(wideOdT).toISOString(), wideDo = new Date(wideDoT).toISOString();
     const [rJ, rC] = await Promise.all([
       supabase.from("events").select("*")
+        .is("org_id", null)
         .in("typ", ["wydarzenie", "zadanie"])
         .or("powtarzalnosc.is.null,powtarzalnosc.eq.jednorazowe")
         .lt("data_czas", wideDo)
         .or(`koniec.gt.${wideOd},and(koniec.is.null,data_czas.gte.${wideOd})`)
         .order("data_czas", { ascending: true }),
       supabase.from("events").select("*")
+        .is("org_id", null)
         .in("typ", ["wydarzenie", "zadanie"])
         .in("powtarzalnosc", ["dziennie", "tygodniowo", "miesiecznie", "rocznie"])
         .lt("data_czas", wideDo)
@@ -7402,7 +7511,7 @@ async function wczytajZadaniaHoryzont() {
   // WSZYSTKIE moje zadania (osobiste + plemienne przypisane mnie + moje wspólne)
   const { data: moje = [] } = await supabase
     .from("events").select("*")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "zadanie")
+    .eq("traveler_id", TRAVELER.id).is("org_id", null).eq("typ", "zadanie")
     .order("pozycja", { ascending: true, nullsFirst: false });
 
   // plemiona + zadania KAŻDEGO plemienia (wszystkich członków) via RPC — do grup z podglądem
@@ -7418,7 +7527,7 @@ async function wczytajZadaniaHoryzont() {
 
   // WYDARZENIA AKTYWNE (z wyprzedzeniem) — w otwartym oknie wskakują jako zadania do odhaczenia
   const { data: wydAkt = [] } = await supabase.from("events").select("*")
-    .eq("traveler_id", TRAVELER.id).eq("typ", "wydarzenie")
+    .eq("traveler_id", TRAVELER.id).is("org_id", null).eq("typ", "wydarzenie")
     .not("uprzedz_dni", "is", null).neq("status", "zrobione")
     .or("powtarzalnosc.is.null,powtarzalnosc.eq.jednorazowe");
   const terazMs = Date.now();
