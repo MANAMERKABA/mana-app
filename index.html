@@ -1764,6 +1764,7 @@ async function otworzPanelAdmina() {
       <button class="adm-tab" data-t="uz" style="flex:1;">Użytkownicy</button>
       <button class="adm-tab" data-t="log" style="flex:1;">Logowania</button>
       <button class="adm-tab" data-t="zap" style="flex:1;">Zaproszenia</button>
+      <button class="adm-tab" data-t="uw" style="flex:1;">Uwagi</button>
     </div>
     <div id="adm-tresc" style="max-height:min(62vh,560px);overflow:auto;font-size:13px;">Wczytuję…</div>
   </div></div>`);
@@ -1813,7 +1814,27 @@ async function otworzPanelAdmina() {
     tresc.innerHTML = `<table style="width:100%;border-collapse:collapse;"><tr><th ${TH}>Kiedy</th><th ${TH}>Do kogo</th><th ${TH}>Plemię</th><th ${TH}>Status</th><th ${TH}>Od</th></tr>${rows}</table>`;
   };
 
-  const widoki = { uz: renderUz, log: renderLog, zap: renderZap };
+  const renderUw = () => {
+    const STAT_KOLOR = { "nowa": "#c0392b", "w toku": "#8a6416", "zrobione": "#1a7158", "odrzucona": "#8c887e" };
+    const uw = data.uwagi || [];
+    if (!uw.length) { tresc.innerHTML = `<div style="color:var(--ink-soft);padding:14px 4px;">Brak uwag — gdy tester powie asystentowi coś o aplikacji, wyląduje tutaj.</div>`; return; }
+    tresc.innerHTML = uw.map((u) => `<div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-soft);margin-bottom:5px;">
+        <b style="color:var(--ink);">${esc(u.kto || "?")}</b>
+        ${u.kontekst ? `<span style="background:#efece3;border-radius:6px;padding:1px 7px;">${esc(u.kontekst)}</span>` : ""}
+        <span>${dt(u.kiedy)}</span>
+        <select class="uw-status" data-id="${escP(u.id)}" style="margin-left:auto;border:1px solid var(--line);border-radius:7px;padding:2px 6px;font-size:11px;color:${STAT_KOLOR[u.status] || "var(--ink)"};background:var(--surface);">
+          ${["nowa","w toku","zrobione","odrzucona"].map((s) => `<option value="${s}" ${s === u.status ? "selected" : ""}>${s}</option>`).join("")}
+        </select>
+      </div>
+      <div style="font-size:13.5px;line-height:1.45;white-space:pre-wrap;">${esc(u.tresc)}</div>
+    </div>`).join("");
+    tresc.querySelectorAll(".uw-status").forEach((sel) => sel.addEventListener("change", async () => {
+      const { error } = await supabase.rpc("admin_uwaga_status", { p_id: sel.dataset.id, p_status: sel.value });
+      trzosToast(error ? "Nie zapisano: " + error.message : "Status zmieniony ✓");
+    }));
+  };
+  const widoki = { uz: renderUz, log: renderLog, zap: renderZap, uw: renderUw };
   const taby = ov.querySelectorAll(".adm-tab");
   const pokazTab = (t) => {
     taby.forEach((b) => { b.style.cssText = (b.dataset.t === t ? TABON : TABST) + "flex:1;"; });
