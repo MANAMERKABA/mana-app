@@ -2281,6 +2281,35 @@ async function renderPuls() {
   const { data: wpisy = [], error } = await supabase.from("puls_wpisy").select("*").order("created_at", { ascending: false }).limit(200);
   box.innerHTML = "";
   await renderPropozycjePuls(box);
+  /* ── POMIARY I OBJAWY (zasilane głosem przez asystenta: „ciśnienie 132 na 85") ── */
+  try {
+    const { data: pom = [] } = await supabase.from("puls_pomiary").select("*").order("zmierzono_at", { ascending: false }).limit(30);
+    if (pom.length) {
+      const ETYK = { cisnienie: "🩺 ciśnienie", tetno: "💓 tętno", cukier: "🩸 cukier", waga: "⚖️ waga", temperatura: "🌡 temperatura", saturacja: "🫁 saturacja", sen: "😴 sen", nastroj: "🙂 nastrój", energia: "⚡ energia", stres: "😖 stres", objaw: "🤕", stolec: "🚽 stolec", mocz: "💧 mocz", woda: "🥤 woda", posilek: "🍽 posiłek", lek: "💊 lek", suplement: "🌿 suplement", inne: "📌" };
+      const wiersz = (p) => {
+        let opis;
+        if (p.typ === "cisnienie") opis = `${p.wartosc}/${p.wartosc2}`;
+        else if (p.typ === "posilek" || p.typ === "lek" || p.typ === "suplement") opis = `${escP(p.nazwa || "")}${p.wartosc != null ? " · " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : (p.kontekst ? " · " + escP(p.kontekst) : "")}`;
+        else if (p.typ === "objaw") opis = `${escP(p.nazwa || "objaw")}${p.wartosc != null ? " · " + p.wartosc + "/10" : ""}${p.lokalizacja ? " · " + escP(p.lokalizacja) : ""}`;
+        else if (p.typ === "sen") opis = `${p.wartosc != null ? p.wartosc + " h" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+        else opis = `${p.wartosc != null ? p.wartosc : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+        const kiedy = new Date(p.zmierzono_at).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: TZ });
+        return `<div style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--line);font-size:13.5px;">
+          <span style="flex:none;min-width:110px;">${ETYK[p.typ] || p.typ}</span>
+          <span style="flex:1;">${opis}</span>
+          <span style="color:var(--ink-soft);font-size:11.5px;white-space:nowrap;">${kiedy}</span></div>`;
+      };
+      box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
+        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Pomiary i objawy</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Mów do asystenta: „ciśnienie 132 na 85", „boli mnie głowa na 6", „spałem 6 godzin". Raport: „pokaż moje ciśnienia z miesiąca".</div>
+        ${pom.map(wiersz).join("")}
+      </div>`));
+    } else {
+      box.appendChild(el(`<div style="border:1px dashed var(--line);border-radius:12px;padding:12px;margin-bottom:14px;font-size:12.5px;color:var(--ink-soft);background:#faf8f2;">
+        💡 Nowość: powiedz asystentowi <b>„ciśnienie 132 na 85"</b>, <b>„boli mnie głowa na 6, prawa skroń"</b> albo <b>„spałem 6 godzin, kiepsko"</b> — pomiary zapiszą się tutaj, a przed wizytą u lekarza poprosisz o raport.
+      </div>`));
+    }
+  } catch (e) {}
   const form = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
     <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;line-height:1.45;">🔒 Prywatny notatnik ciała — tylko Ty. Sen, samopoczucie, objawy, zdjęcia wyników badań.</div>
     <textarea id="puls-tekst" placeholder="np. Noc bez pocenia, 2× wstawałem na siku, sen 0:30–8:30" style="width:100%;box-sizing:border-box;min-height:62px;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;resize:vertical;"></textarea>
