@@ -2302,9 +2302,15 @@ async function renderPuls() {
   box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
   const { data: wpisy = [], error } = await supabase.from("puls_wpisy").select("*").order("created_at", { ascending: false }).limit(200);
   box.innerHTML = "";
-  await renderPropozycjePuls(box);
+  /* ── ZAKŁADKI POKOJU: Rytm dnia · Zalecenia · Analiza ── */
+  if (!window._pulsTab) window._pulsTab = "rytm";
+  const T = window._pulsTab;
+  const tb = el(`<div style="display:flex;gap:6px;margin-bottom:12px;">${[["rytm","🗓 Rytm dnia"],["zalecenia","📋 Zalecenia"],["badania","🔬 Badania"],["analiza","📈 Analiza"]].map(([k,n]) => `<button data-t="${k}" style="flex:1;border:1px solid ${T===k?"#1a7158":"var(--line)"};background:${T===k?"#e3f4f0":"var(--surface)"};color:${T===k?"#1a7158":"var(--ink)"};font-weight:${T===k?"600":"500"};border-radius:11px;padding:9px 4px;font-size:13px;cursor:pointer;">${n}</button>`).join("")}</div>`);
+  tb.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { window._pulsTab = b.dataset.t; renderPuls(); }));
+  box.appendChild(tb);
+  if (T === "rytm") await renderPropozycjePuls(box);
   /* ── ZALECENIA — regularne leki/praktyki: pory jako chipy ✓/○, tap = odhaczenie → auto wpis w Pulsie ── */
-  try {
+  if (T === "zalecenia") try {
     const dzisD = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
     const { data: zal = [] } = await supabase.from("zalecenia").select("*").eq("aktywne", true).lte("od_data", dzisD).or(`do_data.is.null,do_data.gte.${dzisD}`).order("created_at", { ascending: true });
     if (zal.length) {
@@ -2356,70 +2362,77 @@ async function renderPuls() {
       box.appendChild(sekcja);
     }
   } catch (e) {}
-  /* ── RYTM DNIA — chronologiczna oś dzisiejszych zdarzeń + widoczne LUKI (posiłki, woda) ── */
-  try {
+  /* ── RYTM DNIA — żywy dziennik: NAJNOWSZE NA GÓRZE, wiersz klikalny = edycja, luki klikalne, + Dodaj ── */
+  if (T === "rytm") try {
     const dzisR = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
     const odR = isoZWarszawy(dzisR, "00:00");
-    const { data: dzien = [] } = await supabase.from("puls_pomiary").select("*").gte("zmierzono_at", odR).order("zmierzono_at", { ascending: true });
-    const ETYK_R = { cisnienie: "🩺", tetno: "💓", cukier: "🩸", waga: "⚖️", temperatura: "🌡", saturacja: "🫁", sen: "😴", nastroj: "🙂", energia: "⚡", stres: "😖", objaw: "🤕", stolec: "🚽", mocz: "💧", woda: "🥤", posilek: "🍽", lek: "💊", suplement: "🌿", aktywnosc: "🏃", pot: "💦", inne: "📌" };
+    const { data: dzien = [] } = await supabase.from("puls_pomiary").select("*").gte("zmierzono_at", odR).order("zmierzono_at", { ascending: false });
+    const ETYK_R = { cisnienie: "🩺", tetno: "💓", cukier: "🩸", waga: "⚖️", temperatura: "🌡", saturacja: "🫁", sen: "😴", nastroj: "🙂", energia: "⚡", stres: "😖", objaw: "🤕", stolec: "🚽", mocz: "💧", woda: "🥤", posilek: "🍽", lek: "💊", suplement: "🌿", aktywnosc: "🏃", pot: "💦", praktyka: "🕯", inne: "📌" };
+    const NAZ_R = { cisnienie: "ciśnienie", tetno: "tętno", cukier: "cukier", waga: "waga", temperatura: "temperatura", saturacja: "saturacja", sen: "sen", nastroj: "nastrój", energia: "energia", stres: "stres", objaw: "objaw", stolec: "kał", mocz: "mocz", woda: "woda", posilek: "posiłek", lek: "lek", suplement: "suplement", aktywnosc: "aktywność", pot: "pot", praktyka: "praktyka", inne: "inne" };
     const godzTeraz = Number(new Date().toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: TZ }));
+    const czyNapelnienie = (p) => p.typ === "woda" && ((p.kontekst || "") + (p.notatka || "")).toLowerCase().includes("napełni");
     const opisR = (p) => {
-      if (p.typ === "cisnienie") return `ciśnienie ${p.wartosc}/${p.wartosc2}`;
-      if (p.typ === "posilek") return `${escP(p.kontekst || "posiłek")}: ${escP(p.nazwa || "")}`;
-      if (p.typ === "lek" || p.typ === "suplement") return `${p.typ}: ${escP(p.nazwa || "")}`;
-      if (p.typ === "aktywnosc") return `${escP(p.nazwa || "aktywność")}${p.wartosc ? " " + p.wartosc + " min" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
-      if (p.typ === "woda") return `woda${p.wartosc ? " " + p.wartosc + " ml" : ""}`;
-      if (p.typ === "objaw") return `${escP(p.nazwa || "objaw")}${p.wartosc != null ? " " + p.wartosc + "/10" : ""}`;
-      if (p.typ === "mocz" || p.typ === "pot") return `${p.typ}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
-      return `${p.typ}${p.wartosc != null ? " " + p.wartosc : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "posilek") return `${escP(p.kontekst || "")}${p.kontekst ? ": " : ""}${escP(p.nazwa || "")}`;
+      if (p.typ === "lek" || p.typ === "suplement") return `${escP(p.nazwa || "")}${p.wartosc != null ? " · " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : ""}`;
+      if (p.typ === "aktywnosc") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "woda") return czyNapelnienie(p) ? `<span style="color:var(--ink-soft);">${escP(p.kontekst || "napełnienie")}</span>` : `<b>${p.wartosc || "?"} ml</b>${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "objaw") return `${escP(p.nazwa || "")}${p.wartosc != null ? " <b>" + p.wartosc + "/10</b>" : ""}${p.lokalizacja ? " · " + escP(p.lokalizacja) : ""}`;
+      if (p.typ === "sen") return `${p.wartosc != null ? "<b>" + p.wartosc + " h</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "stolec") return `${p.wartosc != null ? "Bristol <b>" + p.wartosc + "</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      return `${p.wartosc != null ? "<b>" + p.wartosc + "</b> " : ""}${p.kontekst ? escP(p.kontekst) : ""}`;
     };
-    const gOf = (p) => Number(new Date(p.zmierzono_at).toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: TZ }));
-    const pasma = [["🌅 Rano", (g) => g < 12], ["☀️ Dzień", (g) => g >= 12 && g < 18], ["🌙 Wieczór", (g) => g >= 18]];
-    const wodaSuma = dzien.filter((p) => p.typ === "woda").reduce((s, p) => s + (Number(p.wartosc) || 0), 0);
+    // suma dnia liczy TYLKO wypicia (napełnienia butelki to przygotowanie, nie spożycie)
+    const wodaSuma = dzien.filter((p) => p.typ === "woda" && !czyNapelnienie(p)).reduce((s, p) => s + (Number(p.wartosc) || 0), 0);
     const posilkiMa = new Set(dzien.filter((p) => p.typ === "posilek").map((p) => (p.kontekst || "").toLowerCase()));
     const luki = [];
-    if (godzTeraz >= 10 && ![...posilkiMa].some((k) => k.includes("śniadanie"))) luki.push("śniadanie");
-    if (godzTeraz >= 15 && ![...posilkiMa].some((k) => k.includes("obiad"))) luki.push("obiad");
-    if (godzTeraz >= 20 && ![...posilkiMa].some((k) => k.includes("kolacja"))) luki.push("kolacja");
-    if (!dzien.some((p) => p.typ === "sen") && godzTeraz >= 9) luki.push("sen (ile godzin?)");
+    if (godzTeraz >= 10 && ![...posilkiMa].some((k) => k.includes("śniadanie"))) luki.push(["śniadanie", { typ: "posilek", kontekst: "śniadanie" }]);
+    if (godzTeraz >= 15 && ![...posilkiMa].some((k) => k.includes("obiad"))) luki.push(["obiad", { typ: "posilek", kontekst: "obiad" }]);
+    if (godzTeraz >= 20 && ![...posilkiMa].some((k) => k.includes("kolacja"))) luki.push(["kolacja", { typ: "posilek", kontekst: "kolacja" }]);
+    if (!dzien.some((p) => p.typ === "sen") && godzTeraz >= 9) luki.push(["sen", { typ: "sen" }]);
     const sekR = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
-      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;"><span style="font-size:13px;font-weight:600;">🗓 Rytm dnia — dziś</span><span style="font-size:11px;color:var(--ink-soft);margin-left:auto;">🥤 ${wodaSuma ? wodaSuma + " ml" : "0 ml"}</span></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="font-size:13px;font-weight:600;">${new Date().toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: TZ })}</span>
+        <span style="font-size:11px;color:var(--ink-soft);">🥤 wypite: <b>${wodaSuma} ml</b></span>
+        <button class="rytm-dodaj" style="margin-left:auto;border:none;background:var(--turkus,#1a7158);color:#fff;border-radius:9px;padding:6px 13px;font-size:12.5px;cursor:pointer;font-weight:600;">＋ Dodaj</button>
+      </div>
+      ${luki.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${luki.map(([n]) => `<button class="rytm-luka" data-i="${luki.findIndex(([x]) => x === n)}" style="border:1px dashed #e4c9a0;background:#fff8ec;color:#8a5a12;border-radius:14px;padding:4px 11px;font-size:11.5px;cursor:pointer;">○ ${escP(n)} — dodaj</button>`).join("")}</div>` : ""}
       <div class="rytm-tresc"></div>
-      ${luki.length ? `<div style="margin-top:8px;padding:8px 10px;background:#fff8ec;border:1px dashed #e4c9a0;border-radius:9px;font-size:12px;color:#8a5a12;">○ Brak dziś wpisu: <b>${luki.map(escP).join(", ")}</b> — powiedz asystentowi, uzupełni w sekundę.</div>` : ""}
     </div>`);
     const tr = sekR.querySelector(".rytm-tresc");
     if (!dzien.length) {
-      tr.appendChild(el(`<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 0;">Dzień jeszcze pusty. Mów w ciągu dnia: „napełniłem butelkę", „byłem na spacerze pół godziny", „mocz miał intensywny zapach" — tu ułoży się z tego oś dnia.</div>`));
+      tr.appendChild(el(`<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 0;">Dzień jeszcze pusty. Mów w ciągu dnia — „dwa łyki wody", „spacer pół godziny", „mocz intensywny" — albo dodaj ręcznie przyciskiem ＋.</div>`));
     } else {
-      for (const [naz, test] of pasma) {
-        const wp = dzien.filter((p) => test(gOf(p)));
-        if (!wp.length) continue;
-        tr.appendChild(el(`<div style="font-size:11px;font-weight:600;color:var(--ink-soft);margin:7px 0 2px;text-transform:uppercase;letter-spacing:.04em;">${naz}</div>`));
-        for (const p of wp) {
-          const g = new Date(p.zmierzono_at).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
-          tr.appendChild(el(`<div style="display:flex;gap:8px;padding:3px 2px;font-size:13px;align-items:baseline;">
-            <span style="color:var(--ink-soft);font-size:11.5px;flex:none;width:38px;">${g}</span>
-            <span style="flex:none;">${ETYK_R[p.typ] || "📌"}</span>
-            <span style="min-width:0;">${opisR(p)}${p.notatka ? ` <span style="color:var(--ink-soft);font-size:11.5px;">· ${escP(p.notatka)}</span>` : ""}</span>
-          </div>`));
-        }
+      for (const p of dzien) {
+        const g = new Date(p.zmierzono_at).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+        const w = el(`<div class="rytm-poz" style="display:flex;gap:8px;padding:6px 4px;font-size:13px;align-items:baseline;border-bottom:1px solid #f0ece0;cursor:pointer;border-radius:7px;">
+          <span style="color:var(--ink-soft);font-size:11.5px;flex:none;width:38px;">${g}</span>
+          <span style="flex:none;">${ETYK_R[p.typ] || "📌"}</span>
+          <span style="flex:none;font-weight:600;min-width:64px;">${NAZ_R[p.typ] || p.typ}</span>
+          <span style="min-width:0;flex:1;">${opisR(p)}${p.notatka ? ` <span style="color:var(--ink-soft);font-size:11.5px;">· ${escP(p.notatka)}</span>` : ""}</span>
+          <span style="flex:none;color:var(--ink-soft);font-size:11px;">✎</span>
+        </div>`);
+        w.addEventListener("click", () => arkuszPuls(p));
+        tr.appendChild(w);
       }
     }
+    sekR.querySelector(".rytm-dodaj").addEventListener("click", () => arkuszPuls(null));
+    sekR.querySelectorAll(".rytm-luka").forEach((b) => b.addEventListener("click", () => { const l = luki[Number(b.dataset.i)]; if (l) arkuszPuls(null, l[1]); }));
     box.appendChild(sekR);
   } catch (e) {}
   /* ── LINIA ŻYCIA — pionowa oś wszystkich zdarzeń (30 dni): filtry typów, schemat powtarzalności, raport dla lekarza ── */
-  try {
+  if (T === "analiza") try {
     const odLZ = new Date(Date.now() - 30 * 86400000).toISOString();
     const { data: lz = [] } = await supabase.from("puls_pomiary").select("*").gte("zmierzono_at", odLZ).order("zmierzono_at", { ascending: false }).limit(600);
     if (lz.length) {
-      const IKONA_LZ = { cisnienie: "🩺", tetno: "💓", cukier: "🩸", waga: "⚖️", temperatura: "🌡", saturacja: "🫁", sen: "😴", nastroj: "🙂", energia: "⚡", stres: "😖", objaw: "🤕", stolec: "🚽", mocz: "💧", woda: "🥤", posilek: "🍽", lek: "💊", suplement: "🌿", aktywnosc: "🏃", pot: "💦", inne: "📌" };
-      const KOLOR_LZ = { cisnienie: "#c0392b", tetno: "#e67e22", cukier: "#e74c3c", waga: "#9b59b6", sen: "#34495e", nastroj: "#f39c12", energia: "#f1c40f", stres: "#d35400", objaw: "#e74c3c", stolec: "#795548", mocz: "#2980b9", woda: "#3498db", posilek: "#27ae60", lek: "#8e44ad", suplement: "#16a085", aktywnosc: "#1a7158", pot: "#00bcd4", temperatura: "#e67e22", saturacja: "#2c3e50", inne: "#7f8c8d" };
-      const NAZWA_LZ = { cisnienie: "ciśnienie", tetno: "tętno", cukier: "cukier", waga: "waga", temperatura: "temp.", saturacja: "saturacja", sen: "sen", nastroj: "nastrój", energia: "energia", stres: "stres", objaw: "objawy", stolec: "stolec", mocz: "mocz", woda: "woda", posilek: "posiłki", lek: "leki", suplement: "suplementy", aktywnosc: "aktywność", pot: "pot", inne: "inne" };
+      const IKONA_LZ = { cisnienie: "🩺", tetno: "💓", cukier: "🩸", waga: "⚖️", temperatura: "🌡", saturacja: "🫁", sen: "😴", nastroj: "🙂", energia: "⚡", stres: "😖", objaw: "🤕", stolec: "🚽", mocz: "💧", woda: "🥤", posilek: "🍽", lek: "💊", suplement: "🌿", aktywnosc: "🏃", pot: "💦", praktyka: "🕯", inne: "📌" };
+      const KOLOR_LZ = { cisnienie: "#c0392b", tetno: "#e67e22", cukier: "#e74c3c", waga: "#9b59b6", sen: "#34495e", nastroj: "#f39c12", energia: "#f1c40f", stres: "#d35400", objaw: "#e74c3c", stolec: "#795548", mocz: "#2980b9", woda: "#3498db", posilek: "#27ae60", lek: "#8e44ad", suplement: "#16a085", aktywnosc: "#1a7158", pot: "#00bcd4", temperatura: "#e67e22", saturacja: "#2c3e50", praktyka: "#7b5ea7", inne: "#7f8c8d" };
+      const NAZWA_LZ = { cisnienie: "ciśnienie", tetno: "tętno", cukier: "cukier", waga: "waga", temperatura: "temp.", saturacja: "saturacja", sen: "sen", nastroj: "nastrój", energia: "energia", stres: "stres", objaw: "objawy", stolec: "stolec", mocz: "mocz", woda: "woda", posilek: "posiłki", lek: "leki", suplement: "suplementy", aktywnosc: "aktywność", pot: "pot", praktyka: "praktyki", inne: "inne" };
       const opisLZ = (p) => {
         if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
         if (p.typ === "posilek") return `${escP(p.kontekst || "posiłek")}: ${escP(p.nazwa || "")}`;
         if (p.typ === "lek" || p.typ === "suplement") return `${escP(p.nazwa || "")}${p.wartosc != null ? " " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : ""}`;
-        if (p.typ === "aktywnosc") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+        if (p.typ === "aktywnosc" || p.typ === "praktyka") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
         if (p.typ === "objaw") return `${escP(p.nazwa || "")}${p.wartosc != null ? " <b>" + p.wartosc + "/10</b>" : ""}${p.lokalizacja ? " · " + escP(p.lokalizacja) : ""}`;
         if (p.typ === "sen") return `${p.wartosc != null ? "<b>" + p.wartosc + " h</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
         if (p.typ === "woda") return `${p.wartosc ? "<b>" + p.wartosc + " ml</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
@@ -2434,6 +2447,8 @@ async function renderPuls() {
           <button class="lz-raport" style="margin-left:auto;border:1px solid var(--line);background:none;border-radius:8px;padding:5px 10px;font-size:11.5px;cursor:pointer;color:var(--ink-soft);">🖨 Raport dla lekarza</button>
         </div>
         <div class="lz-chipy" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;"></div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-bottom:3px;">Aktogram — 7 dni (kropka = zdarzenie, dotknij by edytować; filtry wyżej: wszystko albo coś konkretnego)</div>
+        <div class="lz-akto" style="margin-bottom:10px;"></div>
         <div class="lz-os" style="max-height:340px;overflow-y:auto;"></div>
       </div>`);
       const chipyEl = sekLZ.querySelector(".lz-chipy");
@@ -2457,7 +2472,41 @@ async function renderPuls() {
           chipyEl.appendChild(ch);
         }
       };
+      const aktoEl = sekLZ.querySelector(".lz-akto");
+      const rysujAktogram = () => {
+        aktoEl.innerHTML = "";
+        const akt = new Set(aktywne());
+        const naDzien = {};
+        for (const p of lz) {
+          if (!akt.has(p.typ)) continue;
+          const dISO = new Date(p.zmierzono_at).toLocaleDateString("en-CA", { timeZone: TZ });
+          (naDzien[dISO] = naDzien[dISO] || []).push(p);
+        }
+        aktoEl.appendChild(el(`<div style="display:flex;font-size:9.5px;color:var(--ink-soft);margin:0 0 2px 48px;">${[0, 6, 12, 18].map((g) => `<span style="flex:1;">${g}:00</span>`).join("")}<span>24</span></div>`));
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(Date.now() - i * 86400000);
+          const dISO = d.toLocaleDateString("en-CA", { timeZone: TZ });
+          const et = d.toLocaleDateString("pl-PL", { weekday: "short", day: "numeric", timeZone: TZ });
+          const wiersz = el(`<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+            <span style="flex:none;width:42px;font-size:10px;color:${i === 0 ? "#1a7158" : "var(--ink-soft)"};font-weight:${i === 0 ? "700" : "400"};text-align:right;">${escP(et)}</span>
+            <div class="akto-pas" style="position:relative;flex:1;height:16px;background:#f4f1e8;border-radius:5px;overflow:hidden;">
+              ${[6, 12, 18].map((g) => `<span style="position:absolute;left:${(g / 24) * 100}%;top:0;bottom:0;width:1px;background:#e7e2d3;"></span>`).join("")}
+            </div>
+          </div>`);
+          const pas = wiersz.querySelector(".akto-pas");
+          for (const p of (naDzien[dISO] || [])) {
+            const t = new Date(p.zmierzono_at);
+            const [hh, mm] = t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: TZ }).split(":").map(Number);
+            const lewo = (((hh === 24 ? 0 : hh) + mm / 60) / 24) * 100;
+            const kr = el(`<span title="${escP(`${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")} · ${NAZWA_LZ[p.typ] || p.typ}${p.nazwa ? " · " + p.nazwa : ""}`)}" style="position:absolute;left:${lewo}%;top:50%;transform:translate(-50%,-50%);width:8px;height:8px;border-radius:50%;background:${KOLOR_LZ[p.typ] || "#7f8c8d"};cursor:pointer;box-shadow:0 0 0 1.5px var(--surface);"></span>`);
+            kr.addEventListener("click", (e) => { e.stopPropagation(); arkuszPuls(p); });
+            pas.appendChild(kr);
+          }
+          aktoEl.appendChild(wiersz);
+        }
+      };
       const rysujOs = () => {
+        rysujAktogram();
         osEl.innerHTML = "";
         const akt = new Set(aktywne());
         const widoczne = lz.filter((p) => akt.has(p.typ));
@@ -2504,70 +2553,86 @@ async function renderPuls() {
       box.appendChild(sekLZ);
     }
   } catch (e) {}
-  /* ── WYNIKI BADAŃ — tabela porównawcza (parametry × daty badań, strzałki trendu, czerwone poza normą) ── */
-  try {
+  /* ── ZAKŁADKA BADANIA — tabela porównawcza (parametry × daty, TAKŻE archiwalne wstecz) + wydruk + historia medyczna ── */
+  if (T === "badania") try {
     const { data: bad = [] } = await supabase.from("badania_wyniki").select("*").order("badanie_data", { ascending: true });
-    if (bad.length) {
-      const daty = [...new Set(bad.map((b) => b.badanie_data))].sort().slice(-4); // ostatnie 4 badania
-      const parametry = [...new Set(bad.map((b) => b.parametr))];
-      const mapa = {}; bad.forEach((b) => { (mapa[b.parametr] = mapa[b.parametr] || {})[b.badanie_data] = b; });
-      const fD = (d) => new Date(d + "T12:00").toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit", year: "2-digit" });
-      const TH = `style="text-align:right;padding:5px 8px;border-bottom:1px solid var(--line);font-size:11px;color:var(--ink-soft);white-space:nowrap;"`;
+    const datyWsz = [...new Set(bad.map((b) => b.badanie_data))].sort();
+    const fD = (d) => new Date(d + "T12:00").toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit", year: "2-digit" });
+    const zbudujTabele = (daty, parametry, mapa, doDruku) => {
+      const bord = doDruku ? "#ccc" : "var(--line)";
+      const TH = `style="text-align:right;padding:5px 8px;border-bottom:1px solid ${bord};font-size:11px;color:#777;white-space:nowrap;"`;
       const wierszP = (p) => {
         const kom = daty.map((d, i) => {
           const b = mapa[p][d];
-          if (!b) return `<td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;color:var(--ink-soft);">—</td>`;
+          if (!b) return `<td style="padding:5px 8px;border-bottom:1px solid ${bord};text-align:right;color:#999;">—</td>`;
           let strz = "";
           for (let j = i - 1; j >= 0; j--) { const prev = mapa[p][daty[j]]; if (prev && prev.wartosc != null && b.wartosc != null) { strz = b.wartosc > prev.wartosc ? " ↑" : b.wartosc < prev.wartosc ? " ↓" : " →"; break; } }
-          const kol = b.poza_norma ? "#c0392b" : "var(--ink)";
+          const kol = b.poza_norma ? "#c0392b" : "inherit";
           const waga = b.poza_norma ? "600" : "400";
           const w = b.wartosc != null ? b.wartosc : (b.wartosc_tekst || "—");
-          return `<td style="padding:5px 8px;border-bottom:1px solid var(--line);text-align:right;color:${kol};font-weight:${waga};white-space:nowrap;">${esc(String(w))}${strz}${b.poza_norma ? " (" + b.poza_norma + ")" : ""}</td>`;
+          return `<td style="padding:5px 8px;border-bottom:1px solid ${bord};text-align:right;color:${kol};font-weight:${waga};white-space:nowrap;">${esc(String(w))}${strz}${b.poza_norma ? " (" + b.poza_norma + ")" : ""}</td>`;
         }).join("");
         const ost = mapa[p][daty[daty.length - 1]] || Object.values(mapa[p]).pop();
         const norma = ost && (ost.norma_od != null || ost.norma_do != null) ? `${ost.norma_od ?? ""}–${ost.norma_do ?? ""}` : (ost && ost.norma_tekst) || "";
-        return `<tr><td style="padding:5px 8px;border-bottom:1px solid var(--line);font-size:12.5px;">${esc(p)}<div style="font-size:10px;color:var(--ink-soft);">${esc(ost && ost.jednostka || "")}${norma ? " · norma " + esc(norma) : ""}</div></td>${kom}</tr>`;
+        return `<tr><td style="padding:5px 8px;border-bottom:1px solid ${bord};font-size:12.5px;">${esc(p)}<div style="font-size:10px;color:#777;">${esc(ost && ost.jednostka || "")}${norma ? " · norma " + esc(norma) : ""}</div></td>${kom}</tr>`;
       };
-      box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
-        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">🔬 Wyniki badań — porównanie</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">↑↓ względem poprzedniego badania · <span style="color:#c0392b;font-weight:600;">czerwone</span> poza normą (H wysokie / L niskie)</div>
-        <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">
-          <tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);font-size:11px;color:var(--ink-soft);">Parametr</th>${daty.map((d) => `<th ${TH}>${fD(d)}</th>`).join("")}</tr>
-          ${parametry.map(wierszP).join("")}
-        </table></div>
-      </div>`));
+      return `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid ${bord};font-size:11px;color:#777;">Parametr</th>${daty.map((d) => `<th ${TH}>${fD(d)}</th>`).join("")}</tr>
+        ${parametry.map(wierszP).join("")}
+      </table>`;
+    };
+    if (bad.length) {
+      const daty = datyWsz.slice(-4); // na ekranie ostatnie 4 badania; wydruk bierze wszystkie
+      const parametry = [...new Set(bad.map((b) => b.parametr))];
+      const mapa = {}; bad.forEach((b) => { (mapa[b.parametr] = mapa[b.parametr] || {})[b.badanie_data] = b; });
+      const sekB = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+          <span style="font-size:13px;font-weight:600;">🔬 Wyniki badań — porównanie</span>
+          <button class="bad-druk" style="margin-left:auto;border:1px solid var(--line);background:none;border-radius:8px;padding:5px 10px;font-size:11.5px;cursor:pointer;color:var(--ink-soft);">🖨 Wydruk</button>
+        </div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">↑↓ względem poprzedniego badania · <span style="color:#c0392b;font-weight:600;">czerwone</span> poza normą (H wysokie / L niskie) · nowe daty (też archiwalne) dopisuje 🔬 Odczytaj przy zdjęciu niżej</div>
+        <div style="overflow-x:auto;">${zbudujTabele(daty, parametry, mapa, false)}</div>
+      </div>`);
+      sekB.querySelector(".bad-druk").addEventListener("click", () => {
+        let html = `<html><head><meta charset="utf-8"><title>MANA — wyniki badań</title><style>body{font-family:system-ui;max-width:760px;margin:24px auto;color:#222;}h1{font-size:19px;}p.m{color:#777;font-size:11px;}td,th{font-size:12px;}</style></head><body>`;
+        html += `<h1>Wyniki badań — ${escP(TRAVELER.nick || "")}</h1><p class="m">${datyWsz.length} badań: ${datyWsz.map(fD).join(", ")} · wygenerowano ${new Date().toLocaleString("pl-PL", { timeZone: TZ })} · mana.app</p>`;
+        html += zbudujTabele(datyWsz, parametry, mapa, true) + `</body></html>`;
+        const okno = window.open("", "_blank");
+        if (!okno) { trzosToast("Odblokuj wyskakujące okna, żeby wydrukować."); return; }
+        okno.document.write(html); okno.document.close();
+        setTimeout(() => { try { okno.print(); } catch (e) {} }, 300);
+      });
+      box.appendChild(sekB);
     }
+    /* Historia medyczna — operacje, zabiegi, diagnozy, szczepienia, urazy; także sprzed lat (buduje obraz do tyłu) */
+    const { data: histM = [] } = await supabase.from("puls_historia").select("*").order("data_od", { ascending: false, nullsFirst: false });
+    const RODZ_H = { operacja: "🔪 operacja", zabieg: "🩹 zabieg", diagnoza: "🧾 diagnoza", szczepienie: "💉 szczepienie", uraz: "🦴 uraz", inne: "📌 inne" };
+    const sekH = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+        <span style="font-size:13px;font-weight:600;">🏥 Historia medyczna</span>
+        <button class="hist-dodaj" style="margin-left:auto;border:1px solid var(--line);background:none;border-radius:8px;padding:5px 10px;font-size:11.5px;cursor:pointer;color:var(--ink-soft);">＋ Dodaj</button>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Operacje, zabiegi, diagnozy, szczepienia, urazy — także sprzed lat. Możesz też powiedzieć asystentowi, np. „w 2003 miałem operację wyrostka".</div>
+      <div class="hist-lista"></div>
+    </div>`);
+    const histLista = sekH.querySelector(".hist-lista");
+    if (!histM.length) histLista.appendChild(el(`<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 0;">Jeszcze pusto — dodaj pierwszy wpis, nawet sprzed lat.</div>`));
+    for (const hR of histM) {
+      const dTx = hR.data_od ? new Date(hR.data_od + "T12:00").toLocaleDateString("pl-PL", { year: "numeric", month: "short", day: "numeric" }) : "data nieznana";
+      const w = el(`<div style="display:flex;gap:8px;padding:6px 2px;font-size:13px;align-items:baseline;border-top:1px solid var(--line);cursor:pointer;">
+        <span style="flex:none;font-size:11px;color:var(--ink-soft);min-width:78px;">${escP(dTx)}</span>
+        <span style="flex:none;font-size:11.5px;">${RODZ_H[hR.rodzaj] || hR.rodzaj}</span>
+        <span style="font-weight:600;min-width:0;">${escP(hR.nazwa)}${hR.opis ? ` <span style="font-weight:400;color:var(--ink-soft);font-size:11.5px;">· ${escP(hR.opis)}</span>` : ""}</span>
+      </div>`);
+      w.addEventListener("click", () => arkuszHistoria(hR));
+      histLista.appendChild(w);
+    }
+    sekH.querySelector(".hist-dodaj").addEventListener("click", () => arkuszHistoria(null));
+    box.appendChild(sekH);
   } catch (e) {}
 
-  /* ── POMIARY I OBJAWY (zasilane głosem przez asystenta: „ciśnienie 132 na 85") ── */
-  try {
-    const { data: pom = [] } = await supabase.from("puls_pomiary").select("*").order("zmierzono_at", { ascending: false }).limit(30);
-    if (pom.length) {
-      const ETYK = { cisnienie: "🩺 ciśnienie", tetno: "💓 tętno", cukier: "🩸 cukier", waga: "⚖️ waga", temperatura: "🌡 temperatura", saturacja: "🫁 saturacja", sen: "😴 sen", nastroj: "🙂 nastrój", energia: "⚡ energia", stres: "😖 stres", objaw: "🤕", stolec: "🚽 stolec", mocz: "💧 mocz", woda: "🥤 woda", posilek: "🍽 posiłek", lek: "💊 lek", suplement: "🌿 suplement", aktywnosc: "🏃 aktywność", pot: "💦 pot", inne: "📌" };
-      const wiersz = (p) => {
-        let opis;
-        if (p.typ === "cisnienie") opis = `${p.wartosc}/${p.wartosc2}`;
-        else if (p.typ === "posilek" || p.typ === "lek" || p.typ === "suplement") opis = `${escP(p.nazwa || "")}${p.wartosc != null ? " · " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : (p.kontekst ? " · " + escP(p.kontekst) : "")}`;
-        else if (p.typ === "objaw") opis = `${escP(p.nazwa || "objaw")}${p.wartosc != null ? " · " + p.wartosc + "/10" : ""}${p.lokalizacja ? " · " + escP(p.lokalizacja) : ""}`;
-        else if (p.typ === "sen") opis = `${p.wartosc != null ? p.wartosc + " h" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
-        else opis = `${p.wartosc != null ? p.wartosc : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
-        const kiedy = new Date(p.zmierzono_at).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: TZ });
-        return `<div style="display:flex;align-items:center;gap:8px;padding:7px 4px;border-bottom:1px solid var(--line);font-size:13.5px;">
-          <span style="flex:none;min-width:110px;">${ETYK[p.typ] || p.typ}</span>
-          <span style="flex:1;">${opis}</span>
-          <span style="color:var(--ink-soft);font-size:11.5px;white-space:nowrap;">${kiedy}</span></div>`;
-      };
-      box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
-        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Pomiary i objawy</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Mów do asystenta: „ciśnienie 132 na 85", „boli mnie głowa na 6", „spałem 6 godzin". Raport: „pokaż moje ciśnienia z miesiąca".</div>
-        ${pom.map(wiersz).join("")}
-      </div>`));
-    } else {
-      box.appendChild(el(`<div style="border:1px dashed var(--line);border-radius:12px;padding:12px;margin-bottom:14px;font-size:12.5px;color:var(--ink-soft);background:#faf8f2;">
-        💡 Nowość: powiedz asystentowi <b>„ciśnienie 132 na 85"</b>, <b>„boli mnie głowa na 6, prawa skroń"</b> albo <b>„spałem 6 godzin, kiepsko"</b> — pomiary zapiszą się tutaj, a przed wizytą u lekarza poprosisz o raport.
-      </div>`));
-    }
-  } catch (e) {}
+  if (T !== "badania") return;
+  /* ── notatnik ciała + zdjęcia badań (zakładka Badania) ── */
   const form = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
     <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;line-height:1.45;">🔒 Prywatny notatnik ciała — tylko Ty. Sen, samopoczucie, objawy, zdjęcia wyników badań.</div>
     <textarea id="puls-tekst" placeholder="np. Noc bez pocenia, 2× wstawałem na siku, sen 0:30–8:30" style="width:100%;box-sizing:border-box;min-height:62px;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;resize:vertical;"></textarea>
@@ -2604,6 +2669,145 @@ async function renderPuls() {
   if (!wpisy.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:13.5px;padding:6px 2px;">Jeszcze nic tu nie ma. Zapisz pierwszą notatkę o ciele.</div>`)); return; }
   for (const w of wpisy) box.appendChild(await kartaPuls(w));
 }
+/* ── ARKUSZ WPISU PULSU — jeden dla dodawania (＋/luki) i edycji (tap we wpis); lekki, nie ankieta ── */
+function arkuszPuls(wpis, prefill) {
+  prefill = prefill || {};
+  const TYPY_A = [["woda","🥤"],["posilek","🍽"],["mocz","💧"],["stolec","🚽"],["sen","😴"],["aktywnosc","🏃"],["praktyka","🕯"],["cisnienie","🩺"],["tetno","💓"],["waga","⚖️"],["objaw","🤕"],["lek","💊"],["suplement","🌿"],["nastroj","🙂"],["energia","⚡"],["stres","😖"],["cukier","🩸"],["temperatura","🌡"],["saturacja","🫁"],["pot","💦"],["inne","📌"]];
+  let typ = (wpis && wpis.typ) || prefill.typ || "woda";
+  const teraz = new Date();
+  const dGdy = wpis ? new Date(wpis.zmierzono_at) : teraz;
+  const dataV = dGdy.toLocaleDateString("en-CA", { timeZone: TZ });
+  const godzV = dGdy.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+  const ov = el(`<div class="m-overlay" style="align-items:flex-end;"><div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px 22px;box-shadow:0 -8px 30px rgba(0,0,0,.2);max-height:88vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;margin-bottom:10px;"><span style="font-size:15px;font-weight:600;">${wpis ? "Edytuj wpis" : "Dodaj wpis"}</span><button class="ap-x" style="margin-left:auto;border:none;background:none;font-size:19px;cursor:pointer;color:var(--ink-soft);">✕</button></div>
+    <div class="ap-typy" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <input type="date" class="ap-data" value="${dataV}" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;">
+      <input type="time" class="ap-godz" value="${godzV}" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;">
+    </div>
+    <div class="ap-pola" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;">
+      ${wpis ? `<button class="ap-usun" style="border:1px solid #e8c8c0;background:#fdf3f1;color:#c0392b;border-radius:11px;padding:11px 14px;font-size:14px;cursor:pointer;">Usuń</button>` : ""}
+      <button class="ap-zapisz" style="flex:1;border:none;background:var(--turkus,#1a7158);color:#fff;border-radius:11px;padding:11px;font-size:15px;cursor:pointer;font-weight:600;">Zapisz</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zam = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
+  ov.querySelector(".ap-x").addEventListener("click", zam);
+  const typyEl = ov.querySelector(".ap-typy");
+  const polaEl = ov.querySelector(".ap-pola");
+  const wart = () => ({
+    wartosc: ov.querySelector(".ap-wart") ? ov.querySelector(".ap-wart").value : "",
+    wartosc2: ov.querySelector(".ap-wart2") ? ov.querySelector(".ap-wart2").value : "",
+    nazwa: ov.querySelector(".ap-nazwa") ? ov.querySelector(".ap-nazwa").value : "",
+    kontekst: ov.querySelector(".ap-kont") ? ov.querySelector(".ap-kont").value : "",
+    notatka: ov.querySelector(".ap-nota") ? ov.querySelector(".ap-nota").value : "",
+  });
+  const rysujTypy = () => {
+    typyEl.innerHTML = "";
+    for (const [t, ik] of TYPY_A) {
+      const b = el(`<button style="border:1px solid ${t === typ ? "#1a7158" : "var(--line)"};background:${t === typ ? "#e3f4f0" : "none"};border-radius:14px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:${t === typ ? "600" : "400"};color:var(--ink);">${ik} ${t === "stolec" ? "kał" : t === "posilek" ? "posiłek" : t === "aktywnosc" ? "aktywność" : t === "nastroj" ? "nastrój" : t}</button>`);
+      b.addEventListener("click", () => { typ = t; rysujTypy(); rysujPola(); });
+      typyEl.appendChild(b);
+    }
+  };
+  const P = (klasa, label, typHtml, val, ph) => `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">${label}</label><input class="${klasa}" type="${typHtml}" value="${val != null ? escP(String(val)) : ""}" placeholder="${ph || ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>`;
+  const rysujPola = () => {
+    const w = wpis || {};
+    let h = "";
+    if (typ === "cisnienie") h = P("ap-wart", "Skurczowe", "number", w.wartosc) + P("ap-wart2", "Rozkurczowe", "number", w.wartosc2);
+    else if (typ === "woda") h = P("ap-wart", "Ile ml (puste = napełnienie butelki)", "number", w.wartosc) + P("ap-kont", "Kontekst", "text", w.kontekst, "np. napełnienie butelki 700 ml");
+    else if (typ === "posilek") h = P("ap-kont", "Który posiłek", "text", w.kontekst, "śniadanie / obiad / kolacja / przekąska") + P("ap-nazwa", "Co", "text", w.nazwa, "np. jajecznica z pomidorami");
+    else if (typ === "mocz" || typ === "pot") h = P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · zapach");
+    else if (typ === "stolec") h = P("ap-wart", "Bristol 1–7", "number", w.wartosc) + P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · krew/śluz");
+    else if (typ === "sen") h = P("ap-wart", "Godzin snu", "number", w.wartosc) + P("ap-kont", "Jak spałeś", "text", w.kontekst, "przebudzenia, sny…");
+    else if (typ === "aktywnosc") h = P("ap-nazwa", "Rodzaj", "text", w.nazwa, "spacer / trening / rower…") + P("ap-wart", "Minut", "number", w.wartosc) + P("ap-kont", "Od–do / szczegóły", "text", w.kontekst);
+    else if (typ === "praktyka") h = P("ap-nazwa", "Rodzaj praktyki", "text", w.nazwa, "rapé / medytacja / akupunktura / sauna…") + P("ap-wart", "Minut (opcjonalnie)", "number", w.wartosc) + P("ap-kont", "Szczegóły", "text", w.kontekst, "z kim, gdzie, przebieg");
+    else if (typ === "lek" || typ === "suplement") h = P("ap-nazwa", "Nazwa", "text", w.nazwa) + P("ap-wart", "Dawka", "number", w.wartosc) + P("ap-kont", "Jednostka", "text", w.kontekst, "mg / tabletki / j.m.");
+    else if (typ === "objaw") h = P("ap-nazwa", "Co dolega", "text", w.nazwa, "np. ból głowy") + P("ap-wart", "Nasilenie 1–10", "number", w.wartosc) + P("ap-kont", "Gdzie / cechy", "text", (w.lokalizacja || w.kontekst));
+    else h = P("ap-wart", "Wartość", "number", w.wartosc) + P("ap-nazwa", "Nazwa", "text", w.nazwa) + P("ap-kont", "Kontekst", "text", w.kontekst);
+    h += P("ap-nota", "Notatka", "text", w.notatka);
+    polaEl.innerHTML = h;
+    if (prefill.kontekst && !wpis) { const k = ov.querySelector(".ap-kont"); if (k && !k.value) k.value = prefill.kontekst; }
+  };
+  rysujTypy(); rysujPola();
+  ov.querySelector(".ap-zapisz").addEventListener("click", async () => {
+    const v = wart();
+    const rek = {
+      typ,
+      wartosc: v.wartosc !== "" ? Number(v.wartosc) : null,
+      wartosc2: v.wartosc2 !== "" ? Number(v.wartosc2) : null,
+      nazwa: v.nazwa.trim() || null,
+      kontekst: v.kontekst.trim() || null,
+      notatka: v.notatka.trim() || null,
+      zmierzono_at: isoZWarszawy(ov.querySelector(".ap-data").value, ov.querySelector(".ap-godz").value || "12:00"),
+    };
+    if ((typ === "objaw" || typ === "praktyka") && !rek.nazwa) { trzosToast((typ === "objaw" ? "Objaw" : "Praktyka") + " wymaga nazwy."); return; }
+    let err;
+    if (wpis) ({ error: err } = await supabase.from("puls_pomiary").update(rek).eq("id", wpis.id));
+    else ({ error: err } = await supabase.from("puls_pomiary").insert({ ...rek, traveler_id: TRAVELER.id }));
+    if (err) { trzosToast("Nie zapisano: " + err.message); return; }
+    trzosToast(wpis ? "Poprawione ✓" : "Dodane ✓"); zam(); renderPuls();
+  });
+  const us = ov.querySelector(".ap-usun");
+  if (us) us.addEventListener("click", async () => {
+    if (!confirm("Usunąć ten wpis?")) return;
+    const { error: err } = await supabase.from("puls_pomiary").delete().eq("id", wpis.id);
+    if (err) { trzosToast("Nie usunięto: " + err.message); return; }
+    trzosToast("Usunięte ✓"); zam(); renderPuls();
+  });
+}
+/* ── ARKUSZ HISTORII MEDYCZNEJ — operacje/zabiegi/diagnozy/szczepienia/urazy, daty także sprzed lat ── */
+function arkuszHistoria(wpis) {
+  const RODZAJE_H = [["operacja","🔪 operacja"],["zabieg","🩹 zabieg"],["diagnoza","🧾 diagnoza"],["szczepienie","💉 szczepienie"],["uraz","🦴 uraz"],["inne","📌 inne"]];
+  let rodzaj = (wpis && wpis.rodzaj) || "operacja";
+  const ov = el(`<div class="m-overlay" style="align-items:flex-end;"><div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px 22px;box-shadow:0 -8px 30px rgba(0,0,0,.2);max-height:88vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;margin-bottom:10px;"><span style="font-size:15px;font-weight:600;">${wpis ? "Edytuj" : "Dodaj"} — historia medyczna</span><button class="ah-x" style="margin-left:auto;border:none;background:none;font-size:19px;cursor:pointer;color:var(--ink-soft);">✕</button></div>
+    <div class="ah-rodz" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;"></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+      <div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Co (np. operacja wyrostka)</label><input class="ah-nazwa" type="text" value="${wpis ? escP(wpis.nazwa || "") : ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
+      <div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Kiedy — może być sprzed lat; przy samym roku wybierz 1 stycznia</label><input class="ah-data" type="date" value="${wpis && wpis.data_od ? wpis.data_od : ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
+      <div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Opis / szczegóły</label><input class="ah-opis" type="text" value="${wpis ? escP(wpis.opis || "") : ""}" placeholder="np. szpital, powikłania, rok przybliżony" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      ${wpis ? `<button class="ah-usun" style="border:1px solid #e8c8c0;background:#fdf3f1;color:#c0392b;border-radius:11px;padding:11px 14px;font-size:14px;cursor:pointer;">Usuń</button>` : ""}
+      <button class="ah-zapisz" style="flex:1;border:none;background:var(--turkus,#1a7158);color:#fff;border-radius:11px;padding:11px;font-size:15px;cursor:pointer;font-weight:600;">Zapisz</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zam = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
+  ov.querySelector(".ah-x").addEventListener("click", zam);
+  const rodzEl = ov.querySelector(".ah-rodz");
+  const rysujR = () => {
+    rodzEl.innerHTML = "";
+    for (const [r, n] of RODZAJE_H) {
+      const b = el(`<button style="border:1px solid ${r === rodzaj ? "#1a7158" : "var(--line)"};background:${r === rodzaj ? "#e3f4f0" : "none"};border-radius:14px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:${r === rodzaj ? "600" : "400"};color:var(--ink);">${n}</button>`);
+      b.addEventListener("click", () => { rodzaj = r; rysujR(); });
+      rodzEl.appendChild(b);
+    }
+  };
+  rysujR();
+  ov.querySelector(".ah-zapisz").addEventListener("click", async () => {
+    const nazwa = ov.querySelector(".ah-nazwa").value.trim();
+    if (!nazwa) { trzosToast("Podaj, co to było."); return; }
+    const rek = { rodzaj, nazwa, data_od: ov.querySelector(".ah-data").value || null, opis: ov.querySelector(".ah-opis").value.trim() || null };
+    let err;
+    if (wpis) ({ error: err } = await supabase.from("puls_historia").update(rek).eq("id", wpis.id));
+    else ({ error: err } = await supabase.from("puls_historia").insert({ ...rek, traveler_id: TRAVELER.id }));
+    if (err) { trzosToast("Nie zapisano: " + err.message); return; }
+    trzosToast(wpis ? "Poprawione ✓" : "Dodane ✓"); zam(); renderPuls();
+  });
+  const us = ov.querySelector(".ah-usun");
+  if (us) us.addEventListener("click", async () => {
+    if (!confirm("Usunąć ten wpis z historii medycznej?")) return;
+    const { error: err } = await supabase.from("puls_historia").delete().eq("id", wpis.id);
+    if (err) { trzosToast("Nie usunięto: " + err.message); return; }
+    trzosToast("Usunięte ✓"); zam(); renderPuls();
+  });
+}
+
 async function kartaPuls(w) {
   const data = new Date(w.created_at).toLocaleString("pl-PL", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: TZ });
   const card = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;">
