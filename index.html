@@ -2407,6 +2407,103 @@ async function renderPuls() {
     }
     box.appendChild(sekR);
   } catch (e) {}
+  /* ── LINIA ŻYCIA — pionowa oś wszystkich zdarzeń (30 dni): filtry typów, schemat powtarzalności, raport dla lekarza ── */
+  try {
+    const odLZ = new Date(Date.now() - 30 * 86400000).toISOString();
+    const { data: lz = [] } = await supabase.from("puls_pomiary").select("*").gte("zmierzono_at", odLZ).order("zmierzono_at", { ascending: false }).limit(600);
+    if (lz.length) {
+      const IKONA_LZ = { cisnienie: "🩺", tetno: "💓", cukier: "🩸", waga: "⚖️", temperatura: "🌡", saturacja: "🫁", sen: "😴", nastroj: "🙂", energia: "⚡", stres: "😖", objaw: "🤕", stolec: "🚽", mocz: "💧", woda: "🥤", posilek: "🍽", lek: "💊", suplement: "🌿", aktywnosc: "🏃", pot: "💦", inne: "📌" };
+      const KOLOR_LZ = { cisnienie: "#c0392b", tetno: "#e67e22", cukier: "#e74c3c", waga: "#9b59b6", sen: "#34495e", nastroj: "#f39c12", energia: "#f1c40f", stres: "#d35400", objaw: "#e74c3c", stolec: "#795548", mocz: "#2980b9", woda: "#3498db", posilek: "#27ae60", lek: "#8e44ad", suplement: "#16a085", aktywnosc: "#1a7158", pot: "#00bcd4", temperatura: "#e67e22", saturacja: "#2c3e50", inne: "#7f8c8d" };
+      const NAZWA_LZ = { cisnienie: "ciśnienie", tetno: "tętno", cukier: "cukier", waga: "waga", temperatura: "temp.", saturacja: "saturacja", sen: "sen", nastroj: "nastrój", energia: "energia", stres: "stres", objaw: "objawy", stolec: "stolec", mocz: "mocz", woda: "woda", posilek: "posiłki", lek: "leki", suplement: "suplementy", aktywnosc: "aktywność", pot: "pot", inne: "inne" };
+      const opisLZ = (p) => {
+        if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+        if (p.typ === "posilek") return `${escP(p.kontekst || "posiłek")}: ${escP(p.nazwa || "")}`;
+        if (p.typ === "lek" || p.typ === "suplement") return `${escP(p.nazwa || "")}${p.wartosc != null ? " " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : ""}`;
+        if (p.typ === "aktywnosc") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+        if (p.typ === "objaw") return `${escP(p.nazwa || "")}${p.wartosc != null ? " <b>" + p.wartosc + "/10</b>" : ""}${p.lokalizacja ? " · " + escP(p.lokalizacja) : ""}`;
+        if (p.typ === "sen") return `${p.wartosc != null ? "<b>" + p.wartosc + " h</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+        if (p.typ === "woda") return `${p.wartosc ? "<b>" + p.wartosc + " ml</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+        if (p.typ === "stolec") return `${p.wartosc != null ? "Bristol <b>" + p.wartosc + "</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+        return `${p.wartosc != null ? "<b>" + p.wartosc + "</b> " : ""}${p.kontekst ? escP(p.kontekst) : ""}${p.nazwa ? " " + escP(p.nazwa) : ""}`;
+      };
+      const typyObecne = [...new Set(lz.map((p) => p.typ))];
+      if (!window._lzAkt || ![...window._lzAkt].every((t) => typyObecne.includes(t))) window._lzAkt = null; // null = wszystkie
+      const sekLZ = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="font-size:13px;font-weight:600;">📈 Linia życia — 30 dni</span>
+          <button class="lz-raport" style="margin-left:auto;border:1px solid var(--line);background:none;border-radius:8px;padding:5px 10px;font-size:11.5px;cursor:pointer;color:var(--ink-soft);">🖨 Raport dla lekarza</button>
+        </div>
+        <div class="lz-chipy" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;"></div>
+        <div class="lz-os" style="max-height:340px;overflow-y:auto;"></div>
+      </div>`);
+      const chipyEl = sekLZ.querySelector(".lz-chipy");
+      const osEl = sekLZ.querySelector(".lz-os");
+      const aktywne = () => window._lzAkt ? [...window._lzAkt] : typyObecne;
+      const rysujChipy = () => {
+        chipyEl.innerHTML = "";
+        const wsz = el(`<button style="border:1px solid ${!window._lzAkt ? "#1a7158" : "var(--line)"};background:${!window._lzAkt ? "#e3f4f0" : "none"};border-radius:14px;padding:4px 10px;font-size:11.5px;cursor:pointer;font-weight:${!window._lzAkt ? "600" : "400"};color:var(--ink);">wszystkie</button>`);
+        wsz.addEventListener("click", () => { window._lzAkt = null; rysujChipy(); rysujOs(); });
+        chipyEl.appendChild(wsz);
+        for (const t of typyObecne) {
+          const on = !window._lzAkt || window._lzAkt.has(t);
+          const solo = window._lzAkt && window._lzAkt.size === 1 && window._lzAkt.has(t);
+          const ch = el(`<button style="border:1px solid ${on ? (KOLOR_LZ[t] || "#7f8c8d") : "var(--line)"};background:${solo ? (KOLOR_LZ[t] || "#7f8c8d") + "22" : "none"};opacity:${on ? 1 : 0.45};border-radius:14px;padding:4px 10px;font-size:11.5px;cursor:pointer;color:var(--ink);display:inline-flex;align-items:center;gap:4px;"><span style="width:7px;height:7px;border-radius:50%;background:${KOLOR_LZ[t] || "#7f8c8d"};"></span>${IKONA_LZ[t] || ""} ${NAZWA_LZ[t] || t}</button>`);
+          ch.addEventListener("click", () => {
+            if (!window._lzAkt) window._lzAkt = new Set([t]);            // z „wszystkie" klik = zostaje TEN
+            else if (window._lzAkt.has(t)) { window._lzAkt.delete(t); if (!window._lzAkt.size) window._lzAkt = null; }
+            else window._lzAkt.add(t);
+            rysujChipy(); rysujOs();
+          });
+          chipyEl.appendChild(ch);
+        }
+      };
+      const rysujOs = () => {
+        osEl.innerHTML = "";
+        const akt = new Set(aktywne());
+        const widoczne = lz.filter((p) => akt.has(p.typ));
+        if (!widoczne.length) { osEl.appendChild(el(`<div style="font-size:12px;color:var(--ink-soft);padding:6px 0;">Brak wpisów wybranych typów.</div>`)); return; }
+        let dzienOst = "";
+        for (const p of widoczne) {
+          const d = new Date(p.zmierzono_at);
+          const dISO = d.toLocaleDateString("en-CA", { timeZone: TZ });
+          if (dISO !== dzienOst) {
+            dzienOst = dISO;
+            const ile = widoczne.filter((x) => new Date(x.zmierzono_at).toLocaleDateString("en-CA", { timeZone: TZ }) === dISO).length;
+            osEl.appendChild(el(`<div style="font-size:11px;font-weight:700;color:#1a7158;margin:9px 0 3px;position:sticky;top:0;background:var(--surface);padding:2px 0;">${escP(d.toLocaleDateString("pl-PL", { weekday: "short", day: "numeric", month: "short", timeZone: TZ }))} <span style="color:var(--ink-soft);font-weight:400;">· ${ile}</span></div>`));
+          }
+          const g = d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
+          const w = el(`<div style="display:flex;gap:8px;padding:3px 0 3px 6px;font-size:12.5px;align-items:baseline;border-left:2px solid ${KOLOR_LZ[p.typ] || "#7f8c8d"};margin-left:3px;">
+            <span style="color:var(--ink-soft);font-size:11px;flex:none;width:34px;">${g}</span>
+            <span class="lz-iko" style="flex:none;cursor:pointer;" title="Pokaż tylko: ${NAZWA_LZ[p.typ] || p.typ}">${IKONA_LZ[p.typ] || "📌"}</span>
+            <span style="min-width:0;">${opisLZ(p)}${p.notatka ? ` <span style="color:var(--ink-soft);font-size:11px;">· ${escP(p.notatka)}</span>` : ""}</span>
+          </div>`);
+          w.querySelector(".lz-iko").addEventListener("click", () => { window._lzAkt = new Set([p.typ]); rysujChipy(); rysujOs(); });
+          osEl.appendChild(w);
+        }
+      };
+      sekLZ.querySelector(".lz-raport").addEventListener("click", () => {
+        const akt = new Set(aktywne());
+        const widoczne = [...lz].filter((p) => akt.has(p.typ)).reverse(); // chronologicznie
+        const czysty = (h) => String(h).replace(/<[^>]*>/g, "");
+        let html = `<html><head><meta charset="utf-8"><title>MANA — raport Puls</title><style>body{font-family:system-ui;max-width:700px;margin:24px auto;color:#222;}h1{font-size:19px;}h2{font-size:13px;margin:16px 0 4px;border-bottom:1px solid #ccc;padding-bottom:2px;}div.w{font-size:12.5px;padding:2px 0;}span.g{color:#777;display:inline-block;width:44px;}p.m{color:#777;font-size:11px;}</style></head><body>`;
+        html += `<h1>Raport Puls — ${escP(TRAVELER.nick || "")}</h1><p class="m">Zakres: ostatnie 30 dni · typy: ${aktywne().map((t) => NAZWA_LZ[t] || t).join(", ")} · wygenerowano ${new Date().toLocaleString("pl-PL", { timeZone: TZ })} · mana.app</p>`;
+        let dOst = "";
+        for (const p of widoczne) {
+          const d = new Date(p.zmierzono_at);
+          const dISO = d.toLocaleDateString("en-CA", { timeZone: TZ });
+          if (dISO !== dOst) { dOst = dISO; html += `<h2>${escP(d.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: TZ }))}</h2>`; }
+          html += `<div class="w"><span class="g">${d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", timeZone: TZ })}</span>${escP(NAZWA_LZ[p.typ] || p.typ)}: ${czysty(opisLZ(p))}${p.notatka ? " — " + escP(p.notatka) : ""}</div>`;
+        }
+        html += `</body></html>`;
+        const okno = window.open("", "_blank");
+        if (!okno) { trzosToast("Odblokuj wyskakujące okna, żeby wydrukować raport."); return; }
+        okno.document.write(html); okno.document.close();
+        setTimeout(() => { try { okno.print(); } catch (e) {} }, 300);
+      });
+      rysujChipy(); rysujOs();
+      box.appendChild(sekLZ);
+    }
+  } catch (e) {}
   /* ── WYNIKI BADAŃ — tabela porównawcza (parametry × daty badań, strzałki trendu, czerwone poza normą) ── */
   try {
     const { data: bad = [] } = await supabase.from("badania_wyniki").select("*").order("badanie_data", { ascending: true });
