@@ -5532,6 +5532,7 @@ async function wyslij() {
       dodajWiadomosc("asystent", dane.response);
       powiedz(dane.response);
     } else {
+      // bramka błędów asystenta: admin=pełny błąd, user=komunikat aktualizacji (14.07 v2)
       const _tech = dane.error || `HTTP ${res.status}`;
       if (TRAVELER && TRAVELER.is_admin) {
         dodajWiadomosc("asystent", "Asystent chwilowo nie odpowiada (" + _tech + ").");
