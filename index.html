@@ -247,6 +247,12 @@ window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();win
   .m-kalnav { flex: 0 0 auto; background: none; border: 1px solid var(--line); border-radius: 9px; width: 30px; height: 34px; font-size: 16px; color: var(--ink); cursor: pointer; }
   .m-kaldzis { flex: 0 0 auto; background: none; border: 1px solid var(--line); border-radius: 9px; height: 34px; padding: 0 10px; font-size: 12px; color: var(--ink-soft); cursor: pointer; font-family: var(--font-body); }
   .m-kaltresc { touch-action: pan-y; }
+  /* Kalendarz na pełny ekran w poziomie na telefonie (jak aktogram) */
+  @media (orientation: landscape) and (max-height: 560px) {
+    #m-widok-horyzont[data-tab="kalendarz"] #hyz-kalendarz { position: fixed; inset: 0; z-index: 60; background: var(--bg); padding: 6px 10px; overflow: auto; display: flex; flex-direction: column; }
+    #m-widok-horyzont[data-tab="kalendarz"] #hyz-kalendarz .m-kalbar { margin: 2px 6px 6px; }
+    #m-widok-horyzont[data-tab="kalendarz"] #hyz-kalendarz .m-kaltresc { flex: 1 1 auto; min-height: 0; }
+  }
   .m-kalspacer { flex: 1 1 auto; }
   .m-kalcrumb { flex: 0 0 auto; background: none; border: none; font-family: var(--font-display); font-size: 15px; color: var(--turkus); cursor: pointer; padding: 0 3px; }
   .m-kaltyt { flex: 0 0 auto; font-family: var(--font-display); font-size: 20px; font-weight: 700; color: var(--ink); text-transform: capitalize; padding-left: 6px; }
