@@ -2313,12 +2313,12 @@ async function renderPuls() {
   if (T === "zalecenia") try {
     const dzisD = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
     const { data: zal = [] } = await supabase.from("zalecenia").select("*").eq("aktywne", true).lte("od_data", dzisD).or(`do_data.is.null,do_data.gte.${dzisD}`).order("created_at", { ascending: true });
-    if (zal.length) {
+    {
       const { data: odh = [] } = await supabase.from("zalecenia_odhaczenia").select("id, zalecenie_id, pora, puls_pomiar_id").eq("data", dzisD);
       const odhMapa = {}; (odh || []).forEach((o) => { odhMapa[o.zalecenie_id + "|" + o.pora] = o; });
       const sekcja = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
-        <div style="font-size:13px;font-weight:600;margin-bottom:4px;">📋 Zalecenia — dziś</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Dotknij porę, by odhaczyć — wpis trafi do Pulsu. Nowe zalecenie dodasz mówiąc asystentowi, np. „biorę Lidan rano i wieczorem, 30 min przed jedzeniem".</div>
+        <div style="display:flex;align-items:center;margin-bottom:4px;"><span style="font-size:13px;font-weight:600;">📋 Zalecenia — dziś</span><button class="zal-dodaj" style="margin-left:auto;border:1px solid #1f9e8f;background:#e3f4f0;color:#1a7158;border-radius:14px;padding:4px 11px;font-size:12px;cursor:pointer;font-weight:600;">+ Dodaj</button></div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Dotknij porę, by odhaczyć — wpis trafi do Pulsu. ✏️ edytuje wpis, „+ Dodaj" tworzy nowe. Możesz też powiedzieć asystentowi „biorę Lidan rano i wieczorem".</div>
       </div>`);
       for (const z of zal) {
         const pory = Array.isArray(z.pory) ? z.pory : JSON.parse(z.pory || "[]");
@@ -2328,13 +2328,16 @@ async function renderPuls() {
         }).join("");
         const meta = [z.warunek, z.zrodlo].filter(Boolean).map(escP).join(" · ");
         sekcja.appendChild(el(`<div style="padding:8px 2px;border-top:1px solid var(--line);">
-          <div style="font-size:13.5px;font-weight:600;">${escP(z.nazwa || z.tresc)}</div>
+          <div style="display:flex;align-items:flex-start;gap:6px;"><div style="font-size:13.5px;font-weight:600;flex:1;">${escP(z.nazwa || z.tresc)}</div><button class="zal-edit" data-zal="${z.id}" style="border:none;background:none;font-size:14px;cursor:pointer;color:var(--ink-soft);padding:0 2px;line-height:1;">✏️</button></div>
           ${z.nazwa && z.tresc && z.tresc !== z.nazwa ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:1px;">${escP(z.tresc)}</div>` : ""}
           ${meta ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:1px;">${meta}</div>` : ""}
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${chipy}</div>
           ${z.opis ? `<details style="margin-top:6px;"><summary style="font-size:11.5px;color:#1a7158;cursor:pointer;font-weight:600;list-style:none;">ℹ️ O tym leku / praktyce</summary><div style="font-size:12px;color:var(--ink-soft);white-space:pre-wrap;line-height:1.5;margin-top:5px;padding:8px 10px;background:#faf8f2;border-radius:8px;">${escP(z.opis)}</div></details>` : ""}
         </div>`));
       }
+      if (!zal.length) sekcja.appendChild(el(`<div style="padding:10px 2px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);">Brak aktywnych zaleceń. Dotknij „+ Dodaj", by wpisać pierwsze.</div>`));
+      const zdod = sekcja.querySelector(".zal-dodaj"); if (zdod) zdod.addEventListener("click", () => arkuszZalecenie(null));
+      sekcja.querySelectorAll(".zal-edit").forEach((eb) => eb.addEventListener("click", () => { const zz = zal.find((x) => x.id === eb.dataset.zal); if (zz) arkuszZalecenie(zz); }));
       sekcja.querySelectorAll(".zal-chip").forEach((btn) => {
         btn.addEventListener("click", async () => {
           btn.disabled = true;
@@ -2754,6 +2757,95 @@ function arkuszPuls(wpis, prefill) {
   if (us) us.addEventListener("click", async () => {
     if (!confirm("Usunąć ten wpis?")) return;
     const { error: err } = await supabase.from("puls_pomiary").delete().eq("id", wpis.id);
+    if (err) { trzosToast("Nie usunięto: " + err.message); return; }
+    trzosToast("Usunięte ✓"); zam(); renderPuls();
+  });
+}
+/* ── ARKUSZ ZALECENIA — dodaj/edytuj/usuń regularny lek/suplement/czynność ── */
+function arkuszZalecenie(wpis) {
+  const TYPY_Z = [["lek","💊"],["suplement","🌿"],["czynnosc","✅"],["inne","📌"]];
+  let ptyp = (wpis && wpis.puls_typ) || "lek";
+  const poryInit = wpis ? (Array.isArray(wpis.pory) ? wpis.pory : JSON.parse(wpis.pory || "[]")) : ["rano"];
+  const dzisZ = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+  const LS = "font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;";
+  const IS = "width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;";
+  const ov = el(`<div class="m-overlay" style="align-items:flex-end;"><div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px 22px;box-shadow:0 -8px 30px rgba(0,0,0,.2);max-height:88vh;overflow-y:auto;">
+    <div style="display:flex;align-items:center;margin-bottom:10px;"><span style="font-size:15px;font-weight:600;">${wpis ? "Edytuj zalecenie" : "Nowe zalecenie"}</span><button class="az-x" style="margin-left:auto;border:none;background:none;font-size:19px;cursor:pointer;color:var(--ink-soft);">✕</button></div>
+    <div class="az-typy" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;"></div>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
+      <div><label style="${LS}">Nazwa *</label><input class="az-nazwa" type="text" value="${wpis ? escP(wpis.nazwa || wpis.tresc || "") : ""}" placeholder="np. Lidan, Witamina D" style="${IS}"></div>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;"><label style="${LS}">Dawka</label><input class="az-dawka" type="number" step="any" value="${wpis && wpis.dawka != null ? wpis.dawka : ""}" placeholder="np. 1" style="${IS}"></div>
+        <div style="flex:1;"><label style="${LS}">Jednostka</label><input class="az-jedn" type="text" value="${wpis ? escP(wpis.jednostka || "") : ""}" placeholder="mg / tabletka / j.m." style="${IS}"></div>
+      </div>
+      <div><label style="${LS}">Pory (przecinkami)</label><input class="az-pory" type="text" value="${escP(poryInit.join(", "))}" placeholder="rano, wieczór" style="${IS}"><div class="az-porychip" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;"></div></div>
+      <div><label style="${LS}">Warunek</label><input class="az-warunek" type="text" value="${wpis ? escP(wpis.warunek || "") : ""}" placeholder="np. 30 min przed jedzeniem, na czczo" style="${IS}"></div>
+      <div><label style="${LS}">Kto zalecił</label><input class="az-zrodlo" type="text" value="${wpis ? escP(wpis.zrodlo || "") : ""}" placeholder="lekarz / sam / ..." style="${IS}"></div>
+      <div><label style="${LS}">Opis (o leku / praktyce)</label><textarea class="az-opis" rows="2" placeholder="dawkowanie, po co, uwagi" style="${IS};resize:vertical;">${wpis ? escP(wpis.opis || "") : ""}</textarea></div>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;"><label style="${LS}">Od dnia</label><input class="az-od" type="date" value="${wpis && wpis.od_data ? wpis.od_data : dzisZ}" style="${IS}"></div>
+        <div style="flex:1;"><label style="${LS}">Do dnia (opcjonalnie)</label><input class="az-do" type="date" value="${wpis && wpis.do_data ? wpis.do_data : ""}" style="${IS}"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      ${wpis ? `<button class="az-usun" style="border:1px solid #e8c8c0;background:#fdf3f1;color:#c0392b;border-radius:11px;padding:11px 14px;font-size:14px;cursor:pointer;">Usuń</button>` : ""}
+      <button class="az-zapisz" style="flex:1;border:none;background:var(--turkus,#1a7158);color:#fff;border-radius:11px;padding:11px;font-size:15px;cursor:pointer;font-weight:600;">Zapisz</button>
+    </div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zam = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
+  ov.querySelector(".az-x").addEventListener("click", zam);
+  const typyEl = ov.querySelector(".az-typy");
+  const rysujTypy = () => {
+    typyEl.innerHTML = "";
+    for (const [t, ik] of TYPY_Z) {
+      const nazwaT = t === "czynnosc" ? "czynność" : t;
+      const b = el(`<button style="border:1px solid ${t === ptyp ? "#1a7158" : "var(--line)"};background:${t === ptyp ? "#e3f4f0" : "none"};border-radius:14px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:${t === ptyp ? "600" : "400"};color:var(--ink);">${ik} ${nazwaT}</button>`);
+      b.addEventListener("click", () => { ptyp = t; rysujTypy(); });
+      typyEl.appendChild(b);
+    }
+  };
+  rysujTypy();
+  const poryChipEl = ov.querySelector(".az-porychip");
+  ["rano", "południe", "wieczór", "noc"].forEach((p) => {
+    const b = el(`<button style="border:1px dashed var(--line);background:none;border-radius:12px;padding:3px 9px;font-size:11.5px;cursor:pointer;color:var(--ink-soft);">+ ${p}</button>`);
+    b.addEventListener("click", () => {
+      const inp = ov.querySelector(".az-pory");
+      const cur = inp.value.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!cur.includes(p)) cur.push(p);
+      inp.value = cur.join(", ");
+    });
+    poryChipEl.appendChild(b);
+  });
+  ov.querySelector(".az-zapisz").addEventListener("click", async () => {
+    const nazwa = ov.querySelector(".az-nazwa").value.trim();
+    if (!nazwa) { trzosToast("Nazwa jest wymagana."); return; }
+    const poryArr = ov.querySelector(".az-pory").value.split(",").map((s) => s.trim()).filter(Boolean);
+    const dawkaRaw = ov.querySelector(".az-dawka").value;
+    const rek = {
+      nazwa,
+      tresc: nazwa,
+      puls_typ: ptyp,
+      dawka: dawkaRaw !== "" ? Number(dawkaRaw) : null,
+      jednostka: ov.querySelector(".az-jedn").value.trim() || null,
+      pory: poryArr.length ? poryArr : ["rano"],
+      warunek: ov.querySelector(".az-warunek").value.trim() || null,
+      zrodlo: ov.querySelector(".az-zrodlo").value.trim() || null,
+      opis: ov.querySelector(".az-opis").value.trim() || null,
+      od_data: ov.querySelector(".az-od").value || dzisZ,
+      do_data: ov.querySelector(".az-do").value || null,
+    };
+    let err;
+    if (wpis) ({ error: err } = await supabase.from("zalecenia").update(rek).eq("id", wpis.id));
+    else ({ error: err } = await supabase.from("zalecenia").insert({ ...rek, traveler_id: TRAVELER.id, aktywne: true }));
+    if (err) { trzosToast("Nie zapisano: " + err.message); return; }
+    trzosToast(wpis ? "Poprawione ✓" : "Dodane ✓"); zam(); renderPuls();
+  });
+  const us = ov.querySelector(".az-usun");
+  if (us) us.addEventListener("click", async () => {
+    if (!confirm("Usunąć to zalecenie? Zniknie z listy.")) return;
+    const { error: err } = await supabase.from("zalecenia").update({ aktywne: false }).eq("id", wpis.id);
     if (err) { trzosToast("Nie usunięto: " + err.message); return; }
     trzosToast("Usunięte ✓"); zam(); renderPuls();
   });
