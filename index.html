@@ -2373,7 +2373,7 @@ async function renderPuls() {
             const { error: oe } = await supabase.from("zalecenia_odhaczenia").insert({ zalecenie_id: zId, traveler_id: TRAVELER.id, data: dzisD, pora, puls_pomiar_id: pulsId });
             if (oe) { trzosToast("Błąd: " + oe.message); btn.disabled = false; return; }
             trzosToast("Odhaczone ✓ — wpis w Pulsie");
-            if (z && z.opak_dawek != null && ((cntMapa[zId] || 0) + 1) >= z.opak_dawek) { await supabase.from("zalecenia").update({ aktywne: false }).eq("id", zId); trzosToast("Opakowanie skończone → „Zakończone"."); }
+            if (z && z.opak_dawek != null && ((cntMapa[zId] || 0) + 1) >= z.opak_dawek) { await supabase.from("zalecenia").update({ aktywne: false }).eq("id", zId); trzosToast("Opakowanie skonczone - trafilo do Zakonczonych."); }
           }
           renderPuls();
         });
