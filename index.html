@@ -2006,9 +2006,13 @@ async function renderTrzos() {
 
     // chipy
     const plemZKasa = new Set(txy.filter((t) => t.plemie_id).map((t) => t.plemie_id));
-    const chipy = [`<button class="trz-chip" data-key="moj" style="${chipStyl(sel.has("moj"))}">🙋 Mój</button>`]
-      .concat(TRZOS_PLEMIONA.filter((p) => plemZKasa.has(p.id) || sel.has(p.id)).map((p) => `<button class="trz-chip" data-key="${p.id}" style="${chipStyl(sel.has(p.id))}">👥 ${escP(p.nazwa)}</button>`))
-      .join("");
+    const wspolne = TRZOS_PLEMIONA.filter((p) => plemZKasa.has(p.id) || sel.has(p.id));
+    const wspOtw = !!window._trzWsp;
+    let chipy = `<button class="trz-chip" data-key="moj" style="${chipStyl(sel.has("moj"))}">🙋 Mój</button>`;
+    if (wspolne.length) {
+      chipy += `<button class="trz-wspolne" style="${chipStyl(wspolne.some((p) => sel.has(p.id)))}">👥 Wspólne ${wspOtw ? "▴" : "▾"}</button>`;
+      if (wspOtw) chipy += wspolne.map((p) => `<button class="trz-chip" data-key="${p.id}" style="${chipStyl(sel.has(p.id))}">👥 ${escP(p.nazwa)}</button>`).join("");
+    }
 
     // rozbicie per osoba + per kategoria (tylko gdy w zakresie jest plemię/zespół)
     let rozbicie = "";
@@ -2044,6 +2048,8 @@ async function renderTrzos() {
       if (!TRZOS_ZAKRES.size) TRZOS_ZAKRES.add("moj"); // nigdy pusto
       rysuj();
     }));
+    const wspBtn = pod.querySelector(".trz-wspolne");
+    if (wspBtn) wspBtn.addEventListener("click", () => { window._trzWsp = !window._trzWsp; rysuj(); });
 
     if (!widoczne.length) { lista.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:14px 0;">${txy.length ? "Brak wpisów w tym zakresie." : "Pusto. Dodaj pierwszy przychód lub koszt — paragon zrobisz zdjęciem (na telefonie) albo wybierzesz plik."}</div>`; return; }
     lista.innerHTML = "";
