@@ -2005,8 +2005,9 @@ async function renderTrzos() {
     const bilans = przychod - koszt;
 
     // chipy
+    const plemZKasa = new Set(txy.filter((t) => t.plemie_id).map((t) => t.plemie_id));
     const chipy = [`<button class="trz-chip" data-key="moj" style="${chipStyl(sel.has("moj"))}">🙋 Mój</button>`]
-      .concat(TRZOS_PLEMIONA.map((p) => `<button class="trz-chip" data-key="${p.id}" style="${chipStyl(sel.has(p.id))}">👥 ${escP(p.nazwa)}</button>`))
+      .concat(TRZOS_PLEMIONA.filter((p) => plemZKasa.has(p.id) || sel.has(p.id)).map((p) => `<button class="trz-chip" data-key="${p.id}" style="${chipStyl(sel.has(p.id))}">👥 ${escP(p.nazwa)}</button>`))
       .join("");
 
     // rozbicie per osoba + per kategoria (tylko gdy w zakresie jest plemię/zespół)
@@ -5807,6 +5808,8 @@ async function asystentParagon(file) {
     mysl.remove();
     if (error || !data || !data.ok) { dodajWiadomosc("asystent", "Nie udało się odczytać paragonu" + (error ? ": " + error.message : "") + "."); trwaRozmowa = false; return; }
     const d = data.dane || {};
+    // Sanity daty z OCR: absurdalna (przeszlosc >400 dni albo przyszlosc) -> dzis, zeby paragon nie znikl z Trzosu
+    { const dzisS = czesciWarszawy(new Date()).dataISO; const t = new Date(dzisS + "T12:00:00"); const p = d.data ? new Date(d.data + "T12:00:00") : null; if (!p || isNaN(p.getTime()) || p > new Date(t.getTime() + 2 * 864e5) || p < new Date(t.getTime() - 400 * 864e5)) d.data = dzisS; }
     const poz = Array.isArray(d.pozycje) ? d.pozycje.filter((p) => p && p.nazwa) : [];
     const kwota = d.kwota_brutto != null ? d.kwota_brutto : null;
     const sprz = (d.sprzedawca || "").trim();
