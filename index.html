@@ -2360,7 +2360,7 @@ async function renderPuls() {
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${chipy}</div>
           ${opakTxt ? `<div style="font-size:11.5px;color:#1a7158;margin-top:6px;font-weight:600;">${escP(opakTxt)}</div>` : ""}
           ${z.opis && z.opis.length > 90 ? `<details style="margin-top:6px;"><summary style="font-size:11.5px;color:#1a7158;cursor:pointer;font-weight:600;list-style:none;">ℹ️ Pełny opis</summary><div style="font-size:12px;color:var(--ink-soft);white-space:pre-wrap;line-height:1.5;margin-top:5px;padding:8px 10px;background:#faf8f2;border-radius:8px;">${escP(z.opis)}</div></details>` : ""}
-          <div style="font-size:11px;color:var(--ink-soft);margin-top:5px;">💬 Więcej o tym leku? Zapytaj asystenta.</div>
+          <div style="font-size:11px;color:var(--ink-soft);margin-top:5px;">💬 Więcej o tym leku — u asystenta lub w ulotce.</div>
         </div>`));
       }
       if (!zal.length) sekcja.appendChild(el(`<div style="padding:10px 2px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);">Brak aktywnych zaleceń. Dotknij „+ Dodaj", by wpisać pierwsze.</div>`));
@@ -2875,7 +2875,7 @@ function arkuszZalecenie(wpis) {
       </div>
       <div><label style="${LS}">Warunek</label><input class="az-warunek" type="text" value="${wpis ? escP(wpis.warunek || "") : ""}" placeholder="np. 30 min przed jedzeniem, na czczo" style="${IS}"></div>
       <div><label style="${LS}">Kto zalecił</label><input class="az-zrodlo" type="text" value="${wpis ? escP(wpis.zrodlo || "") : ""}" placeholder="lekarz / sam / ..." style="${IS}"></div>
-      <div><label style="${LS}">Opis (o leku / praktyce)</label><textarea class="az-opis" rows="2" placeholder="dawkowanie, po co, uwagi" style="${IS};resize:vertical;">${wpis ? escP(wpis.opis || "") : ""}</textarea></div>
+      <div><label style="${LS}">Opis (o leku / praktyce) <button type="button" class="az-opisz-ai" style="border:1px solid #1f9e8f;background:#e3f4f0;color:#1a7158;border-radius:10px;padding:2px 8px;font-size:11px;cursor:pointer;margin-left:4px;">✨ Opisz</button></label><textarea class="az-opis" rows="2" placeholder="dawkowanie, po co, uwagi" style="${IS};resize:vertical;">${wpis ? escP(wpis.opis || "") : ""}</textarea></div>
       <div><label style="${LS}">Od dnia</label><input class="az-od" type="date" value="${wpis && wpis.od_data ? wpis.od_data : dzisZ}" style="${IS}"></div>
       <div>
         <label style="${LS}">Koniec kuracji</label>
@@ -2941,6 +2941,18 @@ function arkuszZalecenie(wpis) {
     blokOpak.style.display = koniec === "opak" ? "block" : "none";
   };
   rysujKoniec();
+  const opiszBtn = ov.querySelector(".az-opisz-ai");
+  if (opiszBtn) opiszBtn.addEventListener("click", async () => {
+    const nazwa = ov.querySelector(".az-nazwa").value.trim();
+    if (!nazwa) { trzosToast("Najpierw wpisz nazwe leku."); return; }
+    opiszBtn.disabled = true; const stara = opiszBtn.textContent; opiszBtn.textContent = "…";
+    try {
+      const { data, error } = await supabase.functions.invoke("opisz-lek", { body: { nazwa } });
+      if (error || !data || !data.ok) trzosToast("Nie udalo sie opisac: " + ((error && error.message) || (data && data.error) || ""));
+      else ov.querySelector(".az-opis").value = data.opis;
+    } catch (e) { trzosToast("Blad: " + (e.message || e)); }
+    opiszBtn.disabled = false; opiszBtn.textContent = stara;
+  });
   ov.querySelector(".az-zapisz").addEventListener("click", async () => {
     const nazwa = ov.querySelector(".az-nazwa").value.trim();
     if (!nazwa) { trzosToast("Nazwa jest wymagana."); return; }
