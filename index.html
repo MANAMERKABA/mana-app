@@ -2205,9 +2205,13 @@ function kartaTrzos(typ, t) {
         txId = data.id;
       }
       if (plik) {
-        const ext = (plik.name.split(".").pop() || "bin").toLowerCase();
+        let ext = ((plik.name || "").split(".").pop() || "").toLowerCase();
+        if (!ext || ext.length > 5) ext = (plik.type === "image/png") ? "png" : (plik.type === "application/pdf") ? "pdf" : "jpg";
+        const mime = plik.type || (ext === "png" ? "image/png" : ext === "pdf" ? "application/pdf" : "image/jpeg");
+        const buf = await plik.arrayBuffer();
+        if (!buf || buf.byteLength === 0) throw new Error("Plik pusty - dodaj go jeszcze raz.");
         const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, plik, { contentType: plik.type || undefined, upsert: false });
+        const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, buf, { contentType: mime, upsert: false });
         if (upErr) throw upErr;
         await supabase.from("transakcje").update({ paragon_url: sciezka }).eq("id", txId);
         const { error: dErr } = await supabase.from("dokumenty").insert({
@@ -2748,10 +2752,15 @@ async function renderPuls() {
     const btn = form.querySelector("#puls-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
     const sciezki = [];
     for (const f of pliki) {
-      const ext = (f.name.split(".").pop() || "jpg").toLowerCase();
+      let ext = ((f.name || "").split(".").pop() || "").toLowerCase();
+      if (!ext || ext.length > 5) ext = (f.type === "image/png") ? "png" : (f.type === "application/pdf") ? "pdf" : "jpg";
+      const mime = f.type || (ext === "png" ? "image/png" : ext === "pdf" ? "application/pdf" : "image/jpeg");
+      const buf = await f.arrayBuffer();
+      if (!buf || buf.byteLength === 0) { trzosToast("Zdjecie puste - zrob je jeszcze raz."); continue; }
       const sciezka = `traveler/${TRAVELER.id}/puls/${crypto.randomUUID()}.${ext}`;
-      const up = await supabase.storage.from("dokumenty").upload(sciezka, f, { contentType: f.type || undefined, upsert: false });
-      if (!up.error) sciezki.push(sciezka);
+      const up = await supabase.storage.from("dokumenty").upload(sciezka, buf, { contentType: mime, upsert: false });
+      if (up.error) { trzosToast("Nie wgrano zdjecia: " + up.error.message); continue; }
+      sciezki.push(sciezka);
     }
     const { error: ie } = await supabase.from("puls_wpisy").insert({ traveler_id: TRAVELER.id, tekst: tekst || null, zdjecia: sciezki });
     if (ie) { trzosToast("Błąd: " + ie.message); btn.disabled = false; btn.textContent = "Zapisz"; return; }
@@ -3472,9 +3481,13 @@ function kartaSejf(d) {
       // wgraj WSZYSTKIE skumulowane pliki (strony dokumentu)
       const nowePliki = [];
       for (const plik of wybranePliki) {
-        const ext = (plik.name.split(".").pop() || "bin").toLowerCase();
+        let ext = ((plik.name || "").split(".").pop() || "").toLowerCase();
+        if (!ext || ext.length > 5) ext = (plik.type === "image/png") ? "png" : (plik.type === "application/pdf") ? "pdf" : "jpg";
+        const mime = plik.type || (ext === "png" ? "image/png" : ext === "pdf" ? "application/pdf" : "image/jpeg");
+        const buf = await plik.arrayBuffer();
+        if (!buf || buf.byteLength === 0) throw new Error("Plik pusty - dodaj go jeszcze raz.");
         const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
-        const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, plik, { contentType: plik.type || undefined, upsert: false });
+        const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, buf, { contentType: mime, upsert: false });
         if (upErr) throw upErr;
         nowePliki.push({ sciezka, mime: plik.type || null, nazwa: plik.name });
       }
