@@ -5793,9 +5793,13 @@ async function asystentParagon(file) {
   dodajWiadomosc("ja", "📷 Paragon");
   const mysl = dodajWiadomosc("mysli", "Czytam paragon…");
   try {
-    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    let ext = ((file.name || "").split(".").pop() || "").toLowerCase();
+    if (!ext || ext.length > 5) ext = (file.type === "application/pdf") ? "pdf" : (file.type === "image/png") ? "png" : "jpg";
+    const mime = file.type || (ext === "pdf" ? "application/pdf" : ext === "png" ? "image/png" : "image/jpeg");
+    const buf = await file.arrayBuffer();
+    if (!buf || buf.byteLength === 0) throw new Error("Zdjecie jest puste - zrob je jeszcze raz.");
     const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
-    const up = await supabase.storage.from("dokumenty").upload(sciezka, file, { contentType: file.type || undefined, upsert: false });
+    const up = await supabase.storage.from("dokumenty").upload(sciezka, buf, { contentType: mime, upsert: false });
     if (up.error) throw up.error;
     const dok = await supabase.from("dokumenty").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "paragon", kontekst: "finanse", plik_url: sciezka, mime: file.type || null, zrodlo: "zdjecie", ocr_status: "oczekuje" }).select("id").single();
     if (dok.error) throw dok.error;
