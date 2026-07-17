@@ -2666,7 +2666,9 @@ async function renderPuls() {
           const kol = b.poza_norma ? "#c0392b" : "inherit";
           const waga = b.poza_norma ? "600" : "400";
           const w = b.wartosc != null ? b.wartosc : (b.wartosc_tekst || "—");
-          return `<td style="padding:5px 8px;border-bottom:1px solid ${bord};text-align:right;color:${kol};font-weight:${waga};white-space:nowrap;">${esc(String(w))}${strz}${b.poza_norma ? " (" + b.poza_norma + ")" : ""}</td>`;
+          const normaC = (b.norma_od != null || b.norma_do != null) ? `${b.norma_od ?? ""}–${b.norma_do ?? ""}` : (b.norma_tekst || "");
+          const tip = `${w}${b.jednostka ? " " + b.jednostka : ""}${normaC ? " · norma " + normaC : ""}${b.poza_norma ? (b.poza_norma === "H" ? " · powyżej normy" : " · poniżej normy") : ""}`;
+          return `<td title="${escP(tip)}" style="padding:5px 8px;border-bottom:1px solid ${bord};text-align:right;color:${kol};font-weight:${waga};white-space:nowrap;cursor:help;">${esc(String(w))}${strz}${b.poza_norma ? " (" + b.poza_norma + ")" : ""}</td>`;
         }).join("");
         const ost = mapa[p][daty[daty.length - 1]] || Object.values(mapa[p]).pop();
         const norma = ost && (ost.norma_od != null || ost.norma_do != null) ? `${ost.norma_od ?? ""}–${ost.norma_do ?? ""}` : (ost && ost.norma_tekst) || "";
@@ -2768,7 +2770,16 @@ async function renderPuls() {
   });
   if (error) { box.appendChild(el(`<div style="color:#c4513a;">Błąd: ${escP(error.message)}</div>`)); return; }
   if (!wpisy.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:13.5px;padding:6px 2px;">Jeszcze nic tu nie ma. Zapisz pierwszą notatkę o ciele.</div>`)); return; }
-  for (const w of wpisy) box.appendChild(await kartaPuls(w));
+  const { data: _przetw = [] } = await supabase.from("badania_wyniki").select("zrodlo_wpis");
+  const idPrzetw = new Set((_przetw || []).map((x) => x.zrodlo_wpis).filter(Boolean));
+  const wpisyAktywne = wpisy.filter((w) => !idPrzetw.has(w.id));
+  const wpisyArch = wpisy.filter((w) => idPrzetw.has(w.id));
+  for (const w of wpisyAktywne) box.appendChild(await kartaPuls(w, false));
+  if (wpisyArch.length) {
+    const arch = el(`<details style="border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:4px 12px;margin-top:4px;"><summary style="font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;padding:8px 2px;list-style:none;">📎 Źródła / archiwum (${wpisyArch.length}) — przetworzone zdjęcia (nic nie kasujemy)</summary></details>`);
+    for (const w of wpisyArch) arch.appendChild(await kartaPuls(w, true));
+    box.appendChild(arch);
+  }
 }
 /* ── ARKUSZ WPISU PULSU — jeden dla dodawania (＋/luki) i edycji (tap we wpis); lekki, nie ankieta ── */
 function arkuszPuls(wpis, prefill) {
@@ -3060,14 +3071,14 @@ function arkuszHistoria(wpis) {
   });
 }
 
-async function kartaPuls(w) {
+async function kartaPuls(w, przetw) {
   const data = new Date(w.created_at).toLocaleString("pl-PL", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit", timeZone: TZ });
-  const card = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;">
-    <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">${escP(data)}</div>
+  const card = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;${przetw ? "opacity:.85;" : ""}">
+    <div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">${escP(data)}${przetw ? ' · <span style="color:#1a7158;font-weight:600;">✓ przetworzone</span>' : ''}</div>
     ${w.tekst ? `<div style="font-size:14px;white-space:pre-wrap;">${esc(w.tekst)}</div>` : ""}
     <div class="puls-foto-box" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:${w.tekst ? "8" : "0"}px;"></div>
     <div style="display:flex;gap:12px;align-items:center;">
-      ${Array.isArray(w.zdjecia) && w.zdjecia.length ? `<button class="puls-odczytaj" style="border:none;background:none;color:#1a7158;font-size:11.5px;cursor:pointer;padding:5px 0 0;font-weight:600;">🔬 Odczytaj wyniki badań</button>` : ""}
+      ${Array.isArray(w.zdjecia) && w.zdjecia.length ? `<button class="puls-odczytaj" style="border:none;background:none;color:#1a7158;font-size:11.5px;cursor:pointer;padding:5px 0 0;font-weight:600;">🔬 ${przetw ? "Odczytaj ponownie" : "Odczytaj wyniki badań"}</button>` : ""}
       <button class="puls-usun" style="border:none;background:none;color:#c0392b;font-size:11.5px;cursor:pointer;padding:5px 0 0;">Usuń</button>
     </div>
   </div>`);
