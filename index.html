@@ -2654,25 +2654,51 @@ async function renderPuls() {
     const { data: bad = [] } = await supabase.from("badania_wyniki").select("*").order("badanie_data", { ascending: true });
     const datyWsz = [...new Set(bad.map((b) => b.badanie_data))].sort();
     const fD = (d) => new Date(d + "T12:00").toLocaleDateString("pl-PL", { day: "2-digit", month: "2-digit", year: "2-digit" });
+    const normU = (u) => String(u || "").toLowerCase().replace(/\s+/g, "").replace(/[µμ]/g, "u");
+    const normParam = (p) => String(p || "").toLowerCase().replace(/\(.*?\)/g, " ").replace(/\s+/g, " ").trim();
+    const PRZELICZNIKI = [
+      { klucz: ["glukoza", "glucose"], a: "mg/dl", b: "mmol/l", f: 18.0182 },
+      { klucz: ["cholesterol", "hdl", "ldl"], a: "mg/dl", b: "mmol/l", f: 38.67 },
+      { klucz: ["triglicerydy", "trojglicerydy", "trójglicerydy"], a: "mg/dl", b: "mmol/l", f: 88.57 },
+      { klucz: ["kreatynina", "creatinine"], a: "mg/dl", b: "umol/l", f: 0.0113 },
+    ];
+    const znajdzPrzel = (p) => { const n = normParam(p); return PRZELICZNIKI.find((x) => x.klucz.some((k) => n.includes(k))); };
+    const przelicz = (val, uFrom, uTo, prz) => { if (val == null || !prz) return null; const a = normU(prz.a), b = normU(prz.b); uFrom = normU(uFrom); uTo = normU(uTo); if (uFrom === uTo) return val; if (uFrom === b && uTo === a) return val * prz.f; if (uFrom === a && uTo === b) return val / prz.f; return null; };
     const zbudujTabele = (daty, parametry, mapa, doDruku) => {
       const bord = doDruku ? "#ccc" : "var(--line)";
       const TH = `style="text-align:right;padding:5px 8px;border-bottom:1px solid ${bord};font-size:11px;color:#777;white-space:nowrap;"`;
       const wierszP = (p) => {
+        const prz = znajdzPrzel(p);
+        let anchorU = null;
+        for (let k = daty.length - 1; k >= 0; k--) { const bb = mapa[p][daty[k]]; if (bb && bb.jednostka) { anchorU = bb.jednostka; break; } }
+        const kanon = {};
+        daty.forEach((d) => {
+          const b = mapa[p][d]; if (!b) return;
+          const sameU = !anchorU || !b.jednostka || normU(b.jednostka) === normU(anchorU);
+          let disp = b.wartosc, valCmp = b.wartosc, przel = false, rozne = false;
+          if (!sameU && b.wartosc != null) {
+            const cv = przelicz(b.wartosc, b.jednostka, anchorU, prz);
+            if (cv != null) { disp = Math.round(cv * 100) / 100; valCmp = disp; przel = true; }
+            else { rozne = true; valCmp = null; }
+          }
+          kanon[d] = { disp, valCmp, przel, rozne, b };
+        });
         const kom = daty.map((d, i) => {
-          const b = mapa[p][d];
-          if (!b) return `<td style="padding:5px 8px;border-bottom:1px solid ${bord};text-align:right;color:#999;">—</td>`;
+          const k = kanon[d];
+          if (!k) return `<td style="padding:5px 8px;border-bottom:1px solid ${bord};text-align:right;color:#999;">—</td>`;
+          const b = k.b;
           let strz = "";
-          for (let j = i - 1; j >= 0; j--) { const prev = mapa[p][daty[j]]; if (prev && prev.wartosc != null && b.wartosc != null) { strz = b.wartosc > prev.wartosc ? " ↑" : b.wartosc < prev.wartosc ? " ↓" : " →"; break; } }
+          for (let j = i - 1; j >= 0; j--) { const pk = kanon[daty[j]]; if (pk && pk.valCmp != null && k.valCmp != null) { strz = k.valCmp > pk.valCmp ? " ↑" : k.valCmp < pk.valCmp ? " ↓" : " →"; break; } }
           const kol = b.poza_norma ? "#c0392b" : "inherit";
           const waga = b.poza_norma ? "600" : "400";
-          const w = b.wartosc != null ? b.wartosc : (b.wartosc_tekst || "—");
-          const normaC = (b.norma_od != null || b.norma_do != null) ? `${b.norma_od ?? ""}–${b.norma_do ?? ""}` : (b.norma_tekst || "");
-          const tip = `${w}${b.jednostka ? " " + b.jednostka : ""}${normaC ? " · norma " + normaC : ""}${b.poza_norma ? (b.poza_norma === "H" ? " · powyżej normy" : " · poniżej normy") : ""}`;
-          return `<td title="${escP(tip)}" style="padding:5px 8px;border-bottom:1px solid ${bord};text-align:right;color:${kol};font-weight:${waga};white-space:nowrap;cursor:help;">${esc(String(w))}${strz}${b.poza_norma ? " (" + b.poza_norma + ")" : ""}</td>`;
+          const pokaz = k.disp != null ? k.disp : (b.wartosc_tekst || "—");
+          const normaOrg = (b.norma_od != null || b.norma_do != null) ? `${b.norma_od ?? ""}–${b.norma_do ?? ""}` : (b.norma_tekst || "");
+          const tip = `oryginał: ${b.wartosc != null ? b.wartosc : (b.wartosc_tekst || "—")}${b.jednostka ? " " + b.jednostka : ""}${normaOrg ? " · norma " + normaOrg : ""}${b.poza_norma ? (b.poza_norma === "H" ? " · powyżej normy" : " · poniżej normy") : ""}${k.przel ? " · przeliczone na " + anchorU : ""}${k.rozne ? " · inna jednostka (nie przeliczam)" : ""}`;
+          return `<td title="${escP(tip)}" style="padding:5px 8px;border-bottom:1px solid ${bord};text-align:right;color:${kol};font-weight:${waga};white-space:nowrap;cursor:help;">${esc(String(pokaz))}${k.przel ? "*" : ""}${k.rozne ? " ⚠" : ""}${strz}${b.poza_norma ? " (" + b.poza_norma + ")" : ""}</td>`;
         }).join("");
         const ost = mapa[p][daty[daty.length - 1]] || Object.values(mapa[p]).pop();
         const norma = ost && (ost.norma_od != null || ost.norma_do != null) ? `${ost.norma_od ?? ""}–${ost.norma_do ?? ""}` : (ost && ost.norma_tekst) || "";
-        return `<tr><td style="padding:5px 8px;border-bottom:1px solid ${bord};font-size:12.5px;">${esc(p)}<div style="font-size:10px;color:#777;">${esc(ost && ost.jednostka || "")}${norma ? " · norma " + esc(norma) : ""}</div></td>${kom}</tr>`;
+        return `<tr><td style="padding:5px 8px;border-bottom:1px solid ${bord};font-size:12.5px;">${esc(p)}<div style="font-size:10px;color:#777;">${esc(anchorU || (ost && ost.jednostka) || "")}${norma ? " · norma " + esc(norma) : ""}</div></td>${kom}</tr>`;
       };
       return `<table style="width:100%;border-collapse:collapse;font-size:13px;">
         <tr><th style="text-align:left;padding:5px 8px;border-bottom:1px solid ${bord};font-size:11px;color:#777;">Parametr</th>${daty.map((d) => `<th ${TH}>${fD(d)}</th>`).join("")}</tr>
@@ -2688,7 +2714,7 @@ async function renderPuls() {
           <span style="font-size:13px;font-weight:600;">🔬 Wyniki badań — porównanie</span>
           <button class="bad-druk" style="margin-left:auto;border:1px solid var(--line);background:none;border-radius:8px;padding:5px 10px;font-size:11.5px;cursor:pointer;color:var(--ink-soft);">🖨 Wydruk</button>
         </div>
-        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;"><span style="color:#c0392b;font-weight:600;">czerwone</span> = poza normą z wyniku (H wysokie / L niskie)${datyWsz.length > 1 ? " · ↑↓ = zmiana względem poprzedniego badania" : ""} · nowe daty (też archiwalne) dopisują kolumnę · 🔬 Odczytaj przy zdjęciu niżej</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;"><span style="color:#c0392b;font-weight:600;">czerwone</span> = poza normą z wyniku (H wysokie / L niskie)${datyWsz.length > 1 ? " · ↑↓ = zmiana względem poprzedniego badania · <b>*</b> = przeliczone do jednostki najnowszego badania (oryginał na dymku) · ⚠ = inna jednostka, nie przeliczam" : ""} · nowe daty (też archiwalne) dopisują kolumnę · 🔬 Odczytaj przy zdjęciu niżej</div>
         <div style="overflow-x:auto;">${zbudujTabele(daty, parametry, mapa, false)}</div>
       </div>`);
       sekB.querySelector(".bad-druk").addEventListener("click", () => {
