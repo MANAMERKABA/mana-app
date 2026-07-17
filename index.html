@@ -2322,7 +2322,7 @@ async function renderPuls() {
   /* ── ZAKŁADKI POKOJU: Rytm dnia · Zalecenia · Analiza ── */
   if (!window._pulsTab) window._pulsTab = "rytm";
   const T = window._pulsTab;
-  const tb = el(`<div style="display:flex;gap:6px;margin-bottom:12px;">${[["rytm","🗓 Rytm dnia"],["zalecenia","📋 Zalecenia"],["badania","🔬 Badania"],["analiza","📈 Analiza"]].map(([k,n]) => `<button data-t="${k}" style="flex:1;border:1px solid ${T===k?"#1a7158":"var(--line)"};background:${T===k?"#e3f4f0":"var(--surface)"};color:${T===k?"#1a7158":"var(--ink)"};font-weight:${T===k?"600":"500"};border-radius:11px;padding:9px 4px;font-size:13px;cursor:pointer;">${n}</button>`).join("")}</div>`);
+  const tb = el(`<div style="display:flex;gap:5px;margin-bottom:12px;flex-wrap:wrap;">${[["rytm","🗓 Rytm dnia"],["zalecenia","📋 Zalecenia"],["badania","🔬 Badania"],["analiza","📈 Analiza"],["archiwum","📎 Archiwum"]].map(([k,n]) => `<button data-t="${k}" style="flex:1;border:1px solid ${T===k?"#1a7158":"var(--line)"};background:${T===k?"#e3f4f0":"var(--surface)"};color:${T===k?"#1a7158":"var(--ink)"};font-weight:${T===k?"600":"500"};border-radius:11px;padding:9px 4px;font-size:13px;cursor:pointer;">${n}</button>`).join("")}</div>`);
   tb.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { window._pulsTab = b.dataset.t; renderPuls(); }));
   box.appendChild(tb);
   if (T === "rytm") await renderPropozycjePuls(box);
@@ -2715,7 +2715,7 @@ async function renderPuls() {
           <button class="bad-druk" style="margin-left:auto;border:1px solid var(--line);background:none;border-radius:8px;padding:5px 10px;font-size:11.5px;cursor:pointer;color:var(--ink-soft);">🖨 Wydruk</button>
         </div>
         <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;"><span style="color:#c0392b;font-weight:600;">czerwone</span> = poza normą z wyniku (H wysokie / L niskie)${datyWsz.length > 1 ? " · ↑↓ = zmiana względem poprzedniego badania · <b>*</b> = przeliczone do jednostki najnowszego badania (oryginał na dymku) · ⚠ = inna jednostka, nie przeliczam" : ""} · nowe daty (też archiwalne) dopisują kolumnę · 🔬 Odczytaj przy zdjęciu niżej</div>
-        <div style="overflow-x:auto;">${zbudujTabele(daty, parametry, mapa, false)}</div>
+        <details open style="margin-top:2px;"><summary style="font-size:12px;color:#1a7158;cursor:pointer;font-weight:600;list-style:none;padding:3px 0;">▾ Tabela — ${parametry.length} parametrów (dotknij, by zwinąć)</summary><div style="overflow-x:auto;margin-top:6px;">${zbudujTabele(daty, parametry, mapa, false)}</div></details>
       </div>`);
       sekB.querySelector(".bad-druk").addEventListener("click", () => {
         let html = `<html><head><meta charset="utf-8"><title>MANA — wyniki badań</title><style>body{font-family:system-ui;max-width:760px;margin:24px auto;color:#222;}h1{font-size:19px;}p.m{color:#777;font-size:11px;}td,th{font-size:12px;}</style></head><body>`;
@@ -2755,6 +2755,21 @@ async function renderPuls() {
     box.appendChild(sekH);
   } catch (e) {}
 
+  if (T === "archiwum") {
+    const { data: _wyn = [] } = await supabase.from("badania_wyniki").select("zrodlo_wpis, badanie_data");
+    const dataWg = {}; (_wyn || []).forEach((x) => { if (x.zrodlo_wpis) dataWg[x.zrodlo_wpis] = x.badanie_data; });
+    const arch = wpisy.filter((w) => dataWg[w.id]);
+    box.appendChild(el(`<div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;line-height:1.45;">📎 Archiwum — przetworzone wyniki badań pod datą. Oryginały zachowane, nic nie kasujemy. Możesz „Odczytać ponownie".</div>`));
+    if (!arch.length) { box.appendChild(el(`<div style="font-size:13px;color:var(--ink-soft);padding:8px 2px;">Jeszcze pusto. Wyniki trafią tu, gdy w zakładce 🔬 Badania odczytasz zdjęcie („Odczytaj wyniki badań").</div>`)); return; }
+    const grupy = {}; arch.forEach((w) => { const d = dataWg[w.id] || "?"; (grupy[d] = grupy[d] || []).push(w); });
+    const dat = Object.keys(grupy).sort().reverse();
+    for (const d of dat) {
+      const fd = d === "?" ? "data nieznana" : new Date(d + "T12:00").toLocaleDateString("pl-PL", { day: "numeric", month: "long", year: "numeric" });
+      box.appendChild(el(`<div style="font-size:13px;font-weight:700;color:#1a7158;margin:12px 2px 6px;border-bottom:1px solid var(--line);padding-bottom:4px;">📅 ${escP(fd)}</div>`));
+      for (const w of grupy[d]) box.appendChild(await kartaPuls(w, true));
+    }
+    return;
+  }
   if (T !== "badania") return;
   /* ── notatnik ciała + zdjęcia badań (zakładka Badania) ── */
   const form = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
@@ -2799,13 +2814,8 @@ async function renderPuls() {
   const { data: _przetw = [] } = await supabase.from("badania_wyniki").select("zrodlo_wpis");
   const idPrzetw = new Set((_przetw || []).map((x) => x.zrodlo_wpis).filter(Boolean));
   const wpisyAktywne = wpisy.filter((w) => !idPrzetw.has(w.id));
-  const wpisyArch = wpisy.filter((w) => idPrzetw.has(w.id));
   for (const w of wpisyAktywne) box.appendChild(await kartaPuls(w, false));
-  if (wpisyArch.length) {
-    const arch = el(`<details style="border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:4px 12px;margin-top:4px;"><summary style="font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;padding:8px 2px;list-style:none;">📎 Źródła / archiwum (${wpisyArch.length}) — przetworzone zdjęcia (nic nie kasujemy)</summary></details>`);
-    for (const w of wpisyArch) arch.appendChild(await kartaPuls(w, true));
-    box.appendChild(arch);
-  }
+  if (wpisy.length > wpisyAktywne.length) box.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);padding:8px 2px;">✓ Przetworzone wyniki są w zakładce 📎 Archiwum (pod datami).</div>`));
 }
 /* ── ARKUSZ WPISU PULSU — jeden dla dodawania (＋/luki) i edycji (tap we wpis); lekki, nie ankieta ── */
 function arkuszPuls(wpis, prefill) {
