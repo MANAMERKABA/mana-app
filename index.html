@@ -2332,12 +2332,15 @@ async function renderPuls() {
   const T = window._pulsTab;
   const rodzicOf = (t) => { const g = PULS_NAV.find((p) => p.sub.some(([k]) => k === t)); return g ? g.key : "rytm"; };
   const rodzicAkt = rodzicOf(T);
-  const tbGorne = el(`<div style="display:flex;gap:5px;margin-bottom:6px;">${PULS_NAV.map((p) => `<button data-g="${p.key}" style="flex:1;border:1px solid ${rodzicAkt===p.key?"#1a7158":"var(--line)"};background:${rodzicAkt===p.key?"#1a7158":"var(--surface)"};color:${rodzicAkt===p.key?"#fff":"var(--ink)"};font-weight:${rodzicAkt===p.key?"600":"500"};border-radius:11px;padding:9px 4px;font-size:13px;cursor:pointer;">${p.label}</button>`).join("")}</div>`);
+  const podzMa = (key) => { const g = PULS_NAV.find((p) => p.key === key); return !!(g && g.sub.length > 1); };
+  // Poziom 1 (rodzice) — wypełniony segment: mocny, „główny"
+  const tbGorne = el(`<div style="display:flex;gap:6px;margin-bottom:${podzMa(rodzicAkt) ? "8" : "14"}px;">${PULS_NAV.map((p) => `<button data-g="${p.key}" style="flex:1;border:1px solid ${rodzicAkt===p.key?"#1a7158":"var(--line)"};background:${rodzicAkt===p.key?"#1a7158":"var(--surface)"};color:${rodzicAkt===p.key?"#fff":"var(--ink)"};font-weight:${rodzicAkt===p.key?"700":"500"};border-radius:11px;padding:10px 4px;font-size:13.5px;cursor:pointer;box-shadow:${rodzicAkt===p.key?"0 1px 4px rgba(26,113,88,.25)":"none"};">${p.label}</button>`).join("")}</div>`);
   tbGorne.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { const g = PULS_NAV.find((p) => p.key === b.dataset.g); window._pulsTab = g.sub[0][0]; renderPuls(); }));
   box.appendChild(tbGorne);
   const podz = (PULS_NAV.find((p) => p.key === rodzicAkt) || PULS_NAV[0]).sub;
   if (podz.length > 1) {
-    const tbSub = el(`<div style="display:flex;gap:5px;margin-bottom:12px;flex-wrap:wrap;">${podz.map(([k, n]) => `<button data-t="${k}" style="flex:1;border:1px solid ${T===k?"#1a7158":"var(--line)"};background:${T===k?"#e3f4f0":"var(--surface)"};color:${T===k?"#1a7158":"var(--ink)"};font-weight:${T===k?"600":"500"};border-radius:10px;padding:7px 4px;font-size:12px;cursor:pointer;">${n}</button>`).join("")}</div>`);
+    // Poziom 2 (podzakładki) — podkreślane taby tekstowe, wcięte i do lewej: wyraźnie „niżej"
+    const tbSub = el(`<div style="display:flex;gap:4px;margin:0 0 14px 12px;border-bottom:1px solid var(--line);">${podz.map(([k, n]) => `<button data-t="${k}" style="border:none;background:transparent;color:${T===k?"#1a7158":"var(--ink-soft)"};font-weight:${T===k?"700":"500"};border-bottom:2px solid ${T===k?"#1a7158":"transparent"};border-radius:0;margin-bottom:-1px;padding:7px 11px;font-size:12.5px;cursor:pointer;white-space:nowrap;">${n}</button>`).join("")}</div>`);
     tbSub.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { window._pulsTab = b.dataset.t; renderPuls(); }));
     box.appendChild(tbSub);
   }
