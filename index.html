@@ -2686,7 +2686,7 @@ async function renderPuls() {
           <span style="font-size:13px;font-weight:600;">🔬 Wyniki badań — porównanie</span>
           <button class="bad-druk" style="margin-left:auto;border:1px solid var(--line);background:none;border-radius:8px;padding:5px 10px;font-size:11.5px;cursor:pointer;color:var(--ink-soft);">🖨 Wydruk</button>
         </div>
-        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">↑↓ względem poprzedniego badania · <span style="color:#c0392b;font-weight:600;">czerwone</span> poza normą (H wysokie / L niskie) · nowe daty (też archiwalne) dopisuje 🔬 Odczytaj przy zdjęciu niżej</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;"><span style="color:#c0392b;font-weight:600;">czerwone</span> = poza normą z wyniku (H wysokie / L niskie)${datyWsz.length > 1 ? " · ↑↓ = zmiana względem poprzedniego badania" : ""} · nowe daty (też archiwalne) dopisują kolumnę · 🔬 Odczytaj przy zdjęciu niżej</div>
         <div style="overflow-x:auto;">${zbudujTabele(daty, parametry, mapa, false)}</div>
       </div>`);
       sekB.querySelector(".bad-druk").addEventListener("click", () => {
