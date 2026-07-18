@@ -2314,6 +2314,144 @@ async function renderPropozycjePuls(box) {
   }
   box.appendChild(sek);
 }
+/* ── CYKL ──────────────────────────────────────────────────────────────
+   Zasady: fakty mowimy pewnie, prognozy uczciwie (pasmo, nie data).
+   Parametry FIGO: czestosc 24-38 dni, krwawienie <=8 dni, rozrzut <=9 dni.
+   NIGDY antykoncepcja. Nie diagnozujemy - wzorzec, nie wyrok.            */
+const CYKL_KRW = [["plamienie", "Plamienie"], ["lekkie", "Lekkie"], ["umiarkowane", "Umiarkowane"], ["obfite", "Obfite"]];
+function cyklISO(d) { const x = new Date(d); x.setHours(12, 0, 0, 0); return x.toISOString().slice(0, 10); }
+function cyklDni(a, b) { return Math.round((new Date(a + "T12:00") - new Date(b + "T12:00")) / 86400000); }
+function cyklFmt(s) { return new Date(s + "T12:00").toLocaleDateString("pl-PL", { day: "numeric", month: "long" }); }
+function cyklPrzesun(s, n) { const d = new Date(s + "T12:00"); d.setDate(d.getDate() + n); return cyklISO(d); }
+
+async function renderCykl(box) {
+  const dzis = cyklISO(new Date());
+  const od = cyklPrzesun(dzis, -400);
+  let lista = [];
+  try {
+    const { data } = await supabase.from("cykl_dni").select("*").eq("traveler_id", TRAVELER.id).gte("data", od).order("data", { ascending: true });
+    lista = data || [];
+  } catch (e) { lista = []; }
+  const dzisRek = lista.find((d) => d.data === dzis) || null;
+
+  /* miesiaczki: kolejne dni krwawienia; przerwa <=2 dni laczy w jedna */
+  const mies = [];
+  lista.filter((d) => d.krwawienie).forEach((d) => {
+    const ost = mies[mies.length - 1];
+    if (ost && cyklDni(d.data, ost.koniec) <= 2) { ost.koniec = d.data; ost.dni++; return; }
+    mies.push({ start: d.data, koniec: d.data, dni: 1 });
+  });
+  const dlug = [];
+  for (let i = 1; i < mies.length; i++) dlug.push(cyklDni(mies[i].start, mies[i - 1].start));
+  const ostM = mies.length ? mies[mies.length - 1] : null;
+  const dzienCyklu = ostM ? cyklDni(dzis, ostM.start) + 1 : null;
+  const srednia = dlug.length ? Math.round(dlug.reduce((a, b) => a + b, 0) / dlug.length) : null;
+  const ost6 = dlug.slice(-6);
+  const rozrzut = ost6.length > 1 ? Math.max.apply(null, ost6) - Math.min.apply(null, ost6) : null;
+
+  /* ── stan: fakt ── */
+  if (dzienCyklu !== null && dzienCyklu > 0 && dzienCyklu < 200) {
+    box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
+      <div style="font-size:22px;font-weight:700;color:#1a7158;">Dzień ${dzienCyklu}. cyklu</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-top:3px;">Ostatnia miesiączka: ${escP(cyklFmt(ostM.start))}${ostM.dni > 1 ? ` · trwała ${ostM.dni} dni` : ""}</div>
+    </div>`));
+  } else {
+    box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Zacznijmy od jednego faktu</div>
+      <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;">Zaznacz poniżej dni krwawienia — albo powiedz asystentowi „miesiączka zaczęła się wczoraj". Po dwóch cyklach zacznę pokazywać rytm.</div>
+    </div>`));
+  }
+
+  /* ── prognoza: uczciwie, jako pasmo ── */
+  if (ostM && srednia) {
+    const marg = Math.max(2, Math.round((rozrzut === null ? 4 : rozrzut) / 2));
+    const nast = cyklPrzesun(ostM.start, srednia);
+    const ow = cyklPrzesun(nast, -14);
+    box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
+      <div style="font-size:13px;font-weight:600;margin-bottom:7px;">Czego się spodziewać</div>
+      <div style="font-size:13.5px;line-height:1.6;">Następna miesiączka: <b>${escP(cyklFmt(cyklPrzesun(nast, -marg)))} – ${escP(cyklFmt(cyklPrzesun(nast, marg)))}</b></div>
+      <div style="font-size:13.5px;line-height:1.6;">Okno największych szans: <b>${escP(cyklFmt(cyklPrzesun(ow, -5)))} – ${escP(cyklFmt(cyklPrzesun(ow, 1)))}</b></div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px;line-height:1.5;">To oszacowanie z ${dlug.length} ${dlug.length === 1 ? "cyklu" : "cykli"}, nie pewnik. Zawęzi się, gdy dodasz temperaturę podstawową albo obserwację śluzu. Owulacja wypada zwykle ok. 14 dni <i>przed</i> następną miesiączką — dlatego przy nieregularnym rytmie pasmo jest szersze.</div>
+      <div style="font-size:11.5px;color:#a05a2c;background:#fdf3e7;border-radius:8px;padding:7px 9px;margin-top:8px;line-height:1.45;">To narzędzie służy rozumieniu cyklu i wspieraniu starań o dziecko. <b>Nie jest metodą antykoncepcji.</b></div>
+    </div>`));
+  }
+
+  /* ── parametry (FIGO) — ten sam wzorzec co H/L w Badaniach ── */
+  if (dlug.length) {
+    const dlugKrw = mies.filter((m) => m.dni).map((m) => m.dni);
+    const sredKrw = dlugKrw.length ? Math.round(dlugKrw.reduce((a, b) => a + b, 0) / dlugKrw.length) : null;
+    const wiersz = (nazwa, wartosc, poza, norma) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);">
+      <span style="font-size:13px;">${nazwa}</span>
+      <span style="text-align:right;"><b style="font-size:13.5px;color:${poza ? "#c4513a" : "var(--ink)"};">${wartosc}</b>${poza ? ` <span style="font-size:10px;color:#c4513a;font-weight:700;">POZA</span>` : ""}<br><span style="font-size:10.5px;color:var(--ink-soft);">typowo ${norma}</span></span>
+    </div>`;
+    let h = wiersz("Długość cyklu (średnia)", `${srednia} dni`, srednia < 24 || srednia > 38, "24–38 dni");
+    if (sredKrw !== null) h += wiersz("Długość krwawienia", `${sredKrw} dni`, sredKrw > 8, "do 8 dni");
+    if (rozrzut !== null) h += wiersz("Regularność (rozrzut)", `${rozrzut} dni`, rozrzut > 9, "do 7–9 dni");
+    const poza = (srednia < 24 || srednia > 38) || (sredKrw !== null && sredKrw > 8) || (rozrzut !== null && rozrzut > 9);
+    box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Twoje parametry</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;line-height:1.45;">Zakresy wg FIGO. Cykl bywa nazywany funkcją życiową — jak tętno czy ciśnienie.</div>
+      ${h}
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:9px;line-height:1.5;">${poza ? "Coś wychodzi poza typowy zakres. <b>To nie jest diagnoza</b> — powodów bywa wiele. To sygnał, żeby to komuś pokazać: ginekologowi, endokrynologowi, dietetykowi, fitoterapeucie. Wybór ścieżki należy do Ciebie." : "Wszystko mieści się w typowych zakresach."}</div>
+    </div>`));
+  }
+
+  /* ── zapis dnia: krwawienie + bol ── */
+  const zap = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
+    <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Dziś — ${escP(cyklFmt(dzis))}</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:5px;">Krwawienie</div>
+    <div id="cy-krw" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">
+      ${[["", "Brak"]].concat(CYKL_KRW).map(([k, n]) => `<button data-k="${k}" style="border:1px solid ${(dzisRek && (dzisRek.krwawienie || "") === k) || (!dzisRek && k === "") ? "#1a7158" : "var(--line)"};background:${(dzisRek && (dzisRek.krwawienie || "") === k) || (!dzisRek && k === "") ? "#e3f4f0" : "var(--surface)"};color:var(--ink);border-radius:9px;padding:6px 11px;font-size:12.5px;cursor:pointer;">${n}</button>`).join("")}
+    </div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:5px;">Ból <span style="opacity:.8;">(0 = brak, 10 = nie do wytrzymania)</span></div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <input id="cy-bol" type="range" min="0" max="10" step="1" value="${dzisRek && dzisRek.bol_nasilenie !== null && dzisRek.bol_nasilenie !== undefined ? dzisRek.bol_nasilenie : 0}" style="flex:1;">
+      <b id="cy-bol-v" style="font-size:15px;min-width:22px;text-align:center;color:#1a7158;">${dzisRek && dzisRek.bol_nasilenie ? dzisRek.bol_nasilenie : 0}</b>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12.5px;cursor:pointer;line-height:1.4;">
+      <input id="cy-wybilo" type="checkbox" ${dzisRek && dzisRek.bol_wybilo ? "checked" : ""} style="width:17px;height:17px;flex:0 0 auto;">
+      <span>Ból wybił mnie z życia <span style="color:var(--ink-soft);">— odwołane plany, opuszczony dzień</span></span>
+    </label>
+    <div style="font-size:11px;color:var(--ink-soft);margin:7px 0 10px;line-height:1.45;">To pytanie jest tu nie bez powodu. Ból, który wywraca dzień, bywa latami uznawany za normę — a to on najwięcej mówi.</div>
+    <button id="cy-zapisz" style="width:100%;border:none;background:#1a7158;color:#fff;font-weight:600;border-radius:10px;padding:10px;font-size:13.5px;cursor:pointer;">Zapisz dziś</button>
+  </div>`);
+  let wybKrw = dzisRek ? (dzisRek.krwawienie || "") : "";
+  zap.querySelectorAll("#cy-krw button").forEach((b) => b.addEventListener("click", () => {
+    wybKrw = b.dataset.k;
+    zap.querySelectorAll("#cy-krw button").forEach((x) => { const on = x.dataset.k === wybKrw; x.style.border = `1px solid ${on ? "#1a7158" : "var(--line)"}`; x.style.background = on ? "#e3f4f0" : "var(--surface)"; });
+  }));
+  const sl = zap.querySelector("#cy-bol");
+  sl.addEventListener("input", () => { zap.querySelector("#cy-bol-v").textContent = sl.value; });
+  zap.querySelector("#cy-zapisz").addEventListener("click", async () => {
+    const bol = parseInt(sl.value, 10) || 0;
+    const rek = {
+      traveler_id: TRAVELER.id, data: dzis,
+      krwawienie: wybKrw || null,
+      bol_nasilenie: bol,
+      bol_wybilo: !!zap.querySelector("#cy-wybilo").checked,
+    };
+    const { error } = await supabase.from("cykl_dni").upsert(rek, { onConflict: "traveler_id,data" });
+    if (error) { trzosToast("Nie udalo sie zapisac"); return; }
+    trzosToast("Zapisano");
+    renderPuls();
+  });
+  box.appendChild(zap);
+
+  /* ── bol: co widac ── */
+  const zBolem = lista.filter((d) => (d.bol_nasilenie || 0) > 0);
+  if (zBolem.length) {
+    const wybily = lista.filter((d) => d.bol_wybilo).length;
+    const sredBol = Math.round((zBolem.reduce((a, d) => a + (d.bol_nasilenie || 0), 0) / zBolem.length) * 10) / 10;
+    box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Ból — co widać</div>
+      <div style="font-size:13px;line-height:1.6;">Dni z bólem: <b>${zBolem.length}</b> · średnie natężenie <b>${sredBol}</b>${wybily ? ` · <b style="color:#c4513a;">${wybily}</b> ${wybily === 1 ? "dzień, który wywrócił plany" : "dni, które wywróciły plany"}` : ""}</div>
+      ${wybily >= 3 ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5;">Ból, który tyle razy wybił Cię z życia, warto komuś pokazać — nie dlatego, że coś jest źle, tylko dlatego, że to zbyt dużo, żeby się do tego przyzwyczajać. Mogę przygotować zestawienie.</div>` : ""}
+    </div>`));
+  }
+
+  box.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);padding:2px 4px 10px;line-height:1.5;">Zapisy z Cyklu są prywatne. Możesz też po prostu powiedzieć asystentowi — „dziś drugi dzień, boli 6" — i wyląduje tu samo.</div>`));
+}
+
 async function renderPuls() {
   const box = $("puls-tresc"); if (!box) return;
   box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
@@ -2344,7 +2482,7 @@ async function renderPuls() {
     tbSub.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { window._pulsTab = b.dataset.t; renderPuls(); }));
     box.appendChild(tbSub);
   }
-  if (T === "cykl") { box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--surface);color:var(--ink-soft);font-size:13.5px;line-height:1.5;">🩸 <b>Cykl</b> — kalendarzyk okresowy (kalendarz cyklu, prognoza, korelacje z nastrojem/objawami). <b>Wkrótce.</b></div>`)); return; }
+  if (T === "cykl") { await renderCykl(box); return; }
   if (T === "rytm") await renderPropozycjePuls(box);
   /* ── ZALECENIA — regularne leki/praktyki: pory jako chipy ✓/○, tap = odhaczenie → auto wpis w Pulsie ── */
   if (T === "zalecenia") try {
