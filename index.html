@@ -2486,10 +2486,10 @@ async function renderPuls() {
   if (!window._pulsTab) window._pulsTab = "rytm";
   // Dwupoziomowa nawigacja: rodzic → podzakładki
   const PULS_NAV = [
-    { key: "rytm", label: "🗓 Rytm", sub: [["rytm", "🌗 Doba"], ["zalecenia", "📋 Zalecenia"]] },
+    { key: "rytm", label: "🗓 Rytm", sub: [["rytm", "🌗 Doba"], ["cykl", "🩸 Cykl"]] },
+    { key: "zalecenia", label: "📋 Zalecenia", sub: [["zalecenia", "📋 Zalecenia"]] },
     { key: "badania", label: "🔬 Badania", sub: [["bad-dodaj", "➕ Dodaj"], ["bad-arch", "📎 Archiwum"], ["bad-hist", "🏥 Historia"]] },
     { key: "analiza", label: "📈 Analiza", sub: [["analiza", "📈 Linia życia"], ["porownanie", "🔬 Porównanie"]] },
-    { key: "cykl", label: "🩸 Cykl", sub: [["cykl", "🩸 Cykl"]] },
   ];
   if (!PULS_NAV.some((p) => p.sub.some(([k]) => k === window._pulsTab))) window._pulsTab = "rytm";
   const T = window._pulsTab;
