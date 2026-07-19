@@ -2396,57 +2396,82 @@ async function renderCykl(box) {
     </div>`));
   }
 
-  /* ── zapis dnia: krwawienie + bol ── */
-  const zap = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
-    <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Dziś — ${escP(cyklFmt(dzis))}</div>
-    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:5px;">Krwawienie</div>
-    <div id="cy-krw" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:12px;">
-      ${[["", "Brak"]].concat(CYKL_KRW).map(([k, n]) => `<button data-k="${k}" style="border:1px solid ${(dzisRek && (dzisRek.krwawienie || "") === k) || (!dzisRek && k === "") ? "#1a7158" : "var(--line)"};background:${(dzisRek && (dzisRek.krwawienie || "") === k) || (!dzisRek && k === "") ? "#e3f4f0" : "var(--surface)"};color:var(--ink);border-radius:9px;padding:6px 11px;font-size:12.5px;cursor:pointer;">${n}</button>`).join("")}
-    </div>
-    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:5px;">Ból <span style="opacity:.8;">(0 = brak, 10 = nie do wytrzymania)</span></div>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <input id="cy-bol" type="range" min="0" max="10" step="1" value="${dzisRek && dzisRek.bol_nasilenie !== null && dzisRek.bol_nasilenie !== undefined ? dzisRek.bol_nasilenie : 0}" style="flex:1;">
-      <b id="cy-bol-v" style="font-size:15px;min-width:22px;text-align:center;color:#1a7158;">${dzisRek && dzisRek.bol_nasilenie ? dzisRek.bol_nasilenie : 0}</b>
-    </div>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:9px;font-size:12.5px;cursor:pointer;line-height:1.4;">
-      <input id="cy-wybilo" type="checkbox" ${dzisRek && dzisRek.bol_wybilo ? "checked" : ""} style="width:17px;height:17px;flex:0 0 auto;">
-      <span>Ból wybił mnie z życia <span style="color:var(--ink-soft);">— odwołane plany, opuszczony dzień</span></span>
-    </label>
-    <div style="font-size:11px;color:var(--ink-soft);margin:7px 0 10px;line-height:1.45;">To pytanie jest tu nie bez powodu. Ból, który wywraca dzień, bywa latami uznawany za normę — a to on najwięcej mówi.</div>
-    <button id="cy-zapisz" style="width:100%;border:none;background:#1a7158;color:#fff;font-weight:600;border-radius:10px;padding:10px;font-size:13.5px;cursor:pointer;">Zapisz dziś</button>
-  </div>`);
-  let wybKrw = dzisRek ? (dzisRek.krwawienie || "") : "";
-  zap.querySelectorAll("#cy-krw button").forEach((b) => b.addEventListener("click", () => {
-    wybKrw = b.dataset.k;
-    zap.querySelectorAll("#cy-krw button").forEach((x) => { const on = x.dataset.k === wybKrw; x.style.border = `1px solid ${on ? "#1a7158" : "var(--line)"}`; x.style.background = on ? "#e3f4f0" : "var(--surface)"; });
-  }));
-  const sl = zap.querySelector("#cy-bol");
-  sl.addEventListener("input", () => { zap.querySelector("#cy-bol-v").textContent = sl.value; });
-  zap.querySelector("#cy-zapisz").addEventListener("click", async () => {
-    const bol = parseInt(sl.value, 10) || 0;
-    const rek = {
-      traveler_id: TRAVELER.id, data: dzis,
-      krwawienie: wybKrw || null,
-      bol_nasilenie: bol,
-      bol_wybilo: !!zap.querySelector("#cy-wybilo").checked,
-    };
-    const { error } = await supabase.from("cykl_dni").upsert(rek, { onConflict: "traveler_id,data" });
+  /* ── zapis: TYLKO gdy cos sie dzieje. Cisza = spokojny dzien. ── */
+  const dzienRob = window._cyklDzien || dzis;        // ktory dzien opisujemy (mozna cofnac)
+  const rekRob = lista.find((d) => d.data === dzienRob) || null;
+  const panel = window._cyklPanel || null;           // null | 'krw' | 'bol'
+  const zapisz = async (pola) => {
+    const { error } = await supabase.from("cykl_dni").upsert(
+      Object.assign({ traveler_id: TRAVELER.id, data: dzienRob }, pola), { onConflict: "traveler_id,data" });
     if (error) { trzosToast("Nie udalo sie zapisac"); return; }
-    trzosToast("Zapisano");
-    renderPuls();
+    window._cyklPanel = null; trzosToast("Zapisano"); renderPuls();
+  };
+
+  const zap = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:3px;">
+      <div style="font-size:13px;font-weight:600;">${dzienRob === dzis ? "Dziś" : "Zapisuję"} — ${escP(cyklFmt(dzienRob))}</div>
+      <button id="cy-kiedy" style="border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);border-radius:8px;padding:4px 9px;font-size:11.5px;cursor:pointer;">${dzienRob === dzis ? "inny dzień" : "wróć na dziś"}</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;line-height:1.45;">Zapisujesz tylko wtedy, gdy coś się dzieje. <b>Spokojny dzień nie wymaga żadnego kliknięcia</b> — brak wpisu znaczy, że było dobrze.</div>
+    <button id="cy-b-krw" style="width:100%;border:1px solid ${panel === "krw" ? "#1a7158" : "var(--line)"};background:${rekRob && rekRob.krwawienie ? "#e3f4f0" : "var(--surface)"};color:var(--ink);border-radius:10px;padding:12px 6px;font-size:13.5px;font-weight:600;cursor:pointer;">🩸 Krwawienie${rekRob && rekRob.krwawienie ? ` ✓ ${escP((CYKL_KRW.find((c) => c[0] === rekRob.krwawienie) || ["", ""])[1].toLowerCase())}` : ""}</button>
+    <div id="cy-panel" style="margin-top:12px;"></div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:11px;padding-top:10px;border-top:1px solid var(--line);line-height:1.5;">Ból i inne objawy zapisujesz w <b>Rytmie</b> — jedno miejsce dla całego ciała, czy to podbrzusze, czy łokieć. Tutaj zobaczysz je ułożone względem cyklu.</div>
+  </div>`);
+
+  zap.querySelector("#cy-kiedy").addEventListener("click", () => {
+    if (dzienRob !== dzis) { window._cyklDzien = null; renderPuls(); return; }
+    const w = prompt("Który dzień opisujesz? (RRRR-MM-DD)", dzis);
+    if (!w) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(w.trim())) { trzosToast("Format: RRRR-MM-DD"); return; }
+    window._cyklDzien = w.trim(); renderPuls();
   });
+  zap.querySelector("#cy-b-krw").addEventListener("click", () => { window._cyklPanel = panel === "krw" ? null : "krw"; renderPuls(); });
+
+  const pnl = zap.querySelector("#cy-panel");
+  if (panel === "krw") {
+    const p = el(`<div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">Jak obfite?</div>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;">
+        ${CYKL_KRW.map(([k, n]) => `<button data-k="${k}" style="border:1px solid ${rekRob && rekRob.krwawienie === k ? "#1a7158" : "var(--line)"};background:${rekRob && rekRob.krwawienie === k ? "#e3f4f0" : "var(--surface)"};color:var(--ink);border-radius:9px;padding:8px 13px;font-size:12.5px;cursor:pointer;">${n}</button>`).join("")}
+      </div>
+      ${rekRob && rekRob.krwawienie ? `<button id="cy-krw-usun" style="margin-top:9px;border:none;background:transparent;color:#c4513a;font-size:12px;cursor:pointer;padding:2px;">Jednak nie było krwawienia — usuń</button>` : ""}
+    </div>`);
+    p.querySelectorAll("button[data-k]").forEach((b) => b.addEventListener("click", () => zapisz({ krwawienie: b.dataset.k })));
+    const u = p.querySelector("#cy-krw-usun"); if (u) u.addEventListener("click", () => zapisz({ krwawienie: null }));
+    pnl.appendChild(p);
+  }
   box.appendChild(zap);
 
-  /* ── bol: co widac ── */
-  const zBolem = lista.filter((d) => (d.bol_nasilenie || 0) > 0);
-  if (zBolem.length) {
-    const wybily = lista.filter((d) => d.bol_wybilo).length;
-    const sredBol = Math.round((zBolem.reduce((a, d) => a + (d.bol_nasilenie || 0), 0) / zBolem.length) * 10) / 10;
-    box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
-      <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Ból — co widać</div>
-      <div style="font-size:13px;line-height:1.6;">Dni z bólem: <b>${zBolem.length}</b> · średnie natężenie <b>${sredBol}</b>${wybily ? ` · <b style="color:#c4513a;">${wybily}</b> ${wybily === 1 ? "dzień, który wywrócił plany" : "dni, które wywróciły plany"}` : ""}</div>
-      ${wybily >= 3 ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:8px;line-height:1.5;">Ból, który tyle razy wybił Cię z życia, warto komuś pokazać — nie dlatego, że coś jest źle, tylko dlatego, że to zbyt dużo, żeby się do tego przyzwyczajać. Mogę przygotować zestawienie.</div>` : ""}
-    </div>`));
+  /* ── objawy z RYTMU nalozone na faze cyklu (Cykl ich NIE przechowuje) ── */
+  if (mies.length) {
+    let obj = [];
+    try {
+      const { data } = await supabase.from("puls_pomiary").select("*").eq("traveler_id", TRAVELER.id).eq("typ", "objaw")
+        .gte("zmierzono_at", od + "T00:00:00").order("zmierzono_at", { ascending: false });
+      obj = data || [];
+    } catch (e) { obj = []; }
+    if (obj.length) {
+      const faza = (iso) => { let s = null; for (const m of mies) if (m.start <= iso) s = m; return s ? cyklDni(iso, s.start) + 1 : null; };
+      const wKrw = new Set(lista.filter((d) => d.krwawienie).map((d) => d.data));
+      let podczas = 0, poza = 0, wywr = 0;
+      const wiersze = obj.slice(0, 12).map((p) => {
+        const d = cyklISO(new Date(p.zmierzono_at));
+        const dc = faza(d);
+        if (wKrw.has(d)) podczas++; else poza++;
+        if (p.wywrocilo_dzien) wywr++;
+        return `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px;">
+          <span>${escP(p.nazwa || "objaw")}${p.wartosc != null ? ` <b>${p.wartosc}/10</b>` : ""}${p.lokalizacja ? ` · ${escP(p.lokalizacja)}` : ""}${p.wywrocilo_dzien ? ` <span style="color:#c4513a;font-size:10px;font-weight:700;">WYWRÓCIŁ DZIEŃ</span>` : ""}</span>
+          <span style="color:var(--ink-soft);white-space:nowrap;">${dc ? `dz. ${dc}.` : ""}${wKrw.has(d) ? " 🩸" : ""}</span>
+        </div>`;
+      }).join("");
+      box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
+        <div style="font-size:13px;font-weight:600;margin-bottom:3px;">Objawy względem cyklu</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;line-height:1.45;">To Twoje wpisy z Rytmu, ułożone na dniach cyklu. 🩸 = dzień krwawienia.</div>
+        ${wiersze}
+        <div style="font-size:12.5px;margin-top:9px;line-height:1.6;">W trakcie krwawienia: <b>${podczas}</b> · poza nim: <b>${poza}</b>${wywr ? ` · <b style="color:#c4513a;">${wywr}</b> ${wywr === 1 ? "raz wywrócił dzień" : "razy wywróciły dzień"}` : ""}</div>
+        ${wywr >= 3 ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:7px;line-height:1.5;">Tyle razy coś wywróciło Ci dzień. To nie jest diagnoza — to powód, żeby pokazać to komuś, zamiast się do tego przyzwyczajać.</div>` : ""}
+      </div>`));
+    }
   }
 
   box.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);padding:2px 4px 10px;line-height:1.5;">Zapisy z Cyklu są prywatne. Możesz też po prostu powiedzieć asystentowi — „dziś drugi dzień, boli 6" — i wyląduje tu samo.</div>`));
@@ -2981,7 +3006,19 @@ async function renderPuls() {
 /* ── ARKUSZ WPISU PULSU — jeden dla dodawania (＋/luki) i edycji (tap we wpis); lekki, nie ankieta ── */
 function arkuszPuls(wpis, prefill) {
   prefill = prefill || {};
-  const TYPY_A = [["woda","🥤"],["posilek","🍽"],["mocz","💧"],["stolec","🚽"],["sen","😴"],["aktywnosc","🏃"],["praktyka","🕯"],["cisnienie","🩺"],["tetno","💓"],["waga","⚖️"],["objaw","🤕"],["lek","💊"],["suplement","🌿"],["nastroj","🙂"],["energia","⚡"],["stres","😖"],["cukier","🩸"],["temperatura","🌡"],["saturacja","🫁"],["pot","💦"],["inne","📌"]];
+  /* Wiersz = grupa. Bez nazw - grupowanie niesie ODSTEP miedzy wierszami.
+     Kolejnosc domyslna wg realnej czestotliwosci uzycia (dane z puls_pomiary). */
+  const GRUPY_PULS = [
+    [["woda", "🥤", "napój"], ["posilek", "🍽", "posiłek"]],
+    [["mocz", "💧", "mocz"], ["stolec", "🚽", "kał"], ["pot", "💦", "pot"]],
+    [["cisnienie", "🩺", "ciśnienie"], ["tetno", "💓", "tętno"], ["cukier", "🩸", "cukier"], ["saturacja", "🫁", "saturacja"], ["temperatura", "🌡", "temp."], ["oddech", "🌬", "oddech"]],
+    [["sen", "😴", "sen"], ["aktywnosc", "🏃", "aktywność"], ["praktyka", "🕯", "praktyka"]],
+    [["lek", "💊", "lek"], ["suplement", "🌿", "suplement"]],
+    [["__cykl", "🩸", "cykl →"]],
+    [["nastroj", "🙂", "nastrój"], ["energia", "⚡", "energia"], ["stres", "😖", "stres"], ["objaw", "🤕", "objaw"]],
+    [["waga", "⚖️", "waga"], ["wzrost", "📏", "wzrost"], ["talia", "📐", "talia"]],
+    [["inne", "📌", "inne"]],
+  ];
   let typ = (wpis && wpis.typ) || prefill.typ || "woda";
   const teraz = new Date();
   const dGdy = wpis ? new Date(wpis.zmierzono_at) : teraz;
@@ -2989,7 +3026,7 @@ function arkuszPuls(wpis, prefill) {
   const godzV = dGdy.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: TZ });
   const ov = el(`<div class="m-overlay" style="align-items:flex-end;"><div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px 22px;box-shadow:0 -8px 30px rgba(0,0,0,.2);max-height:88vh;overflow-y:auto;">
     <div style="display:flex;align-items:center;margin-bottom:10px;"><span style="font-size:15px;font-weight:600;">${wpis ? "Edytuj wpis" : "Dodaj wpis"}</span><button class="ap-x" style="margin-left:auto;border:none;background:none;font-size:19px;cursor:pointer;color:var(--ink-soft);">✕</button></div>
-    <div class="ap-typy" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;"></div>
+    <div class="ap-typy" style="display:block;margin-bottom:2px;"></div>
     <div style="display:flex;gap:8px;margin-bottom:10px;">
       <input type="date" class="ap-data" value="${dataV}" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;">
       <input type="time" class="ap-godz" value="${godzV}" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;">
@@ -3015,10 +3052,18 @@ function arkuszPuls(wpis, prefill) {
   });
   const rysujTypy = () => {
     typyEl.innerHTML = "";
-    for (const [t, ik] of TYPY_A) {
-      const b = el(`<button style="border:1px solid ${t === typ ? "#1a7158" : "var(--line)"};background:${t === typ ? "#e3f4f0" : "none"};border-radius:14px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:${t === typ ? "600" : "400"};color:var(--ink);">${ik} ${t === "stolec" ? "kał" : t === "posilek" ? "posiłek" : t === "aktywnosc" ? "aktywność" : t === "nastroj" ? "nastrój" : t}</button>`);
-      b.addEventListener("click", () => { typ = t; rysujTypy(); rysujPola(); });
-      typyEl.appendChild(b);
+    for (const grupa of GRUPY_PULS) {
+      const rz = el(`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:15px;"></div>`);
+      for (const [t, ik, et] of grupa) {
+        const akt = t === typ;
+        const b = el(`<button style="border:1px solid ${akt ? "#1a7158" : "var(--line)"};background:${akt ? "#e3f4f0" : "none"};border-radius:14px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:${akt ? "600" : "400"};color:var(--ink);">${ik} ${et}</button>`);
+        b.addEventListener("click", () => {
+          if (t === "__cykl") { zam(); window._pulsTab = "cykl"; renderPuls(); return; }
+          typ = t; rysujTypy(); rysujPola();
+        });
+        rz.appendChild(b);
+      }
+      typyEl.appendChild(rz);
     }
   };
   const P = (klasa, label, typHtml, val, ph) => `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">${label}</label><input class="${klasa}" type="${typHtml}" value="${val != null ? escP(String(val)) : ""}" placeholder="${ph || ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>`;
@@ -3035,6 +3080,9 @@ function arkuszPuls(wpis, prefill) {
     else if (typ === "praktyka") h = P("ap-nazwa", "Rodzaj praktyki", "text", w.nazwa, "rapé / medytacja / akupunktura / sauna…") + P("ap-wart", "Minut (opcjonalnie)", "number", w.wartosc) + P("ap-kont", "Szczegóły", "text", w.kontekst, "z kim, gdzie, przebieg");
     else if (typ === "lek" || typ === "suplement") h = P("ap-nazwa", "Nazwa", "text", w.nazwa) + P("ap-wart", "Dawka", "number", w.wartosc) + P("ap-kont", "Jednostka", "text", w.kontekst, "mg / tabletki / j.m.");
     else if (typ === "objaw") h = P("ap-nazwa", "Co dolega", "text", w.nazwa, "np. ból głowy") + P("ap-wart", "Nasilenie 1–10", "number", w.wartosc) + P("ap-kont", "Gdzie / cechy", "text", (w.lokalizacja || w.kontekst));
+    else if (typ === "oddech") h = P("ap-wart", "Oddechy na minutę", "number", w.wartosc) + P("ap-kont", "Kontekst", "text", w.kontekst, "spoczynek / po wysiłku");
+    else if (typ === "wzrost") h = P("ap-wart", "Wzrost w cm", "number", w.wartosc);
+    else if (typ === "talia") h = P("ap-wart", "Obwód talii w cm", "number", w.wartosc) + P("ap-kont", "Kontekst", "text", w.kontekst, "mierz na wydechu, nad pępkiem");
     else h = P("ap-wart", "Wartość", "number", w.wartosc) + P("ap-nazwa", "Nazwa", "text", w.nazwa) + P("ap-kont", "Kontekst", "text", w.kontekst);
     h += P("ap-nota", "Notatka", "text", w.notatka);
     polaEl.innerHTML = h;
