@@ -2609,7 +2609,8 @@ async function renderPuls() {
     const godzTeraz = Number(new Date().toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: TZ }));
     const czyNapelnienie = (p) => p.typ === "woda" && ((p.kontekst || "") + (p.notatka || "")).toLowerCase().includes("napełni");
     const opisR = (p) => {
-      if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "saturacja") return `<b>${p.wartosc}%</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
       if (p.typ === "posilek") return `${escP(p.kontekst || "")}${p.kontekst ? ": " : ""}${escP(p.nazwa || "")}`;
       if (p.typ === "lek" || p.typ === "suplement") return `${escP(p.nazwa || "")}${p.wartosc != null ? " · " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : ""}`;
       if (p.typ === "aktywnosc") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
@@ -2666,7 +2667,8 @@ async function renderPuls() {
       const KOLOR_LZ = { cisnienie: "#c0392b", tetno: "#e67e22", cukier: "#e74c3c", waga: "#9b59b6", sen: "#34495e", nastroj: "#f39c12", energia: "#f1c40f", stres: "#d35400", objaw: "#e74c3c", stolec: "#795548", mocz: "#2980b9", woda: "#3498db", posilek: "#27ae60", lek: "#8e44ad", suplement: "#16a085", aktywnosc: "#1a7158", pot: "#00bcd4", temperatura: "#e67e22", saturacja: "#2c3e50", praktyka: "#7b5ea7", inne: "#7f8c8d" };
       const NAZWA_LZ = { cisnienie: "ciśnienie", tetno: "tętno", cukier: "cukier", waga: "waga", temperatura: "temp.", saturacja: "saturacja", sen: "sen", nastroj: "nastrój", energia: "energia", stres: "stres", objaw: "objawy", stolec: "stolec", mocz: "mocz", woda: "woda", posilek: "posiłki", lek: "leki", suplement: "suplementy", aktywnosc: "aktywność", pot: "pot", praktyka: "praktyki", inne: "inne" };
       const opisLZ = (p) => {
-        if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+        if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "saturacja") return `<b>${p.wartosc}%</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
         if (p.typ === "posilek") return `${escP(p.kontekst || "posiłek")}: ${escP(p.nazwa || "")}`;
         if (p.typ === "lek" || p.typ === "suplement") return `${escP(p.nazwa || "")}${p.wartosc != null ? " " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : ""}`;
         if (p.typ === "aktywnosc" || p.typ === "praktyka") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
@@ -3046,6 +3048,7 @@ function arkuszPuls(wpis, prefill) {
   const wart = () => ({
     wartosc: ov.querySelector(".ap-wart") ? ov.querySelector(".ap-wart").value : "",
     wartosc2: ov.querySelector(".ap-wart2") ? ov.querySelector(".ap-wart2").value : "",
+    wartosc3: ov.querySelector(".ap-wart3") ? ov.querySelector(".ap-wart3").value : "",
     nazwa: ov.querySelector(".ap-nazwa") ? ov.querySelector(".ap-nazwa").value : "",
     kontekst: ov.querySelector(".ap-kont") ? ov.querySelector(".ap-kont").value : "",
     notatka: ov.querySelector(".ap-nota") ? ov.querySelector(".ap-nota").value : "",
@@ -3070,7 +3073,8 @@ function arkuszPuls(wpis, prefill) {
   const rysujPola = () => {
     const w = wpis || {};
     let h = "";
-    if (typ === "cisnienie") h = P("ap-wart", "Skurczowe", "number", w.wartosc) + P("ap-wart2", "Rozkurczowe", "number", w.wartosc2);
+    if (typ === "cisnienie") h = P("ap-wart", "Skurczowe", "number", w.wartosc) + P("ap-wart2", "Rozkurczowe", "number", w.wartosc2) + P("ap-wart3", "Tętno (ciśnieniomierz podaje je razem)", "number", w.wartosc3);
+    else if (typ === "saturacja") h = P("ap-wart", "Saturacja w %", "number", w.wartosc) + P("ap-wart3", "Tętno (pulsoksymetr podaje je razem)", "number", w.wartosc3);
     else if (typ === "woda") h = P("ap-wart", "Ile ml (puste = napełnienie butelki)", "number", w.wartosc) + P("ap-kont", "Kontekst", "text", w.kontekst, "np. napełnienie butelki 700 ml");
     else if (typ === "posilek") h = P("ap-kont", "Który posiłek", "text", w.kontekst, "śniadanie / obiad / kolacja / przekąska") + P("ap-nazwa", "Co", "text", w.nazwa, "np. jajecznica z pomidorami");
     else if (typ === "mocz" || typ === "pot") h = P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · zapach");
@@ -3095,6 +3099,7 @@ function arkuszPuls(wpis, prefill) {
       typ,
       wartosc: v.wartosc !== "" ? Number(v.wartosc) : null,
       wartosc2: v.wartosc2 !== "" ? Number(v.wartosc2) : null,
+      wartosc3: v.wartosc3 !== "" ? Number(v.wartosc3) : null,
       nazwa: v.nazwa.trim() || null,
       kontekst: v.kontekst.trim() || null,
       notatka: v.notatka.trim() || null,
