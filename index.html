@@ -3145,19 +3145,27 @@ function arkuszPuls(wpis, prefill) {
     }
   };
   const P = (klasa, label, typHtml, val, ph) => `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">${label}</label><input class="${klasa}" type="${typHtml}" value="${val != null ? escP(String(val)) : ""}" placeholder="${ph || ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>`;
-  const rysujPola = () => {
+  const rysujPola = (zachowaj) => {
+    /* zachowaj=true przy kliknieciu w chips - inaczej przerysowanie kasuje to, co czlowiek wpisal */
+    const stan = {};
+    if (zachowaj) polaEl.querySelectorAll("input").forEach((i) => { const k = (i.className || "").trim(); if (k) stan[k] = i.value; });
     /* przy zmianie rodzaju w edycji NIE przenosimy pol liczbowych - 250 ml nie moze zostac nasileniem 250/10 */
     const w = zgodnyZWpisem() ? wpis : {};
     let h = "";
     if (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") h =
-        `<div style="font-size:11.5px;color:var(--ink-soft);line-height:1.45;margin-bottom:2px;">Wypełnij to, co pokazało urządzenie — resztę zostaw pustą. Ciśnieniomierz i pulsoksymetr podają tętno razem z pomiarem.</div>`
+        `<div style="font-size:11.5px;color:var(--ink-soft);line-height:1.45;margin-bottom:2px;">Wypełnij to, co pokazało urządzenie — resztę zostaw pustą. Możesz też wpisać wszystko w pierwsze pole, rozdzielając <b>kropką, przecinkiem albo ukośnikiem</b> — rozłoży się samo.</div>`
       + `<div style="display:flex;gap:8px;">
           <div style="flex:1;"><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Skurczowe <span style="opacity:.75;">— lub całość</span></label>
-            <input class="ap-wart" type="text" inputmode="numeric" value="${typ === "cisnienie" && w.wartosc != null ? escP(String(w.wartosc)) : ""}" placeholder="172/113/75" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
+            <input class="ap-wart" type="text" inputmode="decimal" value="${typ === "cisnienie" && w.wartosc != null ? escP(String(w.wartosc)) : ""}" placeholder="120.80.70" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
           <div style="flex:1;"><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Rozkurczowe</label>
-            <input class="ap-wart2" type="text" inputmode="numeric" value="${w.wartosc2 != null ? escP(String(w.wartosc2)) : ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
+            <input class="ap-wart2" type="text" inputmode="decimal" value="${w.wartosc2 != null ? escP(String(w.wartosc2)) : ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
         </div>`
-      + `<div style="display:flex;gap:8px;">${P("ap-wart3", "Tętno", "number", (typ === "tetno" ? w.wartosc : w.wartosc3))}${P("ap-sat", "Saturacja %", "number", typ === "saturacja" ? w.wartosc : null)}</div>`
+      + `<div style="display:flex;gap:8px;">
+          <div style="flex:1;"><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Tętno</label>
+            <input class="ap-wart3" type="text" inputmode="decimal" value="${(typ === "tetno" ? w.wartosc : w.wartosc3) != null ? escP(String(typ === "tetno" ? w.wartosc : w.wartosc3)) : ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
+          <div style="flex:1;"><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Saturacja %</label>
+            <input class="ap-sat" type="text" inputmode="decimal" value="${typ === "saturacja" && w.wartosc != null ? escP(String(w.wartosc)) : ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
+        </div>`
       + `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Pozycja</label>
         <div class="ap-pozycja" style="display:flex;gap:5px;flex-wrap:wrap;">
           ${POZYCJE.map(([k, ik]) => `<button type="button" data-z="${k}" style="border:1px solid ${pozycja === k ? "#1a7158" : "var(--line)"};background:${pozycja === k ? "#e3f4f0" : "none"};color:var(--ink);border-radius:13px;padding:6px 11px;font-size:12px;cursor:pointer;font-weight:${pozycja === k ? "600" : "400"};">${ik} ${k}</button>`).join("")}
@@ -3194,15 +3202,16 @@ function arkuszPuls(wpis, prefill) {
     else h = P("ap-wart", "Wartość", "number", w.wartosc) + P("ap-nazwa", "Nazwa", "text", w.nazwa) + P("ap-kont", "Kontekst", "text", w.kontekst);
     h += P("ap-nota", typ === "posilek" ? "Co jadłeś (napisz swobodnie — AI to poukłada)" : "Notatka", "text", w.notatka);
     polaEl.innerHTML = h;
+    if (zachowaj) polaEl.querySelectorAll("input").forEach((i) => { const k = (i.className || "").trim(); if (k && stan[k] !== undefined) i.value = stan[k]; });
     if (prefill.kontekst && !wpis) { const k = ov.querySelector(".ap-kont"); if (k && !k.value) k.value = prefill.kontekst; }
     const nap = polaEl.querySelector(".ap-napoje");
-    if (nap) nap.querySelectorAll("button[data-n]").forEach((b) => b.addEventListener("click", () => { rodzajNap = b.dataset.n; rysujPola(); }));
+    if (nap) nap.querySelectorAll("button[data-n]").forEach((b) => b.addEventListener("click", () => { rodzajNap = b.dataset.n; rysujPola(true); }));
     const pos = polaEl.querySelector(".ap-posilki");
-    if (pos) pos.querySelectorAll("button[data-p]").forEach((b) => b.addEventListener("click", () => { rodzajPos = b.dataset.p; rysujPola(); }));
+    if (pos) pos.querySelectorAll("button[data-p]").forEach((b) => b.addEventListener("click", () => { rodzajPos = b.dataset.p; rysujPola(true); }));
     /* Jedno pole przyjmuje calosc: „172/113/75", „172 113 75", „172-113-75" - rozklada sie samo.
        Wyzwala sie TYLKO gdy pojawi sie znak niebedacy cyfra, wiec zwykle wpisywanie liczby dziala normalnie. */
     if (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") {
-      const lancuch = [polaEl.querySelector(".ap-wart"), polaEl.querySelector(".ap-wart2"), polaEl.querySelector(".ap-wart3")];
+      const lancuch = [polaEl.querySelector(".ap-wart"), polaEl.querySelector(".ap-wart2"), polaEl.querySelector(".ap-wart3"), polaEl.querySelector(".ap-sat")];
       lancuch.forEach((el0, i) => {
         if (!el0) return;
         el0.addEventListener("input", () => {
@@ -3224,9 +3233,9 @@ function arkuszPuls(wpis, prefill) {
       });
     }
     const poz = polaEl.querySelector(".ap-pozycja");
-    if (poz) poz.querySelectorAll("button[data-z]").forEach((b) => b.addEventListener("click", () => { pozycja = b.dataset.z; rysujPola(); }));
+    if (poz) poz.querySelectorAll("button[data-z]").forEach((b) => b.addEventListener("click", () => { pozycja = b.dataset.z; rysujPola(true); }));
     const por = polaEl.querySelector(".ap-pora");
-    if (por) por.querySelectorAll("button[data-o]").forEach((b) => b.addEventListener("click", () => { poraPom = poraPom === b.dataset.o ? "" : b.dataset.o; rysujPola(); }));
+    if (por) por.querySelectorAll("button[data-o]").forEach((b) => b.addEventListener("click", () => { poraPom = poraPom === b.dataset.o ? "" : b.dataset.o; rysujPola(true); }));
     const porc = polaEl.querySelector(".ap-porcje");
     if (porc) {
       const rysujPorcje = (lista) => {
