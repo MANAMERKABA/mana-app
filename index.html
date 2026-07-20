@@ -2486,8 +2486,10 @@ async function renderPuls() {
   if (!window._pulsTab) window._pulsTab = "rytm";
   // Dwupoziomowa nawigacja: rodzic → podzakładki
   const PULS_NAV = [
-    { key: "rytm", label: "🗓 Rytm", sub: [["rytm", "🌗 Doba"], ["cykl", "🩸 Cykl"]] },
-    { key: "zalecenia", label: "📋 Zalecenia", sub: [["zalecenia", "📋 Zalecenia"]] },
+    /* wlasny: true = rodzic JEST swoim widokiem domyslnym (sub[0]) i nie pokazuje sie jako chip.
+       Powrot na widok domyslny = nacisniecie rodzica. */
+    { key: "rytm", label: "🗓 Rytm", wlasny: true, sub: [["rytm", "🌗 Doba"], ["cykl", "🩸 Cykl"]] },
+    { key: "zalecenia", label: "📋 Zalecenia", wlasny: true, sub: [["zalecenia", "📋 Zalecenia"]] },
     { key: "badania", label: "🔬 Badania", sub: [["bad-dodaj", "➕ Dodaj"], ["bad-arch", "📎 Archiwum"], ["bad-hist", "🏥 Historia"]] },
     { key: "analiza", label: "📈 Analiza", sub: [["analiza", "📈 Linia życia"], ["porownanie", "🔬 Porównanie"]] },
   ];
@@ -2495,13 +2497,21 @@ async function renderPuls() {
   const T = window._pulsTab;
   const rodzicOf = (t) => { const g = PULS_NAV.find((p) => p.sub.some(([k]) => k === t)); return g ? g.key : "rytm"; };
   const rodzicAkt = rodzicOf(T);
-  const podzMa = (key) => { const g = PULS_NAV.find((p) => p.key === key); return !!(g && g.sub.length > 1); };
+  const chipyOf = (g) => (g.wlasny ? g.sub.slice(1) : g.sub);
+  const podzMa = (key) => { const g = PULS_NAV.find((p) => p.key === key); return !!(g && chipyOf(g).length); };
+  const grupaAkt = PULS_NAV.find((p) => p.key === rodzicAkt) || PULS_NAV[0];
+  const naDomyslnym = T === grupaAkt.sub[0][0];
+  const stylRodzica = (p) => {
+    if (rodzicAkt !== p.key) return `border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:500;`;
+    if (naDomyslnym) return `border:1px solid #1a7158;background:#1a7158;color:#fff;font-weight:700;box-shadow:0 1px 4px rgba(26,113,88,.25);`;
+    return `border:1px solid #1a7158;background:#e3f4f0;color:#1a7158;font-weight:700;`;
+  };
   // Poziom 1 (rodzice) — wypełniony segment: mocny, „główny"
-  const tbGorne = el(`<div style="display:flex;gap:6px;margin-bottom:${podzMa(rodzicAkt) ? "8" : "14"}px;">${PULS_NAV.map((p) => `<button data-g="${p.key}" style="flex:1;border:1px solid ${rodzicAkt===p.key?"#1a7158":"var(--line)"};background:${rodzicAkt===p.key?"#1a7158":"var(--surface)"};color:${rodzicAkt===p.key?"#fff":"var(--ink)"};font-weight:${rodzicAkt===p.key?"700":"500"};border-radius:11px;padding:10px 4px;font-size:13.5px;cursor:pointer;box-shadow:${rodzicAkt===p.key?"0 1px 4px rgba(26,113,88,.25)":"none"};">${p.label}</button>`).join("")}</div>`);
+  const tbGorne = el(`<div style="display:flex;gap:6px;margin-bottom:${podzMa(rodzicAkt) ? "8" : "14"}px;">${PULS_NAV.map((p) => `<button data-g="${p.key}" style="flex:1;${stylRodzica(p)}border-radius:11px;padding:10px 4px;font-size:13.5px;cursor:pointer;">${p.label}</button>`).join("")}</div>`);
   tbGorne.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { const g = PULS_NAV.find((p) => p.key === b.dataset.g); window._pulsTab = g.sub[0][0]; renderPuls(); }));
   box.appendChild(tbGorne);
-  const podz = (PULS_NAV.find((p) => p.key === rodzicAkt) || PULS_NAV[0]).sub;
-  if (podz.length > 1) {
+  const podz = chipyOf(grupaAkt);
+  if (podz.length) {
     // Poziom 2 (podzakładki) — podkreślane taby tekstowe, wcięte i do lewej: wyraźnie „niżej"
     const tbSub = el(`<div style="display:flex;gap:4px;margin:0 0 14px 12px;border-bottom:1px solid var(--line);">${podz.map(([k, n]) => `<button data-t="${k}" style="border:none;background:transparent;color:${T===k?"#1a7158":"var(--ink-soft)"};font-weight:${T===k?"700":"500"};border-bottom:2px solid ${T===k?"#1a7158":"transparent"};border-radius:0;margin-bottom:-1px;padding:7px 11px;font-size:12.5px;cursor:pointer;white-space:nowrap;">${n}</button>`).join("")}</div>`);
     tbSub.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { window._pulsTab = b.dataset.t; renderPuls(); }));
@@ -2611,6 +2621,7 @@ async function renderPuls() {
     const opisR = (p) => {
       if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
       if (p.typ === "saturacja") return `<b>${p.wartosc}%</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "napoj") return `${escP(p.nazwa || "napój")}${p.wartosc ? ` <b>${p.wartosc} ml</b>` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
       if (p.typ === "posilek") return `${escP(p.kontekst || "")}${p.kontekst ? ": " : ""}${escP(p.nazwa || "")}`;
       if (p.typ === "lek" || p.typ === "suplement") return `${escP(p.nazwa || "")}${p.wartosc != null ? " · " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : ""}`;
       if (p.typ === "aktywnosc") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
@@ -2669,6 +2680,7 @@ async function renderPuls() {
       const opisLZ = (p) => {
         if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
       if (p.typ === "saturacja") return `<b>${p.wartosc}%</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "napoj") return `${escP(p.nazwa || "napój")}${p.wartosc ? ` <b>${p.wartosc} ml</b>` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
         if (p.typ === "posilek") return `${escP(p.kontekst || "posiłek")}: ${escP(p.nazwa || "")}`;
         if (p.typ === "lek" || p.typ === "suplement") return `${escP(p.nazwa || "")}${p.wartosc != null ? " " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : ""}`;
         if (p.typ === "aktywnosc" || p.typ === "praktyka") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
@@ -3022,6 +3034,11 @@ function arkuszPuls(wpis, prefill) {
     [["inne", "📌", "inne"]],
   ];
   let typ = (wpis && wpis.typ) || prefill.typ || "woda";
+  /* Napoj: JEDEN kafel, rodzaj wybierany w karcie. Woda -> typ 'woda' (licznik nawodnienia),
+     reszta -> typ 'napoj' + nazwa = rodzaj. Kofeina i alkohol wynikaja z rodzaju, nie pytamy. */
+  const NAPOJE = [["woda", "🥤", "woda"], ["kawa", "☕", "kawa"], ["herbata", "🍵", "herbata"], ["sok", "🧃", "sok"], ["alkohol", "🍷", "alkohol"], ["energetyk", "⚡", "energetyk"], ["mleko", "🥛", "mleko"], ["inny", "🥂", "inny"]];
+  const PORCJE_DOM = [100, 150, 250, 330];
+  let rodzajNap = (wpis && wpis.typ === "napoj" && wpis.nazwa) ? wpis.nazwa : "woda";
   const teraz = new Date();
   const dGdy = wpis ? new Date(wpis.zmierzono_at) : teraz;
   const dataV = dGdy.toLocaleDateString("en-CA", { timeZone: TZ });
@@ -3075,7 +3092,14 @@ function arkuszPuls(wpis, prefill) {
     let h = "";
     if (typ === "cisnienie") h = P("ap-wart", "Skurczowe", "number", w.wartosc) + P("ap-wart2", "Rozkurczowe", "number", w.wartosc2) + P("ap-wart3", "Tętno (ciśnieniomierz podaje je razem)", "number", w.wartosc3);
     else if (typ === "saturacja") h = P("ap-wart", "Saturacja w %", "number", w.wartosc) + P("ap-wart3", "Tętno (pulsoksymetr podaje je razem)", "number", w.wartosc3);
-    else if (typ === "woda") h = P("ap-wart", "Ile ml (puste = napełnienie butelki)", "number", w.wartosc) + P("ap-kont", "Kontekst", "text", w.kontekst, "np. napełnienie butelki 700 ml");
+    else if (typ === "woda" || typ === "napoj") h = `<div>
+        <label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Co pijesz</label>
+        <div class="ap-napoje" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px;">
+          ${NAPOJE.map(([k, ik, et]) => `<button type="button" data-n="${k}" style="border:1px solid ${rodzajNap === k ? "#1a7158" : "var(--line)"};background:${rodzajNap === k ? "#e3f4f0" : "none"};color:var(--ink);border-radius:13px;padding:6px 11px;font-size:12.5px;cursor:pointer;font-weight:${rodzajNap === k ? "600" : "400"};">${ik} ${et}</button>`).join("")}
+        </div>
+      </div>`
+      + P("ap-wart", "Ile ml", "number", w.wartosc)
+      + `<div class="ap-porcje" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:-3px;"></div>`;
     else if (typ === "posilek") h = P("ap-kont", "Który posiłek", "text", w.kontekst, "śniadanie / obiad / kolacja / przekąska") + P("ap-nazwa", "Co", "text", w.nazwa, "np. jajecznica z pomidorami");
     else if (typ === "mocz" || typ === "pot") h = P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · zapach");
     else if (typ === "stolec") h = P("ap-wart", "Bristol 1–7", "number", w.wartosc) + P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · krew/śluz");
@@ -3088,19 +3112,47 @@ function arkuszPuls(wpis, prefill) {
     else if (typ === "wzrost") h = P("ap-wart", "Wzrost w cm", "number", w.wartosc);
     else if (typ === "talia") h = P("ap-wart", "Obwód talii w cm", "number", w.wartosc) + P("ap-kont", "Kontekst", "text", w.kontekst, "mierz na wydechu, nad pępkiem");
     else h = P("ap-wart", "Wartość", "number", w.wartosc) + P("ap-nazwa", "Nazwa", "text", w.nazwa) + P("ap-kont", "Kontekst", "text", w.kontekst);
-    h += P("ap-nota", "Notatka", "text", w.notatka);
+    h += P("ap-nota", typ === "posilek" ? "Co jadłeś (napisz swobodnie — AI to poukłada)" : "Notatka", "text", w.notatka);
     polaEl.innerHTML = h;
     if (prefill.kontekst && !wpis) { const k = ov.querySelector(".ap-kont"); if (k && !k.value) k.value = prefill.kontekst; }
+    const nap = polaEl.querySelector(".ap-napoje");
+    if (nap) nap.querySelectorAll("button[data-n]").forEach((b) => b.addEventListener("click", () => { rodzajNap = b.dataset.n; rysujPola(); }));
+    const porc = polaEl.querySelector(".ap-porcje");
+    if (porc) {
+      const rysujPorcje = (lista) => {
+        porc.innerHTML = "";
+        lista.forEach((ml) => {
+          const b = el(`<button type="button" style="border:1px solid var(--line);background:none;color:var(--ink-soft);border-radius:13px;padding:5px 12px;font-size:12.5px;cursor:pointer;">${ml}</button>`);
+          b.addEventListener("click", () => { const p = ov.querySelector(".ap-wart"); if (p) p.value = ml; });
+          porc.appendChild(b);
+        });
+      };
+      rysujPorcje(PORCJE_DOM);
+      /* porcje z WLASNEJ historii - najczestsze wartosci tej osoby dla tego rodzaju */
+      (async () => {
+        try {
+          const { data } = await supabase.from("puls_pomiary").select("wartosc, nazwa, typ")
+            .eq("traveler_id", TRAVELER.id).in("typ", ["woda", "napoj"]).not("wartosc", "is", null).limit(400);
+          const pas = (data || []).filter((x) => (rodzajNap === "woda" ? x.typ === "woda" : x.nazwa === rodzajNap));
+          if (pas.length < 5) return;
+          const licz = {};
+          pas.forEach((x) => { const v = Math.round(Number(x.wartosc)); if (v > 0) licz[v] = (licz[v] || 0) + 1; });
+          const top = Object.keys(licz).map(Number).sort((a, b) => licz[b] - licz[a] || a - b).slice(0, 4).sort((a, b) => a - b);
+          if (top.length) rysujPorcje(top);
+        } catch (e) {}
+      })();
+    }
   };
   rysujTypy(); rysujPola();
   ov.querySelector(".ap-zapisz").addEventListener("click", async () => {
     const v = wart();
+    const napojem = (typ === "woda" || typ === "napoj");
     const rek = {
-      typ,
+      typ: napojem ? (rodzajNap === "woda" ? "woda" : "napoj") : typ,
       wartosc: v.wartosc !== "" ? Number(v.wartosc) : null,
       wartosc2: v.wartosc2 !== "" ? Number(v.wartosc2) : null,
       wartosc3: v.wartosc3 !== "" ? Number(v.wartosc3) : null,
-      nazwa: v.nazwa.trim() || null,
+      nazwa: napojem ? (rodzajNap === "woda" ? null : rodzajNap) : (v.nazwa.trim() || null),
       kontekst: v.kontekst.trim() || null,
       notatka: v.notatka.trim() || null,
       zmierzono_at: isoZWarszawy(ov.querySelector(".ap-data").value, ov.querySelector(".ap-godz").value || "12:00"),
