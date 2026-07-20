@@ -3097,6 +3097,13 @@ function arkuszPuls(wpis, prefill) {
   let krok = prefill.typ ? 2 : 1;
   const POSILKI = [["śniadanie", "🌅"], ["obiad", "🍽"], ["kolacja", "🌙"], ["przekąska", "🍎"]];
   let rodzajPos = (wpis && wpis.kontekst) || prefill.kontekst || "";
+  /* Cisnienie bez kontekstu jest slaba dana - ta sama liczba znaczy co innego siedzac i po wysilku.
+     Pozycja ciala wplywa na odczyt: noga na nodze +2-8 mmHg, pelny pecherz +10-15, ramie ponizej serca zawyza. */
+  const POZYCJE = [["siedząc", "🪑"], ["leżąc", "🛏"], ["stojąc", "🧍"]];
+  const PORY_POM = [["rano na czczo", "🌅"], ["wieczorem", "🌙"], ["po wysiłku", "🏃"], ["po posiłku", "🍽"], ["po lekach", "💊"]];
+  const kontStart = (wpis && wpis.kontekst) || "";
+  let pozycja = POZYCJE.map((x) => x[0]).find((p) => kontStart.includes(p)) || "siedząc";
+  let poraPom = PORY_POM.map((x) => x[0]).find((p) => kontStart.includes(p)) || "";
   const typPierwotny = wpis ? wpis.typ : null;
   const OPIS_TYPU = {};
   GRUPY_PULS.forEach((g) => g.forEach(([t, ik, et]) => { OPIS_TYPU[t] = `${ik} ${et}`; }));
@@ -3145,7 +3152,16 @@ function arkuszPuls(wpis, prefill) {
     if (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") h =
         `<div style="font-size:11.5px;color:var(--ink-soft);line-height:1.45;margin-bottom:2px;">Wypełnij to, co pokazało urządzenie — resztę zostaw pustą. Ciśnieniomierz i pulsoksymetr podają tętno razem z pomiarem.</div>`
       + `<div style="display:flex;gap:8px;">${P("ap-wart", "Skurczowe", "number", typ === "cisnienie" ? w.wartosc : null)}${P("ap-wart2", "Rozkurczowe", "number", w.wartosc2)}</div>`
-      + `<div style="display:flex;gap:8px;">${P("ap-wart3", "Tętno", "number", (typ === "tetno" ? w.wartosc : w.wartosc3))}${P("ap-sat", "Saturacja %", "number", typ === "saturacja" ? w.wartosc : null)}</div>`;
+      + `<div style="display:flex;gap:8px;">${P("ap-wart3", "Tętno", "number", (typ === "tetno" ? w.wartosc : w.wartosc3))}${P("ap-sat", "Saturacja %", "number", typ === "saturacja" ? w.wartosc : null)}</div>`
+      + `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Pozycja</label>
+        <div class="ap-pozycja" style="display:flex;gap:5px;flex-wrap:wrap;">
+          ${POZYCJE.map(([k, ik]) => `<button type="button" data-z="${k}" style="border:1px solid ${pozycja === k ? "#1a7158" : "var(--line)"};background:${pozycja === k ? "#e3f4f0" : "none"};color:var(--ink);border-radius:13px;padding:6px 11px;font-size:12px;cursor:pointer;font-weight:${pozycja === k ? "600" : "400"};">${ik} ${k}</button>`).join("")}
+        </div></div>`
+      + `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Kiedy <span style="opacity:.8;">(opcjonalnie)</span></label>
+        <div class="ap-pora" style="display:flex;gap:5px;flex-wrap:wrap;">
+          ${PORY_POM.map(([k, ik]) => `<button type="button" data-o="${k}" style="border:1px solid ${poraPom === k ? "#1a7158" : "var(--line)"};background:${poraPom === k ? "#e3f4f0" : "none"};color:var(--ink);border-radius:13px;padding:6px 11px;font-size:12px;cursor:pointer;font-weight:${poraPom === k ? "600" : "400"};">${ik} ${k}</button>`).join("")}
+        </div></div>`
+      + `<div style="font-size:11px;color:var(--ink-soft);line-height:1.45;">Najbardziej wiarygodny jest pomiar siedząc, stopy płasko, nogi nieskrzyżowane, po skorzystaniu z toalety, ramię podparte na wysokości serca — i 5 minut ciszy przed pierwszym odczytem.</div>`;
     else if (typ === "woda" || typ === "napoj") h = `<div>
         <label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Co pijesz</label>
         <div class="ap-napoje" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px;">
@@ -3178,6 +3194,10 @@ function arkuszPuls(wpis, prefill) {
     if (nap) nap.querySelectorAll("button[data-n]").forEach((b) => b.addEventListener("click", () => { rodzajNap = b.dataset.n; rysujPola(); }));
     const pos = polaEl.querySelector(".ap-posilki");
     if (pos) pos.querySelectorAll("button[data-p]").forEach((b) => b.addEventListener("click", () => { rodzajPos = b.dataset.p; rysujPola(); }));
+    const poz = polaEl.querySelector(".ap-pozycja");
+    if (poz) poz.querySelectorAll("button[data-z]").forEach((b) => b.addEventListener("click", () => { pozycja = b.dataset.z; rysujPola(); }));
+    const por = polaEl.querySelector(".ap-pora");
+    if (por) por.querySelectorAll("button[data-o]").forEach((b) => b.addEventListener("click", () => { poraPom = poraPom === b.dataset.o ? "" : b.dataset.o; rysujPola(); }));
     const porc = polaEl.querySelector(".ap-porcje");
     if (porc) {
       const rysujPorcje = (lista) => {
@@ -3221,7 +3241,9 @@ function arkuszPuls(wpis, prefill) {
       wartosc2: v.wartosc2 !== "" ? Number(v.wartosc2) : null,
       wartosc3: v.wartosc3 !== "" ? Number(v.wartosc3) : null,
       nazwa: napojem ? (rodzajNap === "woda" ? null : rodzajNap) : (v.nazwa.trim() || null),
-      kontekst: typ === "posilek" ? (rodzajPos || null) : (v.kontekst.trim() || null),
+      kontekst: typ === "posilek" ? (rodzajPos || null)
+        : (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") ? [pozycja, poraPom].filter(Boolean).join(" · ")
+        : (v.kontekst.trim() || null),
       notatka: v.notatka.trim() || null,
       zmierzono_at: isoZWarszawy(ov.querySelector(".ap-data").value, ov.querySelector(".ap-godz").value || "12:00"),
     };
