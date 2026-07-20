@@ -2633,19 +2633,26 @@ async function renderPuls() {
     };
     // suma dnia liczy TYLKO wypicia (napełnienia butelki to przygotowanie, nie spożycie)
     const wodaSuma = dzien.filter((p) => p.typ === "woda" && !czyNapelnienie(p)).reduce((s, p) => s + (Number(p.wartosc) || 0), 0);
-    const posilkiMa = new Set(dzien.filter((p) => p.typ === "posilek").map((p) => (p.kontekst || "").toLowerCase()));
+    /* Szukamy nazwy posilku we WSZYSTKICH polach i bez ogonkow - czlowiek pisze „sniadanie", nie „śniadanie". */
+    const bezOgonkow = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ł/g, "l");
+    const tekstPosilkow = dzien.filter((p) => p.typ === "posilek")
+      .map((p) => bezOgonkow(`${p.kontekst || ""} ${p.nazwa || ""} ${p.notatka || ""}`)).join(" | ");
+    const dzisKlucz = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+    const lukiKlucz = `mana_luki_${TRAVELER && TRAVELER.id}_${dzisKlucz}`;
+    let lukiOdpiete = []; try { lukiOdpiete = JSON.parse(localStorage.getItem(lukiKlucz) || "[]"); } catch (e) { lukiOdpiete = []; }
+    const brak = (n) => !tekstPosilkow.includes(bezOgonkow(n)) && !lukiOdpiete.includes(n);
     const luki = [];
-    if (godzTeraz >= 10 && ![...posilkiMa].some((k) => k.includes("śniadanie"))) luki.push(["śniadanie", { typ: "posilek", kontekst: "śniadanie" }]);
-    if (godzTeraz >= 15 && ![...posilkiMa].some((k) => k.includes("obiad"))) luki.push(["obiad", { typ: "posilek", kontekst: "obiad" }]);
-    if (godzTeraz >= 20 && ![...posilkiMa].some((k) => k.includes("kolacja"))) luki.push(["kolacja", { typ: "posilek", kontekst: "kolacja" }]);
-    if (!dzien.some((p) => p.typ === "sen") && godzTeraz >= 9) luki.push(["sen", { typ: "sen" }]);
+    if (godzTeraz >= 10 && brak("śniadanie")) luki.push(["śniadanie", { typ: "posilek", kontekst: "śniadanie" }]);
+    if (godzTeraz >= 15 && brak("obiad")) luki.push(["obiad", { typ: "posilek", kontekst: "obiad" }]);
+    if (godzTeraz >= 20 && brak("kolacja")) luki.push(["kolacja", { typ: "posilek", kontekst: "kolacja" }]);
+    if (!dzien.some((p) => p.typ === "sen") && godzTeraz >= 9 && !lukiOdpiete.includes("sen")) luki.push(["sen", { typ: "sen" }]);
     const sekR = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
         <span style="font-size:13px;font-weight:600;">${new Date().toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: TZ })}</span>
         <span style="font-size:11px;color:var(--ink-soft);">🥤 wypite: <b>${wodaSuma} ml</b></span>
         <button class="rytm-dodaj" style="margin-left:auto;border:none;background:var(--turkus,#1a7158);color:#fff;border-radius:9px;padding:6px 13px;font-size:12.5px;cursor:pointer;font-weight:600;">＋ Dodaj</button>
       </div>
-      ${luki.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${luki.map(([n]) => `<button class="rytm-luka" data-i="${luki.findIndex(([x]) => x === n)}" style="border:1px dashed #e4c9a0;background:#fff8ec;color:#8a5a12;border-radius:14px;padding:4px 11px;font-size:11.5px;cursor:pointer;">○ ${escP(n)} — dodaj</button>`).join("")}</div>` : ""}
+      ${luki.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${luki.map(([n], i) => `<span style="display:inline-flex;align-items:stretch;border:1px dashed #e4c9a0;background:#fff8ec;border-radius:14px;overflow:hidden;"><button class="rytm-luka" data-i="${i}" style="border:none;background:none;color:#8a5a12;padding:4px 4px 4px 11px;font-size:11.5px;cursor:pointer;">○ ${escP(n)} — dodaj</button><button class="rytm-luka-x" data-n="${escP(n)}" title="Nie pokazuj dziś" style="border:none;background:none;color:#b08a4e;padding:4px 9px 4px 5px;font-size:12px;cursor:pointer;line-height:1;">✕</button></span>`).join("")}</div>` : ""}
       <div class="rytm-tresc"></div>
     </div>`);
     const tr = sekR.querySelector(".rytm-tresc");
@@ -2667,6 +2674,12 @@ async function renderPuls() {
     }
     sekR.querySelector(".rytm-dodaj").addEventListener("click", () => arkuszPuls(null));
     sekR.querySelectorAll(".rytm-luka").forEach((b) => b.addEventListener("click", () => { const l = luki[Number(b.dataset.i)]; if (l) arkuszPuls(null, l[1]); }));
+    sekR.querySelectorAll(".rytm-luka-x").forEach((b) => b.addEventListener("click", () => {
+      const n = b.dataset.n;
+      if (!lukiOdpiete.includes(n)) lukiOdpiete.push(n);
+      try { localStorage.setItem(lukiKlucz, JSON.stringify(lukiOdpiete)); } catch (e) {}
+      renderPuls();
+    }));
     box.appendChild(sekR);
   } catch (e) {}
   /* ── LINIA ŻYCIA — pionowa oś wszystkich zdarzeń (30 dni): filtry typów, schemat powtarzalności, raport dla lekarza ── */
@@ -3046,6 +3059,10 @@ function arkuszPuls(wpis, prefill) {
   const ov = el(`<div class="m-overlay" style="align-items:flex-end;"><div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px 22px;box-shadow:0 -8px 30px rgba(0,0,0,.2);max-height:88vh;overflow-y:auto;">
     <div style="display:flex;align-items:center;margin-bottom:10px;"><span class="ap-tytul" style="font-size:15px;font-weight:600;">${wpis ? "Edytuj wpis" : "Dodaj wpis"}</span><button class="ap-x" style="margin-left:auto;border:none;background:none;font-size:19px;cursor:pointer;color:var(--ink-soft);">✕</button></div>
     <div class="ap-typy" style="display:block;margin-bottom:2px;"></div>
+    ${wpis ? `<div class="ap-krok1-edycja" style="display:none;">
+      <div style="font-size:11.5px;color:var(--ink-soft);margin:4px 2px 10px;line-height:1.45;">Dotknij rodzaj, żeby poprawić wpis — albo usuń go poniżej.</div>
+      <button class="ap-usun1" style="width:100%;border:1px solid #e8c8c0;background:#fdf3f1;color:#c0392b;border-radius:11px;padding:11px;font-size:14px;cursor:pointer;">Usuń wpis</button>
+    </div>` : ""}
     <div class="ap-krok2" style="display:none;">
       <button class="ap-wroc" style="display:flex;align-items:center;gap:9px;width:100%;border:1px solid #1a7158;background:#e3f4f0;color:#1a7158;border-radius:11px;padding:10px 12px;font-size:14px;cursor:pointer;margin-bottom:10px;text-align:left;font-weight:600;"><span style="font-size:20px;line-height:1;font-weight:700;">←</span><span class="ap-wybrany"></span><span style="margin-left:auto;font-size:11.5px;font-weight:500;opacity:.85;">zmień rodzaj</span></button>
       <button class="ap-kiedy" style="width:100%;border:none;background:none;color:var(--ink-soft);font-size:12px;cursor:pointer;padding:2px 2px 8px;text-align:left;"></button>
@@ -3076,7 +3093,10 @@ function arkuszPuls(wpis, prefill) {
     notatka: ov.querySelector(".ap-nota") ? ov.querySelector(".ap-nota").value : "",
   });
   /* Dwa kroki: 1 = wybor rodzaju (sama lista), 2 = karta wpisu. Powrot = jedno tapniecie. */
-  let krok = 1;
+  /* Podpowiedz (luka) niesie rodzaj -> wchodzimy OD RAZU w karte 2, zostaje tylko wpisac co. */
+  let krok = prefill.typ ? 2 : 1;
+  const POSILKI = [["śniadanie", "🌅"], ["obiad", "🍽"], ["kolacja", "🌙"], ["przekąska", "🍎"]];
+  let rodzajPos = (wpis && wpis.kontekst) || prefill.kontekst || "";
   const typPierwotny = wpis ? wpis.typ : null;
   const OPIS_TYPU = {};
   GRUPY_PULS.forEach((g) => g.forEach(([t, ik, et]) => { OPIS_TYPU[t] = `${ik} ${et}`; }));
@@ -3084,6 +3104,8 @@ function arkuszPuls(wpis, prefill) {
   const rysujKrok = () => {
     typyEl.style.display = krok === 1 ? "block" : "none";
     ov.querySelector(".ap-krok2").style.display = krok === 2 ? "block" : "none";
+    const ed1 = ov.querySelector(".ap-krok1-edycja");
+    if (ed1) ed1.style.display = krok === 1 ? "block" : "none";
     ov.querySelector(".ap-tytul").textContent = krok === 1 ? (wpis ? "Co to było?" : "Co dodajesz?") : (wpis ? "Edytuj wpis" : "Dodaj wpis");
     if (krok === 2) {
       ov.querySelector(".ap-wybrany").textContent = OPIS_TYPU[typ] || typ;
@@ -3132,7 +3154,12 @@ function arkuszPuls(wpis, prefill) {
       </div>`
       + P("ap-wart", "Ile ml", "number", w.wartosc)
       + `<div class="ap-porcje" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:-3px;"></div>`;
-    else if (typ === "posilek") h = P("ap-kont", "Który posiłek", "text", w.kontekst, "śniadanie / obiad / kolacja / przekąska") + P("ap-nazwa", "Co", "text", w.nazwa, "np. jajecznica z pomidorami");
+    else if (typ === "posilek") h = `<div>
+        <label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Który posiłek</label>
+        <div class="ap-posilki" style="display:flex;gap:5px;flex-wrap:wrap;">
+          ${POSILKI.map(([k, ik]) => `<button type="button" data-p="${k}" style="border:1px solid ${rodzajPos === k ? "#1a7158" : "var(--line)"};background:${rodzajPos === k ? "#e3f4f0" : "none"};color:var(--ink);border-radius:13px;padding:7px 12px;font-size:12.5px;cursor:pointer;font-weight:${rodzajPos === k ? "600" : "400"};">${ik} ${k}</button>`).join("")}
+        </div>
+      </div>`;
     else if (typ === "mocz" || typ === "pot") h = P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · zapach");
     else if (typ === "stolec") h = P("ap-wart", "Bristol 1–7", "number", w.wartosc) + P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · krew/śluz");
     else if (typ === "sen") h = P("ap-wart", "Godzin snu", "number", w.wartosc) + P("ap-kont", "Jak spałeś", "text", w.kontekst, "przebudzenia, sny…");
@@ -3149,6 +3176,8 @@ function arkuszPuls(wpis, prefill) {
     if (prefill.kontekst && !wpis) { const k = ov.querySelector(".ap-kont"); if (k && !k.value) k.value = prefill.kontekst; }
     const nap = polaEl.querySelector(".ap-napoje");
     if (nap) nap.querySelectorAll("button[data-n]").forEach((b) => b.addEventListener("click", () => { rodzajNap = b.dataset.n; rysujPola(); }));
+    const pos = polaEl.querySelector(".ap-posilki");
+    if (pos) pos.querySelectorAll("button[data-p]").forEach((b) => b.addEventListener("click", () => { rodzajPos = b.dataset.p; rysujPola(); }));
     const porc = polaEl.querySelector(".ap-porcje");
     if (porc) {
       const rysujPorcje = (lista) => {
@@ -3192,7 +3221,7 @@ function arkuszPuls(wpis, prefill) {
       wartosc2: v.wartosc2 !== "" ? Number(v.wartosc2) : null,
       wartosc3: v.wartosc3 !== "" ? Number(v.wartosc3) : null,
       nazwa: napojem ? (rodzajNap === "woda" ? null : rodzajNap) : (v.nazwa.trim() || null),
-      kontekst: v.kontekst.trim() || null,
+      kontekst: typ === "posilek" ? (rodzajPos || null) : (v.kontekst.trim() || null),
       notatka: v.notatka.trim() || null,
       zmierzono_at: isoZWarszawy(ov.querySelector(".ap-data").value, ov.querySelector(".ap-godz").value || "12:00"),
     };
@@ -3220,13 +3249,16 @@ function arkuszPuls(wpis, prefill) {
     if (err) { trzosToast("Nie zapisano: " + err.message); return; }
     trzosToast(wpis ? "Poprawione ✓" : "Dodane ✓"); zam(); renderPuls();
   });
-  const us = ov.querySelector(".ap-usun");
-  if (us) us.addEventListener("click", async () => {
+  const usunWpis = async () => {
     if (!confirm("Usunąć ten wpis?")) return;
     const { error: err } = await supabase.from("puls_pomiary").delete().eq("id", wpis.id);
     if (err) { trzosToast("Nie usunięto: " + err.message); return; }
     trzosToast("Usunięte ✓"); zam(); renderPuls();
-  });
+  };
+  const us = ov.querySelector(".ap-usun");
+  if (us) us.addEventListener("click", usunWpis);
+  const us1 = ov.querySelector(".ap-usun1");
+  if (us1) us1.addEventListener("click", usunWpis);
 }
 /* ── ARKUSZ ZALECENIA — dodaj/edytuj/usuń regularny lek/suplement/czynność ── */
 function arkuszZalecenie(wpis) {
