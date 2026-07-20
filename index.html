@@ -3038,7 +3038,7 @@ function arkuszPuls(wpis, prefill) {
   const GRUPY_PULS = [
     [["woda", "🥤", "napój"], ["posilek", "🍽", "posiłek"]],
     [["mocz", "💧", "mocz"], ["stolec", "🚽", "kał"], ["pot", "💦", "pot"]],
-    [["cisnienie", "🩺", "ciśnienie i saturacja"], ["cukier", "🩸", "cukier"], ["temperatura", "🌡", "temp."], ["oddech", "💨", "oddech"]],
+    [["cisnienie", "🩺", "ciśnienie i saturacja"], ["cukier", "🍬", "cukier"], ["temperatura", "🌡", "temp."], ["oddech", "💨", "oddech"]],
     [["sen", "😴", "sen"], ["aktywnosc", "🏃", "aktywność"], ["praktyka", "🕯", "praktyka"]],
     [["lek", "💊", "lek"], ["suplement", "🌿", "suplement"]],
     [["__cykl", "🩸", "cykl →"]],
@@ -3101,9 +3101,13 @@ function arkuszPuls(wpis, prefill) {
      Pozycja ciala wplywa na odczyt: noga na nodze +2-8 mmHg, pelny pecherz +10-15, ramie ponizej serca zawyza. */
   const POZYCJE = [["siedząc", "🪑"], ["leżąc", "🛏"], ["stojąc", "🧍"]];
   const PORY_POM = [["rano na czczo", "🌅"], ["wieczorem", "🌙"], ["po wysiłku", "🏃"], ["po posiłku", "🍽"], ["po lekach", "💊"]];
+  /* Glukoza bez informacji KIEDY jest nieinterpretowalna: na czczo norma to 70-99,
+     a 2 h po posilku ponizej 140 - ta sama liczba znaczy co innego. */
+  const PORY_CUKIER = [["na czczo", "🌅"], ["przed posiłkiem", "🍽"], ["2 h po posiłku", "⏱"], ["przed snem", "🌙"], ["o dowolnej porze", "🕐"]];
   const kontStart = (wpis && wpis.kontekst) || "";
   let pozycja = POZYCJE.map((x) => x[0]).find((p) => kontStart.includes(p)) || "siedząc";
   let poraPom = PORY_POM.map((x) => x[0]).find((p) => kontStart.includes(p)) || "";
+  let poraCuk = PORY_CUKIER.map((x) => x[0]).find((p) => kontStart.includes(p)) || "";
   const typPierwotny = wpis ? wpis.typ : null;
   const OPIS_TYPU = {};
   GRUPY_PULS.forEach((g) => g.forEach(([t, ik, et]) => { OPIS_TYPU[t] = `${ik} ${et}`; }));
@@ -3191,11 +3195,23 @@ function arkuszPuls(wpis, prefill) {
       </div>`;
     else if (typ === "mocz" || typ === "pot") h = P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · zapach");
     else if (typ === "stolec") h = P("ap-wart", "Bristol 1–7", "number", w.wartosc) + P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · krew/śluz");
-    else if (typ === "sen") h = P("ap-wart", "Godzin snu", "number", w.wartosc) + P("ap-kont", "Jak spałeś", "text", w.kontekst, "przebudzenia, sny…");
-    else if (typ === "aktywnosc") h = P("ap-nazwa", "Rodzaj", "text", w.nazwa, "spacer / trening / rower…") + P("ap-wart", "Minut", "number", w.wartosc) + P("ap-kont", "Od–do / szczegóły", "text", w.kontekst);
+    else if (typ === "sen") h = zakresCzasu("Zasnąłem", "Obudziłem się", w.kontekst)
+      + P("ap-nota2", "Jak spałeś", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}\s*·?\s*/, ""), "przebudzenia, sny…");
+    else if (typ === "aktywnosc") h = `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Rodzaj</label>
+        <div class="ap-akt" style="display:flex;gap:5px;flex-wrap:wrap;">
+          ${AKTYWNOSCI.map(([k, ik]) => `<button type="button" data-a="${k}" style="border:1px solid ${rodzajAkt === k ? "#1a7158" : "var(--line)"};background:${rodzajAkt === k ? "#e3f4f0" : "none"};color:var(--ink);border-radius:13px;padding:6px 11px;font-size:12px;cursor:pointer;font-weight:${rodzajAkt === k ? "600" : "400"};">${ik} ${k}</button>`).join("")}
+        </div></div>`
+      + zakresCzasu("Początek", "Koniec", w.kontekst)
+      + P("ap-nota2", "Szczegóły", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}\s*·?\s*/, ""), "gdzie, z kim, jak było");
     else if (typ === "praktyka") h = P("ap-nazwa", "Rodzaj praktyki", "text", w.nazwa, "rapé / medytacja / akupunktura / sauna…") + P("ap-wart", "Minut (opcjonalnie)", "number", w.wartosc) + P("ap-kont", "Szczegóły", "text", w.kontekst, "z kim, gdzie, przebieg");
     else if (typ === "lek" || typ === "suplement") h = P("ap-nazwa", "Nazwa", "text", w.nazwa) + P("ap-wart", "Dawka", "number", w.wartosc) + P("ap-kont", "Jednostka", "text", w.kontekst, "mg / tabletki / j.m.");
     else if (typ === "objaw") h = P("ap-nazwa", "Co dolega", "text", w.nazwa, "np. ból głowy") + P("ap-wart", "Nasilenie 1–10", "number", w.wartosc) + P("ap-kont", "Gdzie / cechy", "text", (w.lokalizacja || w.kontekst));
+    else if (typ === "cukier") h = P("ap-wart", "Glukoza (mg/dl)", "number", w.wartosc, "np. 95")
+      + `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Kiedy zmierzone</label>
+        <div class="ap-poracuk" style="display:flex;gap:5px;flex-wrap:wrap;">
+          ${PORY_CUKIER.map(([k, ik]) => `<button type="button" data-c="${k}" style="border:1px solid ${poraCuk === k ? "#1a7158" : "var(--line)"};background:${poraCuk === k ? "#e3f4f0" : "none"};color:var(--ink);border-radius:13px;padding:6px 11px;font-size:12px;cursor:pointer;font-weight:${poraCuk === k ? "600" : "400"};">${ik} ${k}</button>`).join("")}
+        </div></div>`
+      + `<div style="font-size:11px;color:var(--ink-soft);line-height:1.45;">Bez tej informacji liczba niewiele mówi — na czczo i dwie godziny po posiłku obowiązują zupełnie inne zakresy.</div>`;
     else if (typ === "oddech") h = P("ap-wart", "Oddechy na minutę", "number", w.wartosc) + P("ap-kont", "Kontekst", "text", w.kontekst, "spoczynek / po wysiłku");
     else if (typ === "wzrost") h = P("ap-wart", "Wzrost w cm", "number", w.wartosc);
     else if (typ === "talia") h = P("ap-wart", "Obwód talii w cm", "number", w.wartosc) + P("ap-kont", "Kontekst", "text", w.kontekst, "mierz na wydechu, nad pępkiem");
@@ -3236,6 +3252,8 @@ function arkuszPuls(wpis, prefill) {
     if (poz) poz.querySelectorAll("button[data-z]").forEach((b) => b.addEventListener("click", () => { pozycja = b.dataset.z; rysujPola(true); }));
     const por = polaEl.querySelector(".ap-pora");
     if (por) por.querySelectorAll("button[data-o]").forEach((b) => b.addEventListener("click", () => { poraPom = poraPom === b.dataset.o ? "" : b.dataset.o; rysujPola(true); }));
+    const pcuk = polaEl.querySelector(".ap-poracuk");
+    if (pcuk) pcuk.querySelectorAll("button[data-c]").forEach((b) => b.addEventListener("click", () => { poraCuk = poraCuk === b.dataset.c ? "" : b.dataset.c; rysujPola(true); }));
     const porc = polaEl.querySelector(".ap-porcje");
     if (porc) {
       const rysujPorcje = (lista) => {
@@ -3281,6 +3299,7 @@ function arkuszPuls(wpis, prefill) {
       nazwa: napojem ? (rodzajNap === "woda" ? null : rodzajNap) : (v.nazwa.trim() || null),
       kontekst: typ === "posilek" ? (rodzajPos || null)
         : (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") ? [pozycja, poraPom].filter(Boolean).join(" · ")
+        : typ === "cukier" ? (poraCuk || null)
         : (v.kontekst.trim() || null),
       notatka: v.notatka.trim() || null,
       zmierzono_at: isoZWarszawy(ov.querySelector(".ap-data").value, ov.querySelector(".ap-godz").value || "12:00"),
