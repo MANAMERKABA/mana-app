@@ -3154,7 +3154,8 @@ function arkuszPuls(wpis, prefill) {
       + `<div style="display:flex;gap:8px;">
           <div style="flex:1;"><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Skurczowe <span style="opacity:.75;">— lub całość</span></label>
             <input class="ap-wart" type="text" inputmode="numeric" value="${typ === "cisnienie" && w.wartosc != null ? escP(String(w.wartosc)) : ""}" placeholder="172/113/75" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
-          ${P("ap-wart2", "Rozkurczowe", "number", w.wartosc2)}
+          <div style="flex:1;"><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Rozkurczowe</label>
+            <input class="ap-wart2" type="text" inputmode="numeric" value="${w.wartosc2 != null ? escP(String(w.wartosc2)) : ""}" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;"></div>
         </div>`
       + `<div style="display:flex;gap:8px;">${P("ap-wart3", "Tętno", "number", (typ === "tetno" ? w.wartosc : w.wartosc3))}${P("ap-sat", "Saturacja %", "number", typ === "saturacja" ? w.wartosc : null)}</div>`
       + `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Pozycja</label>
@@ -3200,16 +3201,26 @@ function arkuszPuls(wpis, prefill) {
     if (pos) pos.querySelectorAll("button[data-p]").forEach((b) => b.addEventListener("click", () => { rodzajPos = b.dataset.p; rysujPola(); }));
     /* Jedno pole przyjmuje calosc: „172/113/75", „172 113 75", „172-113-75" - rozklada sie samo.
        Wyzwala sie TYLKO gdy pojawi sie znak niebedacy cyfra, wiec zwykle wpisywanie liczby dziala normalnie. */
-    const wpiszCalosc = polaEl.querySelector(".ap-wart");
-    if (wpiszCalosc && (typ === "cisnienie" || typ === "saturacja" || typ === "tetno")) {
-      wpiszCalosc.addEventListener("input", () => {
-        const v = wpiszCalosc.value;
-        if (!/\D/.test(v)) return;
-        const l = (v.match(/\d{1,3}/g) || []).slice(0, 3);
-        if (l.length < 2) return;
-        wpiszCalosc.value = l[0];
-        const p2 = polaEl.querySelector(".ap-wart2"); if (p2) p2.value = l[1];
-        const p3 = polaEl.querySelector(".ap-wart3"); if (p3 && l[2]) p3.value = l[2];
+    if (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") {
+      const lancuch = [polaEl.querySelector(".ap-wart"), polaEl.querySelector(".ap-wart2"), polaEl.querySelector(".ap-wart3")];
+      lancuch.forEach((el0, i) => {
+        if (!el0) return;
+        el0.addEventListener("input", () => {
+          const v = el0.value;
+          if (!/\D/.test(v)) return;                       // same cyfry - nie ruszamy
+          const l = (v.match(/\d{1,3}/g) || []);
+          if (!l.length) { el0.value = ""; return; }
+          el0.value = l[0];
+          let ost = el0;                                    // gdzie postawic kursor
+          for (let j = 1; j < l.length && i + j < lancuch.length; j++) {
+            const nast = lancuch[i + j];
+            if (!nast) break;
+            nast.value = l[j]; ost = nast;
+          }
+          // separator na koncu („172/") tez przenosi dalej, zeby dalsze cyfry szly we wlasciwe pole
+          if (l.length === 1 && lancuch[i + 1]) { lancuch[i + 1].value = ""; ost = lancuch[i + 1]; }
+          if (ost !== el0) { ost.focus(); try { ost.setSelectionRange(ost.value.length, ost.value.length); } catch (e) {} }
+        });
       });
     }
     const poz = polaEl.querySelector(".ap-pozycja");
