@@ -3025,7 +3025,7 @@ function arkuszPuls(wpis, prefill) {
   const GRUPY_PULS = [
     [["woda", "🥤", "napój"], ["posilek", "🍽", "posiłek"]],
     [["mocz", "💧", "mocz"], ["stolec", "🚽", "kał"], ["pot", "💦", "pot"]],
-    [["cisnienie", "🩺", "ciśnienie"], ["tetno", "💓", "tętno"], ["cukier", "🩸", "cukier"], ["saturacja", "🫁", "saturacja"], ["temperatura", "🌡", "temp."], ["oddech", "🌬", "oddech"]],
+    [["cisnienie", "🩺", "ciśnienie i saturacja"], ["cukier", "🩸", "cukier"], ["temperatura", "🌡", "temp."], ["oddech", "💨", "oddech"]],
     [["sen", "😴", "sen"], ["aktywnosc", "🏃", "aktywność"], ["praktyka", "🕯", "praktyka"]],
     [["lek", "💊", "lek"], ["suplement", "🌿", "suplement"]],
     [["__cykl", "🩸", "cykl →"]],
@@ -3070,6 +3070,7 @@ function arkuszPuls(wpis, prefill) {
     wartosc: ov.querySelector(".ap-wart") ? ov.querySelector(".ap-wart").value : "",
     wartosc2: ov.querySelector(".ap-wart2") ? ov.querySelector(".ap-wart2").value : "",
     wartosc3: ov.querySelector(".ap-wart3") ? ov.querySelector(".ap-wart3").value : "",
+    sat: ov.querySelector(".ap-sat") ? ov.querySelector(".ap-sat").value : "",
     nazwa: ov.querySelector(".ap-nazwa") ? ov.querySelector(".ap-nazwa").value : "",
     kontekst: ov.querySelector(".ap-kont") ? ov.querySelector(".ap-kont").value : "",
     notatka: ov.querySelector(".ap-nota") ? ov.querySelector(".ap-nota").value : "",
@@ -3119,8 +3120,10 @@ function arkuszPuls(wpis, prefill) {
     /* przy zmianie rodzaju w edycji NIE przenosimy pol liczbowych - 250 ml nie moze zostac nasileniem 250/10 */
     const w = zgodnyZWpisem() ? wpis : {};
     let h = "";
-    if (typ === "cisnienie") h = P("ap-wart", "Skurczowe", "number", w.wartosc) + P("ap-wart2", "Rozkurczowe", "number", w.wartosc2) + P("ap-wart3", "Tętno (ciśnieniomierz podaje je razem)", "number", w.wartosc3);
-    else if (typ === "saturacja") h = P("ap-wart", "Saturacja w %", "number", w.wartosc) + P("ap-wart3", "Tętno (pulsoksymetr podaje je razem)", "number", w.wartosc3);
+    if (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") h =
+        `<div style="font-size:11.5px;color:var(--ink-soft);line-height:1.45;margin-bottom:2px;">Wypełnij to, co pokazało urządzenie — resztę zostaw pustą. Ciśnieniomierz i pulsoksymetr podają tętno razem z pomiarem.</div>`
+      + `<div style="display:flex;gap:8px;">${P("ap-wart", "Skurczowe", "number", typ === "cisnienie" ? w.wartosc : null)}${P("ap-wart2", "Rozkurczowe", "number", w.wartosc2)}</div>`
+      + `<div style="display:flex;gap:8px;">${P("ap-wart3", "Tętno", "number", (typ === "tetno" ? w.wartosc : w.wartosc3))}${P("ap-sat", "Saturacja %", "number", typ === "saturacja" ? w.wartosc : null)}</div>`;
     else if (typ === "woda" || typ === "napoj") h = `<div>
         <label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Co pijesz</label>
         <div class="ap-napoje" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:4px;">
@@ -3194,6 +3197,23 @@ function arkuszPuls(wpis, prefill) {
       zmierzono_at: isoZWarszawy(ov.querySelector(".ap-data").value, ov.querySelector(".ap-godz").value || "12:00"),
     };
     if ((typ === "objaw" || typ === "praktyka") && !rek.nazwa) { trzosToast((typ === "objaw" ? "Objaw" : "Praktyka") + " wymaga nazwy."); return; }
+    /* Jeden pomiar, jedna karta - ale w bazie moga powstac DWA wpisy (cisnienie i saturacja),
+       bo to dwie rozne wielkosci zmierzone przy jednej okazji. Tetno doklejamy do pierwszego z nich. */
+    if (!wpis && (typ === "cisnienie" || typ === "saturacja" || typ === "tetno")) {
+      const sk = v.wartosc !== "" ? Number(v.wartosc) : null;
+      const roz = v.wartosc2 !== "" ? Number(v.wartosc2) : null;
+      const tet = v.wartosc3 !== "" ? Number(v.wartosc3) : null;
+      const sat = v.sat !== "" ? Number(v.sat) : null;
+      if (sk === null && roz === null && tet === null && sat === null) { trzosToast("Wpisz przynajmniej jedna wartosc."); return; }
+      const wsp = { traveler_id: TRAVELER.id, zmierzono_at: rek.zmierzono_at, kontekst: rek.kontekst, notatka: rek.notatka };
+      const doZapisu = [];
+      if (sk !== null || roz !== null) doZapisu.push({ ...wsp, typ: "cisnienie", wartosc: sk, wartosc2: roz, wartosc3: tet });
+      if (sat !== null) doZapisu.push({ ...wsp, typ: "saturacja", wartosc: sat, wartosc3: doZapisu.length ? null : tet });
+      if (!doZapisu.length && tet !== null) doZapisu.push({ ...wsp, typ: "tetno", wartosc: tet });
+      const { error: e2 } = await supabase.from("puls_pomiary").insert(doZapisu);
+      if (e2) { trzosToast("Nie zapisano: " + e2.message); return; }
+      trzosToast(doZapisu.length > 1 ? "Dodane ✓ (2 wpisy)" : "Dodane ✓"); zam(); renderPuls(); return;
+    }
     let err;
     if (wpis) ({ error: err } = await supabase.from("puls_pomiary").update(rek).eq("id", wpis.id));
     else ({ error: err } = await supabase.from("puls_pomiary").insert({ ...rek, traveler_id: TRAVELER.id }));
