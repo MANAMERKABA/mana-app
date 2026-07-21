@@ -3097,8 +3097,9 @@ function arkuszPuls(wpis, prefill) {
     notatka: ov.querySelector(".ap-nota") ? ov.querySelector(".ap-nota").value : "",
   });
   /* Dwa kroki: 1 = wybor rodzaju (sama lista), 2 = karta wpisu. Powrot = jedno tapniecie. */
-  /* Podpowiedz (luka) niesie rodzaj -> wchodzimy OD RAZU w karte 2, zostaje tylko wpisac co. */
-  let krok = prefill.typ ? 2 : 1;
+  /* Od razu karta 2, gdy rodzaj jest znany: przy EDYCJI istniejacego wpisu i przy wejsciu z podpowiedzi.
+     Zmiana rodzaju zostaje dostepna przyciskiem „zmien rodzaj" - zadnego zbednego tapniecia. */
+  let krok = (prefill.typ || wpis) ? 2 : 1;
   const POSILKI = [["śniadanie", "🌅"], ["obiad", "🍽"], ["kolacja", "🌙"], ["przekąska", "🍎"]];
   let rodzajPos = (wpis && wpis.kontekst) || prefill.kontekst || "";
   /* Cisnienie bez kontekstu jest slaba dana - ta sama liczba znaczy co innego siedzac i po wysilku.
