@@ -3173,6 +3173,18 @@ function arkuszPuls(wpis, prefill) {
   ];
   let kolorWyd = (wpis && wpis.lokalizacja) || "";
   let rodzajAkt = (wpis && wpis.nazwa) || "";
+  /* Skale zamiast pola „Wartosc" - jedno tapniecie zamiast klawiatury. 1-5 tak jak u asystenta. */
+  const skalaIkon = (etykieta, opcje, val) => `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">${etykieta}</label>
+      <div class="ap-skala" style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${opcje.map(([n, ik]) => `<button type="button" data-s="${n}" style="flex:1;min-width:52px;border:1px solid ${String(val) === n ? "#1a7158" : "var(--line)"};background:${String(val) === n ? "#e3f4f0" : "var(--surface)"};border-radius:11px;padding:9px 4px;font-size:21px;line-height:1.1;cursor:pointer;">${ik}<div style="font-size:10.5px;color:var(--ink-soft);">${n}</div></button>`).join("")}
+      </div>
+      <input class="ap-wart" type="hidden" value="${val != null ? escP(String(val)) : ""}"></div>`;
+  const skala = (etykieta, od, doV, val, podpis) => `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">${etykieta}</label>
+      <div class="ap-skala" style="display:flex;gap:4px;flex-wrap:wrap;">
+        ${Array.from({ length: doV - od + 1 }, (_, i) => od + i).map((n) => `<button type="button" data-s="${n}" style="flex:1;min-width:32px;border:1px solid ${String(val) === String(n) ? "#1a7158" : "var(--line)"};background:${String(val) === String(n) ? "#e3f4f0" : "var(--surface)"};color:var(--ink);border-radius:9px;padding:8px 2px;font-size:13px;font-weight:${String(val) === String(n) ? "700" : "400"};cursor:pointer;">${n}</button>`).join("")}
+      </div>
+      ${podpis ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:4px;">${podpis}</div>` : ""}
+      <input class="ap-wart" type="hidden" value="${val != null ? escP(String(val)) : ""}"></div>`;
   const BRISTOL = [[1, "Twarde grudki, oddzielne — silne zaparcie"], [2, "Grudkowaty wałeczek — zaparcie"], [3, "Wałeczek z pęknięciami — prawidłowo"], [4, "Gładki, miękki wałeczek — optimum"], [5, "Miękkie kawałki o wyraźnych brzegach — brak błonnika"], [6, "Papkowaty, postrzępione brzegi — biegunkowo"], [7, "Wodnisty, bez części stałych — biegunka"]];
   const paletaKolorow = (etykieta, lista) => `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">${etykieta}</label>
       <div class="ap-kolor" style="display:flex;gap:5px;flex-wrap:wrap;">
@@ -3255,7 +3267,18 @@ function arkuszPuls(wpis, prefill) {
       + P("ap-nota2", "Szczegóły", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}\s*·?\s*/, ""), "gdzie, z kim, jak było");
     else if (typ === "praktyka") h = P("ap-nazwa", "Rodzaj praktyki", "text", w.nazwa, "rapé / medytacja / akupunktura / sauna…") + P("ap-wart", "Minut (opcjonalnie)", "number", w.wartosc) + P("ap-kont", "Szczegóły", "text", w.kontekst, "z kim, gdzie, przebieg");
     else if (typ === "lek" || typ === "suplement") h = P("ap-nazwa", "Nazwa", "text", w.nazwa) + P("ap-wart", "Dawka", "number", w.wartosc) + P("ap-kont", "Jednostka", "text", w.kontekst, "mg / tabletki / j.m.");
-    else if (typ === "objaw") h = P("ap-nazwa", "Co dolega", "text", w.nazwa, "np. ból głowy") + P("ap-wart", "Nasilenie 1–10", "number", w.wartosc) + P("ap-kont", "Gdzie / cechy", "text", (w.lokalizacja || w.kontekst));
+    else if (typ === "objaw") h = P("ap-nazwa", "Co dolega", "text", w.nazwa, "np. ból głowy")
+      + skala("Nasilenie", 1, 10, w.wartosc, "1 = ledwie czuję · 10 = nie do wytrzymania")
+      + P("ap-kont", "Gdzie / cechy", "text", (w.lokalizacja || w.kontekst), "np. skroń, promieniuje do karku")
+      + `<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;cursor:pointer;line-height:1.4;">
+          <input class="ap-wywrocilo" type="checkbox" ${w.wywrocilo_dzien ? "checked" : ""} style="width:17px;height:17px;flex:0 0 auto;margin-top:1px;">
+          <span>To wywróciło mi dzień <span style="color:var(--ink-soft);">— odwołane plany, nieprzepracowany dzień</span></span>
+        </label>
+        <div style="font-size:11px;color:var(--ink-soft);line-height:1.45;">Pytam o to nie bez powodu: dolegliwość, która wywraca dzień, bywa latami uznawana za normę — a mówi najwięcej.</div>`;
+    else if (typ === "nastroj") h = skalaIkon("Jak się czujesz", [["1", "😞"], ["2", "🙁"], ["3", "😐"], ["4", "🙂"], ["5", "😄"]], w.wartosc);
+    else if (typ === "energia") h = skalaIkon("Ile masz energii", [["1", "🪫"], ["2", "🔅"], ["3", "🔆"], ["4", "⚡"], ["5", "🔋"]], w.wartosc) + P("ap-kont", "Kontekst", "text", w.kontekst, "np. po obiedzie, po nieprzespanej nocy");
+    else if (typ === "stres") h = skalaIkon("Poziom napięcia", [["1", "😌"], ["2", "🙂"], ["3", "😕"], ["4", "😖"], ["5", "🤯"]], w.wartosc) + P("ap-kont", "Z czego wynika", "text", w.kontekst, "praca, rozmowa, termin…");
+    else if (typ === "temperatura") h = P("ap-wart", "Temperatura °C", "number", w.wartosc, "np. 36.6") + P("ap-kont", "Gdzie mierzona", "text", w.kontekst, "pod pachą / w uchu / na czole");
     else if (typ === "cukier") h = P("ap-wart", "Glukoza (mg/dl)", "number", w.wartosc, "np. 95")
       + `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Kiedy zmierzone</label>
         <div class="ap-poracuk" style="display:flex;gap:5px;flex-wrap:wrap;">
@@ -3302,6 +3325,11 @@ function arkuszPuls(wpis, prefill) {
     if (poz) poz.querySelectorAll("button[data-z]").forEach((b) => b.addEventListener("click", () => { pozycja = b.dataset.z; rysujPola(true); }));
     const por = polaEl.querySelector(".ap-pora");
     if (por) por.querySelectorAll("button[data-o]").forEach((b) => b.addEventListener("click", () => { poraPom = poraPom === b.dataset.o ? "" : b.dataset.o; rysujPola(true); }));
+    const skl = polaEl.querySelector(".ap-skala");
+    if (skl) skl.querySelectorAll("button[data-s]").forEach((b) => b.addEventListener("click", () => {
+      const pw = polaEl.querySelector(".ap-wart"); if (pw) pw.value = b.dataset.s;
+      skl.querySelectorAll("button[data-s]").forEach((x) => { const on = x.dataset.s === b.dataset.s; x.style.border = `1px solid ${on ? "#1a7158" : "var(--line)"}`; x.style.background = on ? "#e3f4f0" : "var(--surface)"; if (x.style.fontWeight) x.style.fontWeight = on ? "700" : "400"; });
+    }));
     const kol = polaEl.querySelector(".ap-kolor");
     if (kol) kol.querySelectorAll("button[data-k]").forEach((b) => b.addEventListener("click", () => { kolorWyd = kolorWyd === b.dataset.k ? "" : b.dataset.k; rysujPola(true); }));
     const bri = polaEl.querySelector(".ap-bristol");
@@ -3378,6 +3406,7 @@ function arkuszPuls(wpis, prefill) {
       wartosc3: v.wartosc3 !== "" ? Number(v.wartosc3) : null,
       nazwa: napojem ? (rodzajNap === "woda" ? null : rodzajNap) : typ === "aktywnosc" ? (rodzajAkt || null) : (v.nazwa.trim() || null),
       lokalizacja: (typ === "mocz" || typ === "stolec") ? (kolorWyd || null) : undefined,
+      wywrocilo_dzien: typ === "objaw" ? !!(ov.querySelector(".ap-wywrocilo") && ov.querySelector(".ap-wywrocilo").checked) : undefined,
       kontekst: typ === "posilek" ? (rodzajPos || null)
         : (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") ? [pozycja, poraPom].filter(Boolean).join(" · ")
         : typ === "cukier" ? (poraCuk || null)
