@@ -2622,6 +2622,8 @@ async function renderPuls() {
       if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
       if (p.typ === "saturacja") return `<b>${p.wartosc}%</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
       if (p.typ === "napoj") return `${escP(p.nazwa || "napój")}${p.wartosc ? ` <b>${p.wartosc} ml</b>` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "mocz") return `${p.wartosc ? `<b>${p.wartosc} ml</b>` : ""}${p.lokalizacja ? ` · ${escP(p.lokalizacja)}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}` || "—";
+      if (p.typ === "stolec") return `${p.wartosc ? `<b>Bristol ${p.wartosc}</b>` : ""}${p.lokalizacja ? ` · ${escP(p.lokalizacja)}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}` || "—";
       if (p.typ === "posilek") return `${escP(p.kontekst || "")}${p.kontekst ? ": " : ""}${escP(p.nazwa || "")}`;
       if (p.typ === "lek" || p.typ === "suplement") return `${escP(p.nazwa || "")}${p.wartosc != null ? " · " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : ""}`;
       if (p.typ === "aktywnosc") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
@@ -2694,6 +2696,8 @@ async function renderPuls() {
         if (p.typ === "cisnienie") return `<b>${p.wartosc}/${p.wartosc2}</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
       if (p.typ === "saturacja") return `<b>${p.wartosc}%</b>${p.wartosc3 ? ` · 💓 ${p.wartosc3}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
       if (p.typ === "napoj") return `${escP(p.nazwa || "napój")}${p.wartosc ? ` <b>${p.wartosc} ml</b>` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
+      if (p.typ === "mocz") return `${p.wartosc ? `<b>${p.wartosc} ml</b>` : ""}${p.lokalizacja ? ` · ${escP(p.lokalizacja)}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}` || "—";
+      if (p.typ === "stolec") return `${p.wartosc ? `<b>Bristol ${p.wartosc}</b>` : ""}${p.lokalizacja ? ` · ${escP(p.lokalizacja)}` : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}` || "—";
         if (p.typ === "posilek") return `${escP(p.kontekst || "posiłek")}: ${escP(p.nazwa || "")}`;
         if (p.typ === "lek" || p.typ === "suplement") return `${escP(p.nazwa || "")}${p.wartosc != null ? " " + p.wartosc + (p.kontekst ? " " + escP(p.kontekst) : "") : ""}`;
         if (p.typ === "aktywnosc" || p.typ === "praktyka") return `${escP(p.nazwa || "")}${p.wartosc ? " <b>" + p.wartosc + " min</b>" : ""}${p.kontekst ? " · " + escP(p.kontekst) : ""}`;
@@ -3152,7 +3156,28 @@ function arkuszPuls(wpis, prefill) {
   /* Czas trwania liczy MASZYNA - czlowiek podaje tylko poczatek i koniec.
      Same godziny nios wiecej niz sam czas: polozenie sie o 23 i o 2 to nie to samo przy tych samych 7 h. */
   const AKTYWNOSCI = [["spacer", "🚶"], ["siłownia", "🏋"], ["kardio", "🏃"], ["rower", "🚲"], ["basen", "🏊"], ["joga", "🧘"], ["praca fizyczna", "🔨"], ["inne", "📌"]];
+  /* Kolor opisany slowem jest bezwartosciowy - „ciemny" u jednego to „normalny" u drugiego.
+     Paleta daje wszystkim te sama skale. Odcienie wg klinicznych kart nawodnienia. */
+  const KOLORY_MOCZ = [
+    ["przezroczysty", "#F7F8EE", "dużo płynów"], ["jasny słomkowy", "#F6EFB4", "optymalnie"],
+    ["słomkowy", "#F2E489", "dobrze"], ["ciemnożółty", "#E9CF52", "pij więcej"],
+    ["bursztynowy", "#D9A93C", "odwodnienie"], ["brązowy", "#9C6B2F", "do sprawdzenia"],
+    ["różowy / czerwonawy", "#D98A8A", "buraki albo krew"],
+  ];
+  const KOLORY_STOLEC = [
+    ["brązowy", "#8B5A2B", "typowy"], ["jasnobrązowy", "#B08150", ""], ["ciemnobrązowy", "#5C3A1E", ""],
+    ["żółtawy", "#D9BE6A", "tłuszcz?"], ["zielonkawy", "#7A8B4A", "szybki pasaż"],
+    ["gliniasty / bardzo jasny", "#D8CDBA", "do sprawdzenia"], ["czarny / smolisty", "#2B2B2B", "do sprawdzenia"],
+    ["z krwią", "#B3403A", "do sprawdzenia"],
+  ];
+  let kolorWyd = (wpis && wpis.lokalizacja) || "";
   let rodzajAkt = (wpis && wpis.nazwa) || "";
+  const BRISTOL = [[1, "Twarde grudki, oddzielne — silne zaparcie"], [2, "Grudkowaty wałeczek — zaparcie"], [3, "Wałeczek z pęknięciami — prawidłowo"], [4, "Gładki, miękki wałeczek — optimum"], [5, "Miękkie kawałki o wyraźnych brzegach — brak błonnika"], [6, "Papkowaty, postrzępione brzegi — biegunkowo"], [7, "Wodnisty, bez części stałych — biegunka"]];
+  const paletaKolorow = (etykieta, lista) => `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">${etykieta}</label>
+      <div class="ap-kolor" style="display:flex;gap:5px;flex-wrap:wrap;">
+        ${lista.map(([n, hex, uw]) => `<button type="button" data-k="${escP(n)}" data-uw="${escP(uw)}" title="${escP(n)}${uw ? " — " + escP(uw) : ""}" style="width:38px;height:38px;border-radius:10px;border:${kolorWyd === n ? "3px solid #1a7158" : "1px solid var(--line)"};background:${hex};cursor:pointer;padding:0;"></button>`).join("")}
+      </div>
+      <div class="ap-kolor-opis" style="font-size:11.5px;color:var(--ink-soft);margin-top:5px;line-height:1.4;">${kolorWyd ? escP(kolorWyd) + ((lista.find((x) => x[0] === kolorWyd) || ["", "", ""])[2] ? " — " + escP((lista.find((x) => x[0] === kolorWyd) || ["", "", ""])[2]) : "") : "Dotknij odcień najbliższy temu, co widzisz."}</div></div>`;
   const czasyZKontekstu = (k) => { const m = String(k || "").match(/(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})/); return m ? [m[1], m[2]] : ["", ""]; };
   const zakresCzasu = (etOd, etDo, kont) => {
     const [a, b] = czasyZKontekstu(kont);
@@ -3207,8 +3232,18 @@ function arkuszPuls(wpis, prefill) {
           ${POSILKI.map(([k, ik]) => `<button type="button" data-p="${k}" style="border:1px solid ${rodzajPos === k ? "#1a7158" : "var(--line)"};background:${rodzajPos === k ? "#e3f4f0" : "none"};color:var(--ink);border-radius:13px;padding:7px 12px;font-size:12.5px;cursor:pointer;font-weight:${rodzajPos === k ? "600" : "400"};">${ik} ${k}</button>`).join("")}
         </div>
       </div>`;
-    else if (typ === "mocz" || typ === "pot") h = P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · zapach");
-    else if (typ === "stolec") h = P("ap-wart", "Bristol 1–7", "number", w.wartosc) + P("ap-kont", "Cechy", "text", w.kontekst, "ilość · kolor · krew/śluz");
+    else if (typ === "mocz") h = P("ap-wart", "Ile ml", "number", w.wartosc, "np. 150")
+      + paletaKolorow("Kolor", KOLORY_MOCZ)
+      + P("ap-kont", "Uwagi", "text", w.kontekst, "pieczenie, parcie, zapach, mętny…");
+    else if (typ === "stolec") h = `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Konsystencja wg skali Bristolskiej</label>
+        <div class="ap-bristol" style="display:flex;gap:4px;flex-wrap:wrap;">
+          ${BRISTOL.map(([n, op]) => `<button type="button" data-b="${n}" title="${escP(op)}" style="border:1px solid ${String(w.wartosc) === String(n) ? "#1a7158" : "var(--line)"};background:${String(w.wartosc) === String(n) ? "#e3f4f0" : "none"};color:var(--ink);border-radius:10px;padding:7px 10px;font-size:12.5px;cursor:pointer;font-weight:${String(w.wartosc) === String(n) ? "600" : "400"};">${n}</button>`).join("")}
+        </div>
+        <div class="ap-bristol-opis" style="font-size:11.5px;color:var(--ink-soft);margin-top:5px;line-height:1.4;">${w.wartosc ? escP((BRISTOL.find((x) => String(x[0]) === String(w.wartosc)) || ["", ""])[1]) : "3–4 to optimum. 1–2 = zaparcie, 6–7 = biegunkowo."}</div>
+        <input class="ap-wart" type="hidden" value="${w.wartosc != null ? escP(String(w.wartosc)) : ""}"></div>`
+      + paletaKolorow("Kolor", KOLORY_STOLEC)
+      + P("ap-kont", "Uwagi", "text", w.kontekst, "śluz, niestrawione resztki, parcie…");
+    else if (typ === "pot") h = P("ap-kont", "Cechy", "text", w.kontekst, "kiedy, jak obfity, zapach");
     else if (typ === "sen") h = zakresCzasu("Zasnąłem", "Obudziłem się", w.kontekst)
       + P("ap-nota2", "Jak spałeś", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}\s*·?\s*/, ""), "przebudzenia, sny…");
     else if (typ === "aktywnosc") h = `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Rodzaj</label>
@@ -3266,6 +3301,15 @@ function arkuszPuls(wpis, prefill) {
     if (poz) poz.querySelectorAll("button[data-z]").forEach((b) => b.addEventListener("click", () => { pozycja = b.dataset.z; rysujPola(true); }));
     const por = polaEl.querySelector(".ap-pora");
     if (por) por.querySelectorAll("button[data-o]").forEach((b) => b.addEventListener("click", () => { poraPom = poraPom === b.dataset.o ? "" : b.dataset.o; rysujPola(true); }));
+    const kol = polaEl.querySelector(".ap-kolor");
+    if (kol) kol.querySelectorAll("button[data-k]").forEach((b) => b.addEventListener("click", () => { kolorWyd = kolorWyd === b.dataset.k ? "" : b.dataset.k; rysujPola(true); }));
+    const bri = polaEl.querySelector(".ap-bristol");
+    if (bri) bri.querySelectorAll("button[data-b]").forEach((b) => b.addEventListener("click", () => {
+      const pw = polaEl.querySelector(".ap-wart"); if (pw) pw.value = b.dataset.b;
+      bri.querySelectorAll("button[data-b]").forEach((x) => { const on = x.dataset.b === b.dataset.b; x.style.border = `1px solid ${on ? "#1a7158" : "var(--line)"}`; x.style.background = on ? "#e3f4f0" : "none"; x.style.fontWeight = on ? "600" : "400"; });
+      const op = polaEl.querySelector(".ap-bristol-opis");
+      if (op) op.textContent = (BRISTOL.find((x) => String(x[0]) === b.dataset.b) || ["", ""])[1];
+    }));
     const akt = polaEl.querySelector(".ap-akt");
     if (akt) akt.querySelectorAll("button[data-a]").forEach((b) => b.addEventListener("click", () => { rodzajAkt = b.dataset.a; rysujPola(true); }));
     const eOd = polaEl.querySelector(".ap-od"), eDo = polaEl.querySelector(".ap-do");
@@ -3332,6 +3376,7 @@ function arkuszPuls(wpis, prefill) {
       wartosc2: v.wartosc2 !== "" ? Number(v.wartosc2) : null,
       wartosc3: v.wartosc3 !== "" ? Number(v.wartosc3) : null,
       nazwa: napojem ? (rodzajNap === "woda" ? null : rodzajNap) : typ === "aktywnosc" ? (rodzajAkt || null) : (v.nazwa.trim() || null),
+      lokalizacja: (typ === "mocz" || typ === "stolec") ? (kolorWyd || null) : undefined,
       kontekst: typ === "posilek" ? (rodzajPos || null)
         : (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") ? [pozycja, poraPom].filter(Boolean).join(" · ")
         : typ === "cukier" ? (poraCuk || null)
