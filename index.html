@@ -3266,7 +3266,12 @@ function arkuszPuls(wpis, prefill) {
       + zakresCzasu("Początek", "Koniec", w.kontekst)
       + P("ap-nota2", "Szczegóły", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}\s*·?\s*/, ""), "gdzie, z kim, jak było");
     else if (typ === "praktyka") h = P("ap-nazwa", "Rodzaj praktyki", "text", w.nazwa, "rapé / medytacja / akupunktura / sauna…") + P("ap-wart", "Minut (opcjonalnie)", "number", w.wartosc) + P("ap-kont", "Szczegóły", "text", w.kontekst, "z kim, gdzie, przebieg");
-    else if (typ === "lek" || typ === "suplement") h = P("ap-nazwa", "Nazwa", "text", w.nazwa) + P("ap-wart", "Dawka", "number", w.wartosc) + P("ap-kont", "Jednostka", "text", w.kontekst, "mg / tabletki / j.m.");
+    else if (typ === "lek" || typ === "suplement") h = P("ap-nazwa", "Nazwa", "text", w.nazwa)
+      + `<div style="display:flex;gap:8px;">${P("ap-wart", "Dawka", "number", w.wartosc)}<div style="flex:1;"><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Jednostka</label>
+          <div class="ap-jedn" style="display:flex;gap:4px;flex-wrap:wrap;">
+            ${["tabletka", "mg", "ml", "kropli", "j.m."].map((j) => `<button type="button" data-j="${j}" style="border:1px solid ${(w.kontekst || "") === j ? "#1a7158" : "var(--line)"};background:${(w.kontekst || "") === j ? "#e3f4f0" : "none"};color:var(--ink);border-radius:11px;padding:6px 9px;font-size:12px;cursor:pointer;">${j}</button>`).join("")}
+          </div><input class="ap-kont" type="hidden" value="${w.kontekst != null ? escP(String(w.kontekst)) : ""}"></div></div>`
+      + `<div style="font-size:11.5px;color:var(--ink-soft);background:rgba(127,127,127,.06);border-radius:9px;padding:9px 10px;line-height:1.45;">To wpis <b>doraźny</b> — coś, co bierzesz teraz. Jeśli masz to brać regularnie, po zapisaniu zaproponuję dodanie do <b>Zaleceń</b>, gdzie MANA przypomni i policzy, czy się wywiązujesz.</div>`;
     else if (typ === "objaw") h = P("ap-nazwa", "Co dolega", "text", w.nazwa, "np. ból głowy")
       + skala("Nasilenie", 1, 10, w.wartosc, "1 = ledwie czuję · 10 = nie do wytrzymania")
       + P("ap-kont", "Gdzie / cechy", "text", (w.lokalizacja || w.kontekst), "np. skroń, promieniuje do karku")
@@ -3329,6 +3334,12 @@ function arkuszPuls(wpis, prefill) {
     if (skl) skl.querySelectorAll("button[data-s]").forEach((b) => b.addEventListener("click", () => {
       const pw = polaEl.querySelector(".ap-wart"); if (pw) pw.value = b.dataset.s;
       skl.querySelectorAll("button[data-s]").forEach((x) => { const on = x.dataset.s === b.dataset.s; x.style.border = `1px solid ${on ? "#1a7158" : "var(--line)"}`; x.style.background = on ? "#e3f4f0" : "var(--surface)"; if (x.style.fontWeight) x.style.fontWeight = on ? "700" : "400"; });
+    }));
+    const jed = polaEl.querySelector(".ap-jedn");
+    if (jed) jed.querySelectorAll("button[data-j]").forEach((b) => b.addEventListener("click", () => {
+      const pk = polaEl.querySelector(".ap-kont"); const teraz = pk ? pk.value : "";
+      if (pk) pk.value = teraz === b.dataset.j ? "" : b.dataset.j;
+      jed.querySelectorAll("button[data-j]").forEach((x) => { const on = x.dataset.j === (pk ? pk.value : ""); x.style.border = `1px solid ${on ? "#1a7158" : "var(--line)"}`; x.style.background = on ? "#e3f4f0" : "none"; });
     }));
     const kol = polaEl.querySelector(".ap-kolor");
     if (kol) kol.querySelectorAll("button[data-k]").forEach((b) => b.addEventListener("click", () => { kolorWyd = kolorWyd === b.dataset.k ? "" : b.dataset.k; rysujPola(true); }));
@@ -3443,6 +3454,15 @@ function arkuszPuls(wpis, prefill) {
     if (wpis) ({ error: err } = await supabase.from("puls_pomiary").update(rek).eq("id", wpis.id));
     else ({ error: err } = await supabase.from("puls_pomiary").insert({ ...rek, traveler_id: TRAVELER.id }));
     if (err) { trzosToast("Nie zapisano: " + err.message); return; }
+    /* Doraźny lek/suplement → jedno pytanie: brać regularnie? Nie narzucamy, tylko proponujemy. */
+    if (!wpis && (typ === "lek" || typ === "suplement") && rek.nazwa) {
+      trzosToast("Dodane ✓"); zam();
+      if (confirm(`Bierzesz „${rek.nazwa}” na stałe?\n\nDodam do Zaleceń — MANA przypomni o porach i policzy, czy się wywiązujesz.`)) {
+        renderPuls(); setTimeout(() => arkuszZalecenie({ puls_typ: typ, nazwa: rek.nazwa, dawka: rek.wartosc, jednostka: rek.kontekst }), 60);
+        return;
+      }
+      renderPuls(); return;
+    }
     trzosToast(wpis ? "Poprawione ✓" : "Dodane ✓"); zam(); renderPuls();
   });
   const usunWpis = async () => {
@@ -3458,6 +3478,7 @@ function arkuszPuls(wpis, prefill) {
 }
 /* ── ARKUSZ ZALECENIA — dodaj/edytuj/usuń regularny lek/suplement/czynność ── */
 function arkuszZalecenie(wpis) {
+  const edycja = !!(wpis && wpis.id);   // obiekt bez id = wypełnienie wstępne (np. z doraźnego leku), NIE edycja
   const TYPY_Z = [["lek","💊"],["suplement","🌿"],["czynnosc","✅"],["inne","📌"]];
   let ptyp = (wpis && wpis.puls_typ) || "lek";
   const poryInit = wpis ? (Array.isArray(wpis.pory) ? wpis.pory : JSON.parse(wpis.pory || "[]")) : ["rano"];
@@ -3465,7 +3486,7 @@ function arkuszZalecenie(wpis) {
   const LS = "font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;";
   const IS = "width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;";
   const ov = el(`<div class="m-overlay" style="align-items:flex-end;"><div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:16px 16px 22px;box-shadow:0 -8px 30px rgba(0,0,0,.2);max-height:88vh;overflow-y:auto;">
-    <div style="display:flex;align-items:center;margin-bottom:10px;"><span style="font-size:15px;font-weight:600;">${wpis ? "Edytuj zalecenie" : "Nowe zalecenie"}</span><button class="az-x" style="margin-left:auto;border:none;background:none;font-size:19px;cursor:pointer;color:var(--ink-soft);">✕</button></div>
+    <div style="display:flex;align-items:center;margin-bottom:10px;"><span style="font-size:15px;font-weight:600;">${edycja ? "Edytuj zalecenie" : "Nowe zalecenie"}</span><button class="az-x" style="margin-left:auto;border:none;background:none;font-size:19px;cursor:pointer;color:var(--ink-soft);">✕</button></div>
     <div class="az-typy" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;"></div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
       <div><label style="${LS}">Nazwa *</label><input class="az-nazwa" type="text" value="${wpis ? escP(wpis.nazwa || wpis.tresc || "") : ""}" placeholder="np. Lidan, Witamina D" style="${IS}"></div>
@@ -3491,7 +3512,7 @@ function arkuszZalecenie(wpis) {
       </div>
     </div>
     <div style="display:flex;gap:8px;">
-      ${wpis ? `<button class="az-usun" style="border:1px solid #e8c8c0;background:#fdf3f1;color:#c0392b;border-radius:11px;padding:11px 14px;font-size:14px;cursor:pointer;">Usuń</button>` : ""}
+      ${edycja ? `<button class="az-usun" style="border:1px solid #e8c8c0;background:#fdf3f1;color:#c0392b;border-radius:11px;padding:11px 14px;font-size:14px;cursor:pointer;">Usuń</button>` : ""}
       <button class="az-zapisz" style="flex:1;border:none;background:var(--turkus,#1a7158);color:#fff;border-radius:11px;padding:11px;font-size:15px;cursor:pointer;font-weight:600;">Zapisz</button>
     </div>
   </div></div>`);
@@ -3594,10 +3615,10 @@ function arkuszZalecenie(wpis) {
       opak_dawek: opakDawek,
     };
     let err;
-    if (wpis) ({ error: err } = await supabase.from("zalecenia").update(rek).eq("id", wpis.id));
+    if (edycja) ({ error: err } = await supabase.from("zalecenia").update(rek).eq("id", wpis.id));
     else ({ error: err } = await supabase.from("zalecenia").insert({ ...rek, traveler_id: TRAVELER.id, aktywne: true }));
     if (err) { trzosToast("Nie zapisano: " + err.message); return; }
-    trzosToast(wpis ? "Poprawione ✓" : "Dodane ✓"); zam(); renderPuls();
+    trzosToast(edycja ? "Poprawione ✓" : "Dodane ✓"); zam(); renderPuls();
   });
   const us = ov.querySelector(".az-usun");
   if (us) us.addEventListener("click", async () => {
