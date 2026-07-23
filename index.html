@@ -2501,13 +2501,23 @@ async function renderPuls() {
   const podzMa = (key) => { const g = PULS_NAV.find((p) => p.key === key); return !!(g && chipyOf(g).length); };
   const grupaAkt = PULS_NAV.find((p) => p.key === rodzicAkt) || PULS_NAV[0];
   const naDomyslnym = T === grupaAkt.sub[0][0];
+  /* Plakietka na Zaleceniach: ile dawek dzis jeszcze NIEodhaczonych (pomija wstrzymane). */
+  let zalZadania = 0;
+  try {
+    const dzisZ = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+    const { data: za } = await supabase.from("zalecenia").select("id, pory").eq("aktywne", true).eq("wstrzymane", false).lte("od_data", dzisZ).or(`do_data.is.null,do_data.gte.${dzisZ}`);
+    const { data: oh } = await supabase.from("zalecenia_odhaczenia").select("zalecenie_id, pora").eq("data", dzisZ);
+    const zrob = new Set((oh || []).map((o) => o.zalecenie_id + "|" + o.pora));
+    (za || []).forEach((z) => { (Array.isArray(z.pory) ? z.pory : []).forEach((p) => { if (!zrob.has(z.id + "|" + p)) zalZadania++; }); });
+  } catch (e) {}
   const stylRodzica = (p) => {
     if (rodzicAkt !== p.key) return `border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:500;`;
     if (naDomyslnym) return `border:1px solid #1a7158;background:#1a7158;color:#fff;font-weight:700;box-shadow:0 1px 4px rgba(26,113,88,.25);`;
     return `border:1px solid #1a7158;background:#e3f4f0;color:#1a7158;font-weight:700;`;
   };
   // Poziom 1 (rodzice) — wypełniony segment: mocny, „główny"
-  const tbGorne = el(`<div style="display:flex;gap:6px;margin-bottom:${podzMa(rodzicAkt) ? "8" : "14"}px;">${PULS_NAV.map((p) => `<button data-g="${p.key}" style="flex:1;${stylRodzica(p)}border-radius:11px;padding:10px 4px;font-size:13.5px;cursor:pointer;">${p.label}</button>`).join("")}</div>`);
+  const plakietka = (p) => (p.key === "zalecenia" && zalZadania > 0) ? ` <span style="display:inline-block;min-width:17px;height:17px;line-height:17px;border-radius:9px;background:#c4513a;color:#fff;font-size:10.5px;font-weight:700;text-align:center;padding:0 4px;vertical-align:1px;">${zalZadania}</span>` : "";
+  const tbGorne = el(`<div style="display:flex;gap:6px;margin-bottom:${podzMa(rodzicAkt) ? "8" : "14"}px;">${PULS_NAV.map((p) => `<button data-g="${p.key}" style="flex:1;${stylRodzica(p)}border-radius:11px;padding:10px 4px;font-size:13.5px;cursor:pointer;">${p.label}${plakietka(p)}</button>`).join("")}</div>`);
   tbGorne.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { const g = PULS_NAV.find((p) => p.key === b.dataset.g); window._pulsTab = g.sub[0][0]; renderPuls(); }));
   box.appendChild(tbGorne);
   const podz = chipyOf(grupaAkt);
@@ -2522,7 +2532,7 @@ async function renderPuls() {
   /* ── ZALECENIA — regularne leki/praktyki: pory jako chipy ✓/○, tap = odhaczenie → auto wpis w Pulsie ── */
   if (T === "zalecenia") try {
     const dzisD = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
-    const { data: zal = [] } = await supabase.from("zalecenia").select("*").eq("aktywne", true).lte("od_data", dzisD).or(`do_data.is.null,do_data.gte.${dzisD}`).order("created_at", { ascending: true });
+    const { data: zal = [] } = await supabase.from("zalecenia").select("*").eq("aktywne", true).eq("wstrzymane", false).lte("od_data", dzisD).or(`do_data.is.null,do_data.gte.${dzisD}`).order("created_at", { ascending: true });
     /* Jedna os = dzien. Pora ustawia grubo, warunek doprecyzowuje, remis = alfabetycznie. */
     const POR_RANK = { "na czczo": 0, "rano": 1, "przed śniadaniem": 1, "śniadanie": 2, "po śniadaniu": 2.5, "przedpołudnie": 3, "południe": 4, "obiad": 4, "po obiedzie": 4.5, "popołudnie": 5, "wieczór": 6, "kolacja": 6, "przed snem": 6.5, "noc": 7 };
     const WAR_RANK = { "przed posiłkiem": -0.3, "w trakcie posiłku": 0, "po posiłku": 0.3, "obojętnie": 0 };
@@ -2573,6 +2583,7 @@ async function renderPuls() {
             ${opakTxt ? `<div style="font-size:11.5px;color:#1a7158;margin:3px 0;font-weight:600;">${escP(opakTxt)}</div>` : ""}
             <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
               <button class="zal-edit" data-zal="${z.id}" style="border:1px solid var(--line);background:none;border-radius:9px;padding:5px 11px;font-size:12px;cursor:pointer;color:var(--ink);">✏️ Edytuj</button>
+              <button class="zal-pauza" data-zal="${z.id}" style="border:1px solid var(--line);background:none;border-radius:9px;padding:5px 11px;font-size:12px;cursor:pointer;color:var(--ink);">⏸ Wstrzymaj</button>
               ${z.opis ? `<button class="zal-oleku" style="border:1px solid var(--line);background:none;border-radius:9px;padding:5px 11px;font-size:12px;cursor:pointer;color:#1a7158;">ℹ️ o leku</button>` : ""}
             </div>
             ${z.opis ? `<div class="zal-opis" style="display:none;font-size:12px;color:var(--ink);margin-top:8px;line-height:1.5;white-space:pre-wrap;padding:9px 11px;background:rgba(127,127,127,.06);border-radius:9px;">${escP(z.opis)}<div style="font-size:11px;color:var(--ink-soft);margin-top:7px;">💬 Więcej — u asystenta lub w ulotce.</div></div>` : ""}
@@ -2592,6 +2603,12 @@ async function renderPuls() {
         const item = b.closest(".zal-item"); if (!item) return;
         const op = item.querySelector(".zal-opis"); if (!op) return;
         op.style.display = op.style.display === "none" ? "block" : "none";
+      }));
+      sekcja.querySelectorAll(".zal-pauza").forEach((b) => b.addEventListener("click", async () => {
+        if (!confirm("Wstrzymać to zalecenie? Zniknie z aktywnej listy, ale zostanie w sekcji Wstrzymane — wznowisz jednym dotknięciem.")) return;
+        const { error } = await supabase.from("zalecenia").update({ wstrzymane: true, wstrzymane_od: dzisD }).eq("id", b.dataset.zal);
+        if (error) { trzosToast("Błąd: " + error.message); return; }
+        trzosToast("Wstrzymane ⏸"); renderPuls();
       }));
       const zroz = sekcja.querySelector(".zal-rozwin");
       if (zroz) zroz.addEventListener("click", () => {
@@ -2628,7 +2645,24 @@ async function renderPuls() {
         });
       });
       box.appendChild(sekcja);
-      const { data: zakon = [] } = await supabase.from("zalecenia").select("*").or(`aktywne.eq.false,do_data.lt.${dzisD}`).order("od_data", { ascending: false });
+      /* WSTRZYMANE — pauza, nie koniec. Wznow jednym dotknieciem. */
+      const { data: wstrz = [] } = await supabase.from("zalecenia").select("*").eq("aktywne", true).eq("wstrzymane", true).order("wstrzymane_od", { ascending: false });
+      if (wstrz.length) {
+        const sekW = el(`<details style="margin-bottom:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:4px 12px;"><summary style="font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;padding:8px 2px;list-style:none;">⏸ Wstrzymane (${wstrz.length})</summary></details>`);
+        for (const z of wstrz) {
+          const w = el(`<div style="display:flex;align-items:center;gap:8px;padding:7px 2px;border-top:1px solid var(--line);">
+            <div style="flex:1;"><div style="font-size:13px;font-weight:600;">${escP(z.nazwa || z.tresc)}</div><div style="font-size:11px;color:var(--ink-soft);">wstrzymane${z.wstrzymane_od ? " od " + escP(z.wstrzymane_od) : ""}</div></div>
+            <button class="zal-wznow" data-zal="${z.id}" style="border:1px solid #1f9e8f;background:#e3f4f0;border-radius:10px;padding:5px 12px;font-size:11.5px;cursor:pointer;color:#1a7158;font-weight:600;">▶ Wznów</button></div>`);
+          sekW.appendChild(w);
+        }
+        sekW.querySelectorAll(".zal-wznow").forEach((b) => b.addEventListener("click", async () => {
+          const { error } = await supabase.from("zalecenia").update({ wstrzymane: false, wstrzymane_od: null }).eq("id", b.dataset.zal);
+          if (error) { trzosToast("Błąd: " + error.message); return; }
+          trzosToast("Wznowione ▶"); renderPuls();
+        }));
+        box.appendChild(sekW);
+      }
+      const { data: zakon = [] } = await supabase.from("zalecenia").select("*").eq("wstrzymane", false).or(`aktywne.eq.false,do_data.lt.${dzisD}`).order("od_data", { ascending: false });
       if (zakon.length) {
         const arch = el(`<details style="margin-bottom:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:4px 12px;"><summary style="font-size:12.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;padding:8px 2px;list-style:none;">✅ Zakończone leki (${zakon.length})</summary></details>`);
         for (const z of zakon) {
@@ -2641,7 +2675,7 @@ async function renderPuls() {
         }
         arch.querySelectorAll(".zal-przywroc").forEach((pb) => pb.addEventListener("click", async (e) => {
           e.preventDefault();
-          await supabase.from("zalecenia").update({ aktywne: true, do_data: null, opak_dawek: null }).eq("id", pb.dataset.zal);
+          await supabase.from("zalecenia").update({ aktywne: true, wstrzymane: false, wstrzymane_od: null, do_data: null, opak_dawek: null }).eq("id", pb.dataset.zal);
           trzosToast("Przywrócone ✓ — bez końca kuracji"); renderPuls();
         }));
         box.appendChild(arch);
