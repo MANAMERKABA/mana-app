@@ -2523,6 +2523,17 @@ async function renderPuls() {
   if (T === "zalecenia") try {
     const dzisD = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
     const { data: zal = [] } = await supabase.from("zalecenia").select("*").eq("aktywne", true).lte("od_data", dzisD).or(`do_data.is.null,do_data.gte.${dzisD}`).order("created_at", { ascending: true });
+    /* Jedna os = dzien. Pora ustawia grubo, warunek doprecyzowuje, remis = alfabetycznie. */
+    const POR_RANK = { "na czczo": 0, "rano": 1, "przed śniadaniem": 1, "śniadanie": 2, "po śniadaniu": 2.5, "przedpołudnie": 3, "południe": 4, "obiad": 4, "po obiedzie": 4.5, "popołudnie": 5, "wieczór": 6, "kolacja": 6, "przed snem": 6.5, "noc": 7 };
+    const WAR_RANK = { "przed posiłkiem": -0.3, "w trakcie posiłku": 0, "po posiłku": 0.3, "obojętnie": 0 };
+    const poraRank = (p) => { p = (p || "").toLowerCase().trim(); if (/^\d{1,2}:\d{2}$/.test(p)) return Number(p.split(":")[0]) * 0.29; return POR_RANK[p] != null ? POR_RANK[p] : 3.5; };
+    const zalRank = (z) => {
+      const pory = Array.isArray(z.pory) ? z.pory : [];
+      const baza = z.interwal_h ? (z.interwal_od ? Number(String(z.interwal_od).split(":")[0]) * 0.29 : 1) : (pory.length ? Math.min(...pory.map(poraRank)) : 3.5);
+      const w = WAR_RANK[(z.warunek || "").toLowerCase().trim()];
+      return baza + (w != null ? w : 0);
+    };
+    zal.sort((a, b) => zalRank(a) - zalRank(b) || String(a.nazwa || a.tresc || "").localeCompare(String(b.nazwa || b.tresc || ""), "pl"));
     {
       const { data: odh = [] } = await supabase.from("zalecenia_odhaczenia").select("id, zalecenie_id, pora, puls_pomiar_id").eq("data", dzisD);
       const odhMapa = {}; (odh || []).forEach((o) => { odhMapa[o.zalecenie_id + "|" + o.pora] = o; });
@@ -2539,8 +2550,6 @@ async function renderPuls() {
           return `<button class="zal-chip" data-zal="${z.id}" data-pora="${escP(p)}" style="border:1px solid ${zrob ? "#1f9e8f" : "var(--line)"};background:${zrob ? "#e3f4f0" : "#fff"};color:${zrob ? "#1a7158" : "var(--ink)"};border-radius:16px;padding:5px 12px;font-size:12.5px;cursor:pointer;font-weight:${zrob ? "600" : "400"};">${zrob ? "✓ " : "○ "}${escP(p)}</button>`;
         }).join("");
         const dawkaTxt = z.dawka != null ? (z.dawka + (z.jednostka ? " " + z.jednostka : "")) : (z.jednostka || "");
-        const meta = [dawkaTxt, z.warunek, z.zrodlo].filter(Boolean).map(escP).join(" · ");
-        const opisKrotki = z.opis ? (z.opis.length > 90 ? z.opis.slice(0, 90).trim() + "…" : z.opis) : "";
         let opakTxt = "";
         if (z.opak_dawek != null) {
           const zostalo = Math.max(0, z.opak_dawek - (cntMapa[z.id] || 0));
@@ -2559,14 +2568,14 @@ async function renderPuls() {
             <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;flex:0 0 auto;">${chipy}</div>
           </div>
           <div class="zal-detale" style="display:none;padding:0 2px 11px 19px;">
-            ${z.nazwa && z.tresc && z.tresc !== z.nazwa ? `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:2px;">${escP(z.tresc)}</div>` : ""}
-            ${meta ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:2px;">${meta}</div>` : ""}
+            ${z.warunek ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:2px;">🍽 ${escP(z.warunek)}</div>` : ""}
+            ${z.zrodlo ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:2px;">zalecił(a): ${escP(z.zrodlo)}</div>` : ""}
             ${opakTxt ? `<div style="font-size:11.5px;color:#1a7158;margin:3px 0;font-weight:600;">${escP(opakTxt)}</div>` : ""}
-            ${z.opis ? `<div style="font-size:12px;color:var(--ink);margin-top:3px;line-height:1.45;white-space:pre-wrap;">${escP(z.opis)}</div>` : ""}
-            <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;">
               <button class="zal-edit" data-zal="${z.id}" style="border:1px solid var(--line);background:none;border-radius:9px;padding:5px 11px;font-size:12px;cursor:pointer;color:var(--ink);">✏️ Edytuj</button>
-              <span style="font-size:11px;color:var(--ink-soft);">💬 Więcej — u asystenta lub w ulotce.</span>
+              ${z.opis ? `<button class="zal-oleku" style="border:1px solid var(--line);background:none;border-radius:9px;padding:5px 11px;font-size:12px;cursor:pointer;color:#1a7158;">ℹ️ o leku</button>` : ""}
             </div>
+            ${z.opis ? `<div class="zal-opis" style="display:none;font-size:12px;color:var(--ink);margin-top:8px;line-height:1.5;white-space:pre-wrap;padding:9px 11px;background:rgba(127,127,127,.06);border-radius:9px;">${escP(z.opis)}<div style="font-size:11px;color:var(--ink-soft);margin-top:7px;">💬 Więcej — u asystenta lub w ulotce.</div></div>` : ""}
           </div>
         </div>`));
       }
@@ -2578,6 +2587,11 @@ async function renderPuls() {
         const otw = det.style.display === "none";
         det.style.display = otw ? "block" : "none";
         if (chev) chev.style.transform = otw ? "rotate(90deg)" : "";
+      }));
+      sekcja.querySelectorAll(".zal-oleku").forEach((b) => b.addEventListener("click", () => {
+        const item = b.closest(".zal-item"); if (!item) return;
+        const op = item.querySelector(".zal-opis"); if (!op) return;
+        op.style.display = op.style.display === "none" ? "block" : "none";
       }));
       const zroz = sekcja.querySelector(".zal-rozwin");
       if (zroz) zroz.addEventListener("click", () => {
@@ -3577,7 +3591,11 @@ function arkuszZalecenie(wpis) {
         <div class="az-blok-pory"><input class="az-pory" type="text" value="${escP(poryInit.join(", "))}" placeholder="rano, wieczór" style="${IS}"><div class="az-porychip" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;"></div></div>
         <div class="az-blok-interwal" style="display:none;gap:8px;"><input class="az-int-h" type="number" min="1" max="24" value="${wpis && wpis.interwal_h != null ? wpis.interwal_h : ""}" placeholder="co ile h (np. 8)" style="${IS}"><input class="az-int-od" type="time" value="${wpis && wpis.interwal_od ? wpis.interwal_od : "08:00"}" style="${IS}"></div>
       </div>
-      <div><label style="${LS}">Warunek</label><input class="az-warunek" type="text" value="${wpis ? escP(wpis.warunek || "") : ""}" placeholder="np. 30 min przed jedzeniem, na czczo" style="${IS}"></div>
+      <div><label style="${LS}">Względem posiłku</label>
+        <div class="az-warunek" style="display:flex;gap:5px;flex-wrap:wrap;">
+          ${["przed posiłkiem", "w trakcie posiłku", "po posiłku", "obojętnie"].map((w) => `<button type="button" data-w="${w}" style="border:1px solid ${(wpis && wpis.warunek) === w ? "#1a7158" : "var(--line)"};background:${(wpis && wpis.warunek) === w ? "#e3f4f0" : "none"};color:var(--ink);border-radius:12px;padding:6px 11px;font-size:12px;cursor:pointer;">${w}</button>`).join("")}
+        </div>
+        <input class="az-warunek-val" type="hidden" value="${wpis ? escP(wpis.warunek || "") : ""}"></div>
       <div><label style="${LS}">Kto zalecił</label><input class="az-zrodlo" type="text" value="${wpis ? escP(wpis.zrodlo || "") : ""}" placeholder="lekarz / sam / ..." style="${IS}"></div>
       <div><label style="${LS}">Opis (o leku / praktyce) <button type="button" class="az-opisz-ai" style="border:1px solid #1f9e8f;background:#e3f4f0;color:#1a7158;border-radius:10px;padding:2px 8px;font-size:11px;cursor:pointer;margin-left:4px;">✨ Opisz</button></label><textarea class="az-opis" rows="2" placeholder="dawkowanie, po co, uwagi" style="${IS};resize:vertical;">${wpis ? escP(wpis.opis || "") : ""}</textarea></div>
       <div><label style="${LS}">Od dnia</label><input class="az-od" type="date" value="${wpis && wpis.od_data ? wpis.od_data : dzisZ}" style="${IS}"></div>
@@ -3618,6 +3636,15 @@ function arkuszZalecenie(wpis) {
       } catch (e) { slBox.innerHTML = ""; }
     };
     nazwaInp.addEventListener("input", () => { clearTimeout(slT); slT = setTimeout(pokaz, 200); });
+  })();
+  /* Warunek = chipy, wartosc do ukrytego pola. Ukryty w liscie, ale ustawia kolejnosc na osi dnia. */
+  (() => {
+    const box = ov.querySelector(".az-warunek"), val = ov.querySelector(".az-warunek-val");
+    if (!box || !val) return;
+    box.querySelectorAll("button[data-w]").forEach((b) => b.addEventListener("click", () => {
+      val.value = val.value === b.dataset.w ? "" : b.dataset.w;
+      box.querySelectorAll("button[data-w]").forEach((x) => { const on = x.dataset.w === val.value; x.style.border = `1px solid ${on ? "#1a7158" : "var(--line)"}`; x.style.background = on ? "#e3f4f0" : "none"; });
+    }));
   })();
   const typyEl = ov.querySelector(".az-typy");
   const rysujTypy = () => {
@@ -3705,7 +3732,7 @@ function arkuszZalecenie(wpis) {
       dawka: dawkaRaw !== "" ? Number(dawkaRaw) : null,
       jednostka: ov.querySelector(".az-jedn").value.trim() || null,
       pory: poryArr.length ? poryArr : ["rano"],
-      warunek: ov.querySelector(".az-warunek").value.trim() || null,
+      warunek: (ov.querySelector(".az-warunek-val").value || "").trim() || null,
       zrodlo: ov.querySelector(".az-zrodlo").value.trim() || null,
       opis: ov.querySelector(".az-opis").value.trim() || null,
       od_data: ov.querySelector(".az-od").value || dzisZ,
