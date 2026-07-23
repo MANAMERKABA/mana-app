@@ -2529,8 +2529,8 @@ async function renderPuls() {
       const { data: odhCnt = [] } = await supabase.from("zalecenia_odhaczenia").select("zalecenie_id");
       const cntMapa = {}; (odhCnt || []).forEach((o) => { cntMapa[o.zalecenie_id] = (cntMapa[o.zalecenie_id] || 0) + 1; });
       const sekcja = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
-        <div style="display:flex;align-items:center;margin-bottom:4px;"><span style="font-size:13px;font-weight:600;">📋 Zalecenia — dziś</span><button class="zal-dodaj" style="margin-left:auto;border:1px solid #1f9e8f;background:#e3f4f0;color:#1a7158;border-radius:14px;padding:4px 11px;font-size:12px;cursor:pointer;font-weight:600;">+ Dodaj</button></div>
-        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Dotknij porę, by odhaczyć — wpis trafi do Pulsu. ✏️ edytuje wpis, „+ Dodaj" tworzy nowe. Możesz też powiedzieć asystentowi „biorę Lidan rano i wieczorem".</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="font-size:13px;font-weight:600;flex:1;">📋 Zalecenia — dziś</span><button class="zal-rozwin" style="border:none;background:none;color:#1a7158;font-size:11.5px;cursor:pointer;font-weight:600;">Rozwiń wszystko</button><button class="zal-dodaj" style="border:1px solid #1f9e8f;background:#e3f4f0;color:#1a7158;border-radius:14px;padding:4px 11px;font-size:12px;cursor:pointer;font-weight:600;">+ Dodaj</button></div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;">Zaznacz porę, gdy weźmiesz — wpis trafi do Pulsu. Dotknij nazwę, by rozwinąć szczegóły.</div>
       </div>`);
       for (const z of zal) {
         const pory = Array.isArray(z.pory) ? z.pory : JSON.parse(z.pory || "[]");
@@ -2549,19 +2549,44 @@ async function renderPuls() {
           const doDnia = new Date(Date.now() + dni * 86400000).toLocaleDateString("pl-PL", { day: "numeric", month: "short", timeZone: TZ });
           opakTxt = zostalo > 0 ? `💊 zostało ${zostalo} z ${z.opak_dawek} · starczy do ~${doDnia}` : `💊 opakowanie puste`;
         }
-        sekcja.appendChild(el(`<div style="padding:8px 2px;border-top:1px solid var(--line);">
-          <div style="display:flex;align-items:flex-start;gap:6px;"><div style="font-size:13.5px;font-weight:600;flex:1;">${escP(z.nazwa || z.tresc)}</div><button class="zal-edit" data-zal="${z.id}" style="border:none;background:none;font-size:14px;cursor:pointer;color:var(--ink-soft);padding:0 2px;line-height:1;">✏️</button></div>
-          ${z.nazwa && z.tresc && z.tresc !== z.nazwa ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:1px;">${escP(z.tresc)}</div>` : ""}
-          ${meta ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:1px;">${meta}</div>` : ""}
-          ${opisKrotki ? `<div style="font-size:12px;color:var(--ink);margin-top:3px;line-height:1.4;">${escP(opisKrotki)}</div>` : ""}
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">${chipy}</div>
-          ${opakTxt ? `<div style="font-size:11.5px;color:#1a7158;margin-top:6px;font-weight:600;">${escP(opakTxt)}</div>` : ""}
-          ${z.opis && z.opis.length > 90 ? `<details style="margin-top:6px;"><summary style="font-size:11.5px;color:#1a7158;cursor:pointer;font-weight:600;list-style:none;">ℹ️ Pełny opis</summary><div style="font-size:12px;color:var(--ink-soft);white-space:pre-wrap;line-height:1.5;margin-top:5px;padding:8px 10px;background:#faf8f2;border-radius:8px;">${escP(z.opis)}</div></details>` : ""}
-          <div style="font-size:11px;color:var(--ink-soft);margin-top:5px;">💬 Więcej o tym leku — u asystenta lub w ulotce.</div>
+        sekcja.appendChild(el(`<div class="zal-item" style="border-top:1px solid var(--line);">
+          <div style="display:flex;align-items:center;gap:8px;padding:9px 2px;">
+            <div class="zal-toggle" style="flex:1;min-width:0;cursor:pointer;display:flex;align-items:baseline;gap:7px;">
+              <span class="zal-chev" style="color:var(--ink-soft);font-size:10px;flex:0 0 auto;">▶</span>
+              <span style="font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escP(z.nazwa || z.tresc)}</span>
+              ${dawkaTxt ? `<span style="font-size:11.5px;color:var(--ink-soft);flex:0 0 auto;">${escP(dawkaTxt)}</span>` : ""}
+            </div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;flex:0 0 auto;">${chipy}</div>
+          </div>
+          <div class="zal-detale" style="display:none;padding:0 2px 11px 19px;">
+            ${z.nazwa && z.tresc && z.tresc !== z.nazwa ? `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:2px;">${escP(z.tresc)}</div>` : ""}
+            ${meta ? `<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:2px;">${meta}</div>` : ""}
+            ${opakTxt ? `<div style="font-size:11.5px;color:#1a7158;margin:3px 0;font-weight:600;">${escP(opakTxt)}</div>` : ""}
+            ${z.opis ? `<div style="font-size:12px;color:var(--ink);margin-top:3px;line-height:1.45;white-space:pre-wrap;">${escP(z.opis)}</div>` : ""}
+            <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+              <button class="zal-edit" data-zal="${z.id}" style="border:1px solid var(--line);background:none;border-radius:9px;padding:5px 11px;font-size:12px;cursor:pointer;color:var(--ink);">✏️ Edytuj</button>
+              <span style="font-size:11px;color:var(--ink-soft);">💬 Więcej — u asystenta lub w ulotce.</span>
+            </div>
+          </div>
         </div>`));
       }
       if (!zal.length) sekcja.appendChild(el(`<div style="padding:10px 2px;border-top:1px solid var(--line);font-size:12.5px;color:var(--ink-soft);">Brak aktywnych zaleceń. Dotknij „+ Dodaj", by wpisać pierwsze.</div>`));
       const zdod = sekcja.querySelector(".zal-dodaj"); if (zdod) zdod.addEventListener("click", () => arkuszZalecenie(null));
+      sekcja.querySelectorAll(".zal-toggle").forEach((t) => t.addEventListener("click", () => {
+        const item = t.closest(".zal-item"); if (!item) return;
+        const det = item.querySelector(".zal-detale"), chev = item.querySelector(".zal-chev");
+        const otw = det.style.display === "none";
+        det.style.display = otw ? "block" : "none";
+        if (chev) chev.style.transform = otw ? "rotate(90deg)" : "";
+      }));
+      const zroz = sekcja.querySelector(".zal-rozwin");
+      if (zroz) zroz.addEventListener("click", () => {
+        const det = sekcja.querySelectorAll(".zal-detale");
+        const cokolwiekZwiniete = [...det].some((d) => d.style.display === "none");
+        det.forEach((d) => { d.style.display = cokolwiekZwiniete ? "block" : "none"; });
+        sekcja.querySelectorAll(".zal-chev").forEach((c) => { c.style.transform = cokolwiekZwiniete ? "rotate(90deg)" : ""; });
+        zroz.textContent = cokolwiekZwiniete ? "Zwiń wszystko" : "Rozwiń wszystko";
+      });
       sekcja.querySelectorAll(".zal-edit").forEach((eb) => eb.addEventListener("click", () => { const zz = zal.find((x) => x.id === eb.dataset.zal); if (zz) arkuszZalecenie(zz); }));
       sekcja.querySelectorAll(".zal-chip").forEach((btn) => {
         btn.addEventListener("click", async () => {
@@ -3541,7 +3566,7 @@ function arkuszZalecenie(wpis) {
     <div style="display:flex;align-items:center;margin-bottom:10px;"><span style="font-size:15px;font-weight:600;">${edycja ? "Edytuj zalecenie" : "Nowe zalecenie"}</span><button class="az-x" style="margin-left:auto;border:none;background:none;font-size:19px;cursor:pointer;color:var(--ink-soft);">✕</button></div>
     <div class="az-typy" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;"></div>
     <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
-      <div><label style="${LS}">Nazwa *</label><input class="az-nazwa" type="text" value="${wpis ? escP(wpis.nazwa || wpis.tresc || "") : ""}" placeholder="np. Lidan, Witamina D" style="${IS}"></div>
+      <div><label style="${LS}">Nazwa *</label><input class="az-nazwa" type="text" value="${wpis ? escP(wpis.nazwa || wpis.tresc || "") : ""}" placeholder="np. Lidan, Witamina D" style="${IS}"><div class="az-slownik" style="position:relative;"></div></div>
       <div style="display:flex;gap:8px;">
         <div style="flex:1;"><label style="${LS}">Dawka</label><input class="az-dawka" type="number" step="any" value="${wpis && wpis.dawka != null ? wpis.dawka : ""}" placeholder="np. 1" style="${IS}"></div>
         <div style="flex:1;"><label style="${LS}">Jednostka</label><input class="az-jedn" type="text" value="${wpis ? escP(wpis.jednostka || "") : ""}" placeholder="mg / tabletka / j.m." style="${IS}"></div>
@@ -3572,6 +3597,28 @@ function arkuszZalecenie(wpis) {
   const zam = () => ov.remove();
   ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
   ov.querySelector(".az-x").addEventListener("click", zam);
+  /* Ta sama podpowiedz ze slownika co w Rytmie - zeby zalecenie i doraźny wpis dzielily nazwy. */
+  (() => {
+    const slBox = ov.querySelector(".az-slownik"), nazwaInp = ov.querySelector(".az-nazwa");
+    if (!slBox || !nazwaInp) return;
+    let slT = null;
+    const pokaz = async () => {
+      const q = nazwaInp.value.trim();
+      if (q.length < 2) { slBox.innerHTML = ""; return; }
+      try {
+        const { data } = await supabase.from("slownik").select("nazwa_kanoniczna, kategoria, opis")
+          .or(`zasieg.eq.wspolny,traveler_id.eq.${TRAVELER.id}`).ilike("nazwa_kanoniczna", `%${q}%`).limit(6);
+        const lista = data || [];
+        if (!lista.length || (lista.length === 1 && lista[0].nazwa_kanoniczna.toLowerCase() === q.toLowerCase())) { slBox.innerHTML = ""; return; }
+        slBox.innerHTML = `<div style="border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface);margin-top:4px;">${lista.map((s) => `<button type="button" data-n="${escP(s.nazwa_kanoniczna)}" data-o="${escP(s.opis || "")}" style="display:block;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);background:none;padding:8px 11px;font-size:13px;cursor:pointer;color:var(--ink);">${escP(s.nazwa_kanoniczna)}${s.kategoria ? ` <span style="font-size:10.5px;color:var(--ink-soft);">· ${escP(s.kategoria)}</span>` : ""}</button>`).join("")}</div>`;
+        slBox.querySelectorAll("button[data-n]").forEach((b) => b.addEventListener("click", () => {
+          nazwaInp.value = b.dataset.n;
+          slBox.innerHTML = b.dataset.o ? `<div style="font-size:11px;color:var(--ink-soft);padding:6px 2px;line-height:1.4;">💡 ${escP(b.dataset.o)}</div>` : "";
+        }));
+      } catch (e) { slBox.innerHTML = ""; }
+    };
+    nazwaInp.addEventListener("input", () => { clearTimeout(slT); slT = setTimeout(pokaz, 200); });
+  })();
   const typyEl = ov.querySelector(".az-typy");
   const rysujTypy = () => {
     typyEl.innerHTML = "";
