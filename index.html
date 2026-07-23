@@ -3269,6 +3269,7 @@ function arkuszPuls(wpis, prefill) {
       + P("ap-nota2", "Szczegóły", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}\s*·?\s*/, ""), "gdzie, z kim, jak było");
     else if (typ === "praktyka") h = P("ap-nazwa", "Rodzaj praktyki", "text", w.nazwa, "rapé / medytacja / akupunktura / sauna…") + P("ap-wart", "Minut (opcjonalnie)", "number", w.wartosc) + P("ap-kont", "Szczegóły", "text", w.kontekst, "z kim, gdzie, przebieg");
     else if (typ === "lek" || typ === "suplement") h = P("ap-nazwa", "Nazwa", "text", w.nazwa)
+      + `<div class="ap-slownik" style="position:relative;margin-top:-4px;"></div>`
       + `<div style="display:flex;gap:8px;">${P("ap-wart", "Dawka", "number", w.wartosc)}<div style="flex:1;"><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:2px;">Jednostka</label>
           <div class="ap-jedn" style="display:flex;gap:4px;flex-wrap:wrap;">
             ${["tabletka", "mg", "ml", "kropli", "j.m."].map((j) => `<button type="button" data-j="${j}" style="border:1px solid ${(w.kontekst || "") === j ? "#1a7158" : "var(--line)"};background:${(w.kontekst || "") === j ? "#e3f4f0" : "none"};color:var(--ink);border-radius:11px;padding:6px 9px;font-size:12px;cursor:pointer;">${j}</button>`).join("")}
@@ -3342,6 +3343,35 @@ function arkuszPuls(wpis, prefill) {
       const pw = polaEl.querySelector(".ap-wart"); if (pw) pw.value = b.dataset.s;
       skl.querySelectorAll("button[data-s]").forEach((x) => { const on = x.dataset.s === b.dataset.s; x.style.border = `1px solid ${on ? "#1a7158" : "var(--line)"}`; x.style.background = on ? "#e3f4f0" : "var(--surface)"; if (x.style.fontWeight) x.style.fontWeight = on ? "700" : "400"; });
     }));
+    /* Podpowiedz ze slownika (wspolny + wlasny prywatny) - zeby „Enterogel" zawsze byl ta sama pozycja. */
+    const slBox = polaEl.querySelector(".ap-slownik");
+    const nazwaInp = polaEl.querySelector(".ap-nazwa");
+    if (slBox && nazwaInp) {
+      let slT = null;
+      const pokaz = async () => {
+        const q = nazwaInp.value.trim();
+        if (q.length < 2) { slBox.innerHTML = ""; return; }
+        try {
+          const { data } = await supabase.from("slownik")
+            .select("nazwa_kanoniczna, typ_puls, kategoria, opis")
+            .or(`zasieg.eq.wspolny,traveler_id.eq.${TRAVELER.id}`)
+            .ilike("nazwa_kanoniczna", `%${q}%`).limit(6);
+          let lista = data || [];
+          if (!lista.length) {
+            const { data: d2 } = await supabase.from("slownik").select("nazwa_kanoniczna, typ_puls, kategoria, opis")
+              .or(`zasieg.eq.wspolny,traveler_id.eq.${TRAVELER.id}`).contains("aliasy", JSON.stringify([q.toLowerCase()])).limit(6);
+            lista = d2 || [];
+          }
+          if (!lista.length || (lista.length === 1 && lista[0].nazwa_kanoniczna.toLowerCase() === q.toLowerCase())) { slBox.innerHTML = ""; return; }
+          slBox.innerHTML = `<div style="border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface);">${lista.map((s) => `<button type="button" data-n="${escP(s.nazwa_kanoniczna)}" data-o="${escP(s.opis || "")}" style="display:block;width:100%;text-align:left;border:none;border-bottom:1px solid var(--line);background:none;padding:8px 11px;font-size:13px;cursor:pointer;color:var(--ink);">${escP(s.nazwa_kanoniczna)}${s.kategoria ? ` <span style="font-size:10.5px;color:var(--ink-soft);">· ${escP(s.kategoria)}</span>` : ""}</button>`).join("")}</div>`;
+          slBox.querySelectorAll("button[data-n]").forEach((b) => b.addEventListener("click", () => {
+            nazwaInp.value = b.dataset.n;
+            slBox.innerHTML = b.dataset.o ? `<div style="font-size:11px;color:var(--ink-soft);padding:6px 2px;line-height:1.4;">💡 ${escP(b.dataset.o)}</div>` : "";
+          }));
+        } catch (e) { slBox.innerHTML = ""; }
+      };
+      nazwaInp.addEventListener("input", () => { clearTimeout(slT); slT = setTimeout(pokaz, 200); });
+    }
     const jed = polaEl.querySelector(".ap-jedn");
     if (jed) jed.querySelectorAll("button[data-j]").forEach((b) => b.addEventListener("click", () => {
       const pk = polaEl.querySelector(".ap-kont"); const teraz = pk ? pk.value : "";
@@ -3442,6 +3472,7 @@ function arkuszPuls(wpis, prefill) {
         : (v.kontekst.trim() || null),
       notatka: v.notatka.trim() || null,
       zmierzono_at: isoZWarszawy(ov.querySelector(".ap-data").value, ov.querySelector(".ap-godz").value || "12:00"),
+      zrodlo: "front",
     };
     if ((typ === "objaw" || typ === "praktyka") && !rek.nazwa) { trzosToast((typ === "objaw" ? "Objaw" : "Praktyka") + " wymaga nazwy."); return; }
     /* Jeden pomiar, jedna karta - ale w bazie moga powstac DWA wpisy (cisnienie i saturacja),
@@ -3452,7 +3483,7 @@ function arkuszPuls(wpis, prefill) {
       const tet = v.wartosc3 !== "" ? Number(v.wartosc3) : null;
       const sat = v.sat !== "" ? Number(v.sat) : null;
       if (sk === null && roz === null && tet === null && sat === null) { trzosToast("Wpisz przynajmniej jedna wartosc."); return; }
-      const wsp = { traveler_id: TRAVELER.id, zmierzono_at: rek.zmierzono_at, kontekst: rek.kontekst, notatka: rek.notatka };
+      const wsp = { traveler_id: TRAVELER.id, zmierzono_at: rek.zmierzono_at, kontekst: rek.kontekst, notatka: rek.notatka, zrodlo: "front" };
       const doZapisu = [];
       if (sk !== null || roz !== null) doZapisu.push({ ...wsp, typ: "cisnienie", wartosc: sk, wartosc2: roz, wartosc3: tet });
       if (sat !== null) doZapisu.push({ ...wsp, typ: "saturacja", wartosc: sat, wartosc3: doZapisu.length ? null : tet });
@@ -3465,6 +3496,16 @@ function arkuszPuls(wpis, prefill) {
     if (wpis) ({ error: err } = await supabase.from("puls_pomiary").update(rek).eq("id", wpis.id));
     else ({ error: err } = await supabase.from("puls_pomiary").insert({ ...rek, traveler_id: TRAVELER.id }));
     if (err) { trzosToast("Nie zapisano: " + err.message); return; }
+    /* Warstwa prywatna slownika rosnie sama: nazwa, ktorej jeszcze nie ma, ląduje jako Twoja pozycja
+       — zeby nastepnym razem sie podpowiadala. Nieblokujace, ciche. */
+    if (!wpis && (typ === "lek" || typ === "suplement" || typ === "napoj") && rek.nazwa) (async () => {
+      try {
+        const { data: ist } = await supabase.from("slownik").select("id, zasieg, uzyc_licznik")
+          .or(`zasieg.eq.wspolny,traveler_id.eq.${TRAVELER.id}`).ilike("nazwa_kanoniczna", rek.nazwa).limit(1);
+        if (ist && ist.length) { if (ist[0].zasieg === "prywatny") await supabase.from("slownik").update({ uzyc_licznik: (ist[0].uzyc_licznik || 0) + 1 }).eq("id", ist[0].id); }
+        else await supabase.from("slownik").insert({ nazwa_kanoniczna: rek.nazwa, typ_puls: rek.typ, zasieg: "prywatny", traveler_id: TRAVELER.id, uzyc_licznik: 1 });
+      } catch (e) {}
+    })();
     /* Doraźny lek/suplement → jedno pytanie: brać regularnie? Nie narzucamy, tylko proponujemy. */
     if (!wpis && (typ === "lek" || typ === "suplement") && rek.nazwa) {
       trzosToast("Dodane ✓"); zam();
