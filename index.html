@@ -3565,10 +3565,30 @@ function arkuszPuls(wpis, prefill) {
       if (e2) { trzosToast("Nie zapisano: " + e2.message); return; }
       trzosToast(doZapisu.length > 1 ? "Dodane ✓ (2 wpisy)" : "Dodane ✓"); zam(); renderPuls(); return;
     }
-    let err;
+    let err, nowyId = null;
     if (wpis) ({ error: err } = await supabase.from("puls_pomiary").update(rek).eq("id", wpis.id));
-    else ({ error: err } = await supabase.from("puls_pomiary").insert({ ...rek, traveler_id: TRAVELER.id }));
+    else { const { data: ins, error: e3 } = await supabase.from("puls_pomiary").insert({ ...rek, traveler_id: TRAVELER.id }).select("id").single(); err = e3; nowyId = ins ? ins.id : null; }
     if (err) { trzosToast("Nie zapisano: " + err.message); return; }
+    /* Symetria „jeden fakt, dwa okna": lek wpisany w Rytmie odhacza pasujaca dawke zalecenia,
+       zeby Zalecenia i plakietka nie klamaly, ze dawka czeka, gdy lek juz wziety. */
+    let juzZalecenie = false;
+    if (!wpis && (typ === "lek" || typ === "suplement") && rek.nazwa && nowyId) {
+      try {
+        const dzisD2 = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+        const { data: zz } = await supabase.from("zalecenia").select("id, nazwa, pory").eq("aktywne", true).eq("wstrzymane", false).lte("od_data", dzisD2).or(`do_data.is.null,do_data.gte.${dzisD2}`);
+        const norm = (s) => (s || "").toLowerCase().replace(/[^a-ząćęłńóśźż0-9]/g, "");
+        const cel = norm(rek.nazwa);
+        const dopas = cel ? (zz || []).find((z) => { const n = norm(z.nazwa); return n && (n === cel || n.includes(cel) || cel.includes(n)); }) : null;
+        if (dopas) {
+          juzZalecenie = true;
+          const pory = Array.isArray(dopas.pory) ? dopas.pory : [];
+          const { data: oh } = await supabase.from("zalecenia_odhaczenia").select("pora").eq("zalecenie_id", dopas.id).eq("data", dzisD2);
+          const zrob = new Set((oh || []).map((o) => o.pora));
+          const wolna = pory.find((p) => !zrob.has(p));
+          if (wolna) await supabase.from("zalecenia_odhaczenia").insert({ zalecenie_id: dopas.id, traveler_id: TRAVELER.id, data: dzisD2, pora: wolna, puls_pomiar_id: nowyId });
+        }
+      } catch (e) {}
+    }
     /* Warstwa prywatna slownika rosnie sama: nazwa, ktorej jeszcze nie ma, ląduje jako Twoja pozycja
        — zeby nastepnym razem sie podpowiadala. Nieblokujace, ciche. */
     if (!wpis && (typ === "lek" || typ === "suplement" || typ === "napoj") && rek.nazwa) (async () => {
@@ -3579,7 +3599,10 @@ function arkuszPuls(wpis, prefill) {
         else await supabase.from("slownik").insert({ nazwa_kanoniczna: rek.nazwa, typ_puls: rek.typ, zasieg: "prywatny", traveler_id: TRAVELER.id, uzyc_licznik: 1 });
       } catch (e) {}
     })();
-    /* Doraźny lek/suplement → jedno pytanie: brać regularnie? Nie narzucamy, tylko proponujemy. */
+    /* Doraźny lek/suplement → jedno pytanie: brać regularnie? Ale NIE gdy to już zalecenie. */
+    if (!wpis && (typ === "lek" || typ === "suplement") && rek.nazwa && juzZalecenie) {
+      trzosToast("Odhaczone ✓ — dawka z zalecenia"); zam(); renderPuls(); return;
+    }
     if (!wpis && (typ === "lek" || typ === "suplement") && rek.nazwa) {
       trzosToast("Dodane ✓"); zam();
       if (confirm(`Bierzesz „${rek.nazwa}” na stałe?\n\nDodam do Zaleceń — MANA przypomni o porach i policzy, czy się wywiązujesz.`)) {
