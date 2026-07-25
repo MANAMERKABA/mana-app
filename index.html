@@ -2501,25 +2501,29 @@ async function renderPuls() {
   const podzMa = (key) => { const g = PULS_NAV.find((p) => p.key === key); return !!(g && chipyOf(g).length); };
   const grupaAkt = PULS_NAV.find((p) => p.key === rodzicAkt) || PULS_NAV[0];
   const naDomyslnym = T === grupaAkt.sub[0][0];
-  /* Plakietka na Zaleceniach: ile dawek dzis jeszcze NIEodhaczonych (pomija wstrzymane). */
-  let zalZadania = 0;
-  try {
-    const dzisZ = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
-    const { data: za } = await supabase.from("zalecenia").select("id, pory").eq("aktywne", true).eq("wstrzymane", false).lte("od_data", dzisZ).or(`do_data.is.null,do_data.gte.${dzisZ}`);
-    const { data: oh } = await supabase.from("zalecenia_odhaczenia").select("zalecenie_id, pora").eq("data", dzisZ);
-    const zrob = new Set((oh || []).map((o) => o.zalecenie_id + "|" + o.pora));
-    (za || []).forEach((z) => { (Array.isArray(z.pory) ? z.pory : []).forEach((p) => { if (!zrob.has(z.id + "|" + p)) zalZadania++; }); });
-  } catch (e) {}
   const stylRodzica = (p) => {
     if (rodzicAkt !== p.key) return `border:1px solid var(--line);background:var(--surface);color:var(--ink);font-weight:500;`;
     if (naDomyslnym) return `border:1px solid #1a7158;background:#1a7158;color:#fff;font-weight:700;box-shadow:0 1px 4px rgba(26,113,88,.25);`;
     return `border:1px solid #1a7158;background:#e3f4f0;color:#1a7158;font-weight:700;`;
   };
   // Poziom 1 (rodzice) — wypełniony segment: mocny, „główny"
-  const plakietka = (p) => (p.key === "zalecenia" && zalZadania > 0) ? ` <span style="display:inline-block;min-width:17px;height:17px;line-height:17px;border-radius:9px;background:#c4513a;color:#fff;font-size:10.5px;font-weight:700;text-align:center;padding:0 4px;vertical-align:1px;">${zalZadania}</span>` : "";
+  const plakietka = (p) => p.key === "zalecenia" ? ` <span class="puls-plakietka" style="display:none;min-width:17px;height:17px;line-height:17px;border-radius:9px;background:#c4513a;color:#fff;font-size:10.5px;font-weight:700;text-align:center;padding:0 4px;vertical-align:1px;"></span>` : "";
   const tbGorne = el(`<div style="display:flex;gap:6px;margin-bottom:${podzMa(rodzicAkt) ? "8" : "14"}px;">${PULS_NAV.map((p) => `<button data-g="${p.key}" style="flex:1;${stylRodzica(p)}border-radius:11px;padding:10px 4px;font-size:13.5px;cursor:pointer;">${p.label}${plakietka(p)}</button>`).join("")}</div>`);
   tbGorne.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => { const g = PULS_NAV.find((p) => p.key === b.dataset.g); window._pulsTab = g.sub[0][0]; renderPuls(); }));
   box.appendChild(tbGorne);
+  /* Plakietka liczy sie W TLE — nie blokuje wczytania zakladek. */
+  (async () => {
+    try {
+      const dzisZ = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+      const { data: za } = await supabase.from("zalecenia").select("id, pory").eq("aktywne", true).eq("wstrzymane", false).lte("od_data", dzisZ).or(`do_data.is.null,do_data.gte.${dzisZ}`);
+      if (!za || !za.length) return;
+      const { data: oh } = await supabase.from("zalecenia_odhaczenia").select("zalecenie_id, pora").eq("data", dzisZ);
+      const zrob = new Set((oh || []).map((o) => o.zalecenie_id + "|" + o.pora));
+      let n = 0; za.forEach((z) => { (Array.isArray(z.pory) ? z.pory : []).forEach((p) => { if (!zrob.has(z.id + "|" + p)) n++; }); });
+      const span = tbGorne.querySelector(".puls-plakietka");
+      if (span && n > 0) { span.textContent = n; span.style.display = "inline-block"; }
+    } catch (e) {}
+  })();
   const podz = chipyOf(grupaAkt);
   if (podz.length) {
     // Poziom 2 (podzakładki) — podkreślane taby tekstowe, wcięte i do lewej: wyraźnie „niżej"
