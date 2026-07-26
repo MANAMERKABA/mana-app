@@ -2691,6 +2691,13 @@ async function renderPuls() {
     const dzisR = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
     const odR = isoZWarszawy(dzisR, "00:00");
     const { data: dzien = [] } = await supabase.from("puls_pomiary").select("*").gte("zmierzono_at", odR).order("zmierzono_at", { ascending: false });
+    /* Wpisy W TOKU z poprzednich dni (sen/aktywnosc bez konca) — inaczej sen zaczety wczoraj gubi sie. */
+    let wToku = [];
+    try {
+      const odWczoraj = isoZWarszawy(new Date(Date.now() - 48 * 3600000).toLocaleDateString("en-CA", { timeZone: TZ }), "00:00");
+      const { data: wt = [] } = await supabase.from("puls_pomiary").select("*").in("typ", ["sen", "aktywnosc"]).is("wartosc", null).gte("zmierzono_at", odWczoraj).lt("zmierzono_at", odR).order("zmierzono_at", { ascending: false });
+      wToku = (wt || []).filter((p) => /\d{1,2}:\d{2}\s*[–-]\s*(?!\d)/.test(p.kontekst || ""));
+    } catch (e) { wToku = []; }
     const ETYK_R = { cisnienie: "🩺", tetno: "💓", cukier: "🩸", waga: "⚖️", temperatura: "🌡", saturacja: "🫁", sen: "😴", nastroj: "🙂", energia: "⚡", stres: "😖", objaw: "🤕", stolec: "🚽", mocz: "💧", woda: "🥤", posilek: "🍽", lek: "💊", suplement: "🌿", aktywnosc: "🏃", pot: "💦", praktyka: "🕯", inne: "📌" };
     const NAZ_R = { cisnienie: "ciśnienie", tetno: "tętno", cukier: "cukier", waga: "waga", temperatura: "temperatura", saturacja: "saturacja", sen: "sen", nastroj: "nastrój", energia: "energia", stres: "stres", objaw: "objaw", stolec: "kał", mocz: "mocz", woda: "woda", posilek: "posiłek", lek: "lek", suplement: "suplement", aktywnosc: "aktywność", pot: "pot", praktyka: "praktyka", inne: "inne" };
     const godzTeraz = Number(new Date().toLocaleString("en-GB", { hour: "2-digit", hour12: false, timeZone: TZ }));
@@ -2724,7 +2731,7 @@ async function renderPuls() {
     if (godzTeraz >= 10 && brak("śniadanie")) luki.push(["śniadanie", { typ: "posilek", kontekst: "śniadanie" }]);
     if (godzTeraz >= 15 && brak("obiad")) luki.push(["obiad", { typ: "posilek", kontekst: "obiad" }]);
     if (godzTeraz >= 20 && brak("kolacja")) luki.push(["kolacja", { typ: "posilek", kontekst: "kolacja" }]);
-    if (!dzien.some((p) => p.typ === "sen") && godzTeraz >= 9 && !lukiOdpiete.includes("sen")) luki.push(["sen", { typ: "sen" }]);
+    if (!dzien.some((p) => p.typ === "sen") && !wToku.some((p) => p.typ === "sen") && godzTeraz >= 9 && !lukiOdpiete.includes("sen")) luki.push(["sen", { typ: "sen" }]);
     const sekR = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--surface);">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
         <span style="font-size:13px;font-weight:600;">${new Date().toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long", timeZone: TZ })}</span>
@@ -2735,7 +2742,18 @@ async function renderPuls() {
       <div class="rytm-tresc"></div>
     </div>`);
     const tr = sekR.querySelector(".rytm-tresc");
-    if (!dzien.length) {
+    for (const p of wToku) {
+      const st = (p.kontekst || "").match(/\d{1,2}:\d{2}/);
+      const kiedy = new Date(p.zmierzono_at).toLocaleDateString("pl-PL", { weekday: "short", timeZone: TZ });
+      const wt = el(`<div class="rytm-wtoku" style="display:flex;gap:8px;align-items:center;padding:9px 10px;margin-bottom:8px;border:1px dashed #1a7158;background:#eef7f3;border-radius:10px;cursor:pointer;">
+        <span style="flex:none;">${p.typ === "sen" ? "😴" : "🏃"}</span>
+        <span style="flex:1;font-size:12.5px;line-height:1.4;">${p.typ === "sen" ? "Sen" : "Aktywność"} <b>w toku</b> — od ${st ? st[0] : "?"} (${escP(kiedy)}). Dotknij, by zamknąć.</span>
+        <span style="flex:none;color:#1a7158;font-weight:600;font-size:12px;">zamknij ▸</span>
+      </div>`);
+      wt.addEventListener("click", () => arkuszPuls(p));
+      tr.appendChild(wt);
+    }
+    if (!dzien.length && !wToku.length) {
       tr.appendChild(el(`<div style="font-size:12.5px;color:var(--ink-soft);padding:4px 0;">Dzień jeszcze pusty. Mów w ciągu dnia — „dwa łyki wody", „spacer pół godziny", „mocz intensywny" — albo dodaj ręcznie przyciskiem ＋.</div>`));
     } else {
       for (const p of dzien) {
