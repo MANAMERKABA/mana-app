@@ -3256,6 +3256,8 @@ function arkuszPuls(wpis, prefill) {
   /* Czas trwania liczy MASZYNA - czlowiek podaje tylko poczatek i koniec.
      Same godziny nios wiecej niz sam czas: polozenie sie o 23 i o 2 to nie to samo przy tych samych 7 h. */
   const AKTYWNOSCI = [["spacer", "🚶"], ["siłownia", "🏋"], ["kardio", "🏃"], ["rower", "🚲"], ["basen", "🏊"], ["joga", "🧘"], ["praca fizyczna", "🔨"], ["inne", "📌"]];
+  /* Miejsce bólu = zamknieta lista + WIELOKROTNY wybor (bol bywa w kilku miejscach). Kazde = osobna dana do analizy. */
+  const CIALO = ["głowa", "kark / szyja", "barki", "klatka", "brzuch", "podbrzusze", "krzyż / plecy", "miednica", "ręce", "nogi", "stawy", "całe ciało"];
   /* Kolor opisany slowem jest bezwartosciowy - „ciemny" u jednego to „normalny" u drugiego.
      Paleta daje wszystkim te sama skale. Odcienie wg klinicznych kart nawodnienia. */
   const KOLORY_MOCZ = [
@@ -3376,7 +3378,11 @@ function arkuszPuls(wpis, prefill) {
       + `<div style="font-size:11.5px;color:var(--ink-soft);background:rgba(127,127,127,.06);border-radius:9px;padding:9px 10px;line-height:1.45;">To wpis <b>doraźny</b> — coś, co bierzesz teraz. Jeśli masz to brać regularnie, po zapisaniu zaproponuję dodanie do <b>Zaleceń</b>, gdzie MANA przypomni i policzy, czy się wywiązujesz.</div>`;
     else if (typ === "objaw") h = P("ap-nazwa", "Co dolega", "text", w.nazwa, "np. ból głowy")
       + skala("Nasilenie", 1, 10, w.wartosc, "1 = ledwie czuję · 10 = nie do wytrzymania")
-      + P("ap-kont", "Gdzie / cechy", "text", (w.lokalizacja || w.kontekst), "np. skroń, promieniuje do karku")
+      + `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Gdzie boli <span style="opacity:.8;">(można kilka)</span></label>
+          <div class="ap-cialo" style="display:flex;gap:5px;flex-wrap:wrap;">
+            ${CIALO.map((m) => { const zazn = (w.lokalizacja || "").split(",").map((x) => x.trim()).includes(m); return `<button type="button" data-m="${escP(m)}" style="border:1px solid ${zazn ? "#1a7158" : "var(--line)"};background:${zazn ? "#e3f4f0" : "none"};color:var(--ink);border-radius:12px;padding:6px 10px;font-size:12px;cursor:pointer;">${escP(m)}</button>`; }).join("")}
+          </div><input class="ap-lok" type="hidden" value="${w.lokalizacja != null ? escP(String(w.lokalizacja)) : ""}"></div>`
+      + P("ap-kont", "Cechy (opcjonalnie)", "text", w.kontekst, "np. promieniuje do karku, pulsujący")
       + `<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;cursor:pointer;line-height:1.4;">
           <input class="ap-wywrocilo" type="checkbox" ${w.wywrocilo_dzien ? "checked" : ""} style="width:17px;height:17px;flex:0 0 auto;margin-top:1px;">
           <span>To wywróciło mi dzień <span style="color:var(--ink-soft);">— odwołane plany, nieprzepracowany dzień</span></span>
@@ -3431,6 +3437,14 @@ function arkuszPuls(wpis, prefill) {
     }
     const poz = polaEl.querySelector(".ap-pozycja");
     if (poz) poz.querySelectorAll("button[data-z]").forEach((b) => b.addEventListener("click", () => { pozycja = b.dataset.z; rysujPola(true); }));
+    const cialo = polaEl.querySelector(".ap-cialo");
+    if (cialo) cialo.querySelectorAll("button[data-m]").forEach((b) => b.addEventListener("click", () => {
+      const lok = polaEl.querySelector(".ap-lok");
+      const zbior = new Set((lok.value || "").split(",").map((x) => x.trim()).filter(Boolean));
+      if (zbior.has(b.dataset.m)) zbior.delete(b.dataset.m); else zbior.add(b.dataset.m);
+      lok.value = Array.from(zbior).join(", ");
+      const on = zbior.has(b.dataset.m); b.style.border = `1px solid ${on ? "#1a7158" : "var(--line)"}`; b.style.background = on ? "#e3f4f0" : "none";
+    }));
     const chk = polaEl.querySelector(".ap-chipk");
     if (chk) chk.querySelectorAll("button[data-c]").forEach((b) => b.addEventListener("click", () => {
       const pk = polaEl.querySelector(".ap-kont"); const teraz = pk ? pk.value : "";
@@ -3555,7 +3569,7 @@ function arkuszPuls(wpis, prefill) {
       wartosc2: v.wartosc2 !== "" ? Number(v.wartosc2) : null,
       wartosc3: v.wartosc3 !== "" ? Number(v.wartosc3) : null,
       nazwa: napojem ? (rodzajNap === "woda" ? null : rodzajNap) : typ === "aktywnosc" ? (rodzajAkt || null) : (v.nazwa.trim() || null),
-      lokalizacja: (typ === "mocz" || typ === "stolec") ? (kolorWyd || null) : undefined,
+      lokalizacja: (typ === "mocz" || typ === "stolec") ? (kolorWyd || null) : typ === "objaw" ? ((ov.querySelector(".ap-lok") && ov.querySelector(".ap-lok").value.trim()) || null) : undefined,
       wywrocilo_dzien: typ === "objaw" ? !!(ov.querySelector(".ap-wywrocilo") && ov.querySelector(".ap-wywrocilo").checked) : undefined,
       kontekst: typ === "posilek" ? (rodzajPos || null)
         : (typ === "cisnienie" || typ === "saturacja" || typ === "tetno") ? (pozycja || null)
