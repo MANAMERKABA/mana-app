@@ -2357,8 +2357,8 @@ async function renderCykl(box) {
     </div>`));
   } else {
     box.appendChild(el(`<div style="border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--surface);">
-      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Zacznijmy od jednego faktu</div>
-      <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;">Zaznacz poniżej dni krwawienia — albo powiedz asystentowi „miesiączka zaczęła się wczoraj". Po dwóch cyklach zacznę pokazywać rytm.</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Zacznij od tego, co się dzieje</div>
+      <div style="font-size:13px;color:var(--ink-soft);line-height:1.5;">Nie musisz czekać na miesiączkę — zacznij w dowolnym momencie: zaznacz krwawienie, zapisz ból, albo powiedz asystentowi „boli mnie podbrzusze" lub „miesiączka zaczęła się wczoraj". Rytm i okno płodne pokażę, gdy uzbiera się trochę dni.</div>
     </div>`));
   }
 
@@ -2413,11 +2413,15 @@ async function renderCykl(box) {
       <button id="cy-kiedy" style="border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);border-radius:8px;padding:4px 9px;font-size:11.5px;cursor:pointer;">${dzienRob === dzis ? "inny dzień" : "wróć na dziś"}</button>
     </div>
     <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;line-height:1.45;">Zapisujesz tylko wtedy, gdy coś się dzieje. <b>Spokojny dzień nie wymaga żadnego kliknięcia</b> — brak wpisu znaczy, że było dobrze.</div>
-    <button id="cy-b-krw" style="width:100%;border:1px solid ${panel === "krw" ? "#1a7158" : "var(--line)"};background:${rekRob && rekRob.krwawienie ? "#e3f4f0" : "var(--surface)"};color:var(--ink);border-radius:10px;padding:12px 6px;font-size:13.5px;font-weight:600;cursor:pointer;">🩸 Krwawienie${rekRob && rekRob.krwawienie ? ` ✓ ${escP((CYKL_KRW.find((c) => c[0] === rekRob.krwawienie) || ["", ""])[1].toLowerCase())}` : ""}</button>
+    <div style="display:flex;gap:7px;">
+      <button id="cy-b-krw" style="flex:1;border:1px solid ${panel === "krw" ? "#1a7158" : "var(--line)"};background:${rekRob && rekRob.krwawienie ? "#e3f4f0" : "var(--surface)"};color:var(--ink);border-radius:10px;padding:12px 6px;font-size:13.5px;font-weight:600;cursor:pointer;">🩸 Krwawienie${rekRob && rekRob.krwawienie ? ` ✓ ${escP((CYKL_KRW.find((c) => c[0] === rekRob.krwawienie) || ["", ""])[1].toLowerCase())}` : ""}</button>
+      <button id="cy-b-bol" style="flex:1;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:12px 6px;font-size:13.5px;font-weight:600;cursor:pointer;">🤕 Ból / objaw</button>
+    </div>
     <div id="cy-panel" style="margin-top:12px;"></div>
-    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:11px;padding-top:10px;border-top:1px solid var(--line);line-height:1.5;">Ból i inne objawy zapisujesz w <b>Rytmie</b> — jedno miejsce dla całego ciała, czy to podbrzusze, czy łokieć. Tutaj zobaczysz je ułożone względem cyklu.</div>
+    <div style="font-size:11.5px;color:var(--ink-soft);margin-top:11px;padding-top:10px;border-top:1px solid var(--line);line-height:1.5;">Ból zapisany tu albo w <b>Rytmie</b> to <b>jeden ból</b> — jedno miejsce dla całego ciała, czy podbrzusze, czy łokieć. Tutaj widzisz go ułożonego względem cyklu.</div>
   </div>`);
 
+  zap.querySelector("#cy-b-bol").addEventListener("click", () => arkuszPuls(null, { typ: "objaw" }));
   zap.querySelector("#cy-kiedy").addEventListener("click", () => {
     if (dzienRob !== dzis) { window._cyklDzien = null; renderPuls(); return; }
     const w = prompt("Który dzień opisujesz? (RRRR-MM-DD)", dzis);
@@ -3141,7 +3145,7 @@ function arkuszPuls(wpis, prefill) {
     [["sen", "😴", "sen"], ["aktywnosc", "🏃", "aktywność"], ["praktyka", "🕯", "praktyka"]],
     [["lek", "💊", "lek"], ["suplement", "🌿", "suplement"]],
     [["__cykl", "🩸", "cykl →"]],
-    [["nastroj", "🙂", "nastrój"], ["energia", "⚡", "energia"], ["stres", "😖", "stres"], ["objaw", "🤕", "objaw"]],
+    [["nastroj", "🙂", "nastrój"], ["energia", "⚡", "energia"], ["stres", "😖", "stres"], ["objaw", "🤕", "ból / objaw"]],
     [["waga", "⚖️", "waga"], ["wzrost", "📏", "wzrost"], ["talia", "📐", "talia"]],
     [["inne", "📌", "inne"]],
   ];
