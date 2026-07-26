@@ -3569,6 +3569,18 @@ function arkuszPuls(wpis, prefill) {
       zmierzono_at: isoZWarszawy(ov.querySelector(".ap-data").value, ov.querySelector(".ap-godz").value || "12:00"),
       zrodlo: "front",
     };
+    /* Sen NALEZY do dnia POBUDKI (nawet gdy zaczal sie wieczorem wczesniej) - przez polnoc
+       przestemplowujemy na dzien i godzine obudzenia, zeby po zamknieciu byl w Dobie „dzis". */
+    if (typ === "sen") {
+      const a = ov.querySelector(".ap-od"), b = ov.querySelector(".ap-do");
+      if (a && b && a.value && b.value) {
+        const [h1, m1] = a.value.split(":").map(Number), [h2, m2] = b.value.split(":").map(Number);
+        const przezPolnoc = (h2 * 60 + m2) <= (h1 * 60 + m1);
+        const dataStart = ov.querySelector(".ap-data").value;
+        const dzienPobudki = przezPolnoc ? new Date(new Date(dataStart + "T12:00").getTime() + 86400000).toLocaleDateString("en-CA", { timeZone: TZ }) : dataStart;
+        rek.zmierzono_at = isoZWarszawy(dzienPobudki, b.value);
+      }
+    }
     if ((typ === "objaw" || typ === "praktyka") && !rek.nazwa) { trzosToast((typ === "objaw" ? "Objaw" : "Praktyka") + " wymaga nazwy."); return; }
     /* Jeden pomiar, jedna karta - ale w bazie moga powstac DWA wpisy (cisnienie i saturacja),
        bo to dwie rozne wielkosci zmierzone przy jednej okazji. Tetno doklejamy do pierwszego z nich. */
