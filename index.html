@@ -3355,13 +3355,13 @@ function arkuszPuls(wpis, prefill) {
       + P("ap-kont", "Uwagi", "text", w.kontekst, "śluz, niestrawione resztki, parcie…");
     else if (typ === "pot") h = P("ap-kont", "Cechy", "text", w.kontekst, "kiedy, jak obfity, zapach");
     else if (typ === "sen") h = zakresCzasu("Zasnąłem", "Obudziłem się", w.kontekst)
-      + P("ap-nota2", "Jak spałeś", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}\s*·?\s*/, ""), "przebudzenia, sny…");
+      + P("ap-nota2", "Jak spałeś", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*(\d{1,2}:\d{2})?\s*·?\s*/, ""), "przebudzenia, sny…");
     else if (typ === "aktywnosc") h = `<div><label style="font-size:11.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">Rodzaj</label>
         <div class="ap-akt" style="display:flex;gap:5px;flex-wrap:wrap;">
           ${AKTYWNOSCI.map(([k, ik]) => `<button type="button" data-a="${k}" style="border:1px solid ${rodzajAkt === k ? "#1a7158" : "var(--line)"};background:${rodzajAkt === k ? "#e3f4f0" : "none"};color:var(--ink);border-radius:13px;padding:6px 11px;font-size:12px;cursor:pointer;font-weight:${rodzajAkt === k ? "600" : "400"};">${ik} ${k}</button>`).join("")}
         </div></div>`
       + zakresCzasu("Początek", "Koniec", w.kontekst)
-      + P("ap-nota2", "Szczegóły", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*\d{1,2}:\d{2}\s*·?\s*/, ""), "gdzie, z kim, jak było");
+      + P("ap-nota2", "Szczegóły", "text", (w.kontekst || "").replace(/^\d{1,2}:\d{2}\s*[–-]\s*(\d{1,2}:\d{2})?\s*·?\s*/, ""), "gdzie, z kim, jak było");
     else if (typ === "praktyka") h = P("ap-nazwa", "Rodzaj praktyki", "text", w.nazwa, "rapé / medytacja / akupunktura / sauna…") + P("ap-wart", "Minut (opcjonalnie)", "number", w.wartosc) + P("ap-kont", "Szczegóły", "text", w.kontekst, "z kim, gdzie, przebieg");
     else if (typ === "lek" || typ === "suplement") h = P("ap-nazwa", "Nazwa", "text", w.nazwa)
       + `<div class="ap-slownik" style="position:relative;margin-top:-4px;"></div>`
