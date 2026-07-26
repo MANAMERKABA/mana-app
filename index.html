@@ -3382,7 +3382,7 @@ function arkuszPuls(wpis, prefill) {
           <div class="ap-cialo" style="display:flex;gap:5px;flex-wrap:wrap;">
             ${CIALO.map((m) => { const zazn = (w.lokalizacja || "").split(",").map((x) => x.trim()).includes(m); return `<button type="button" data-m="${escP(m)}" style="border:1px solid ${zazn ? "#1a7158" : "var(--line)"};background:${zazn ? "#e3f4f0" : "none"};color:var(--ink);border-radius:12px;padding:6px 10px;font-size:12px;cursor:pointer;">${escP(m)}</button>`; }).join("")}
           </div><input class="ap-lok" type="hidden" value="${w.lokalizacja != null ? escP(String(w.lokalizacja)) : ""}"></div>`
-      + P("ap-kont", "Cechy (opcjonalnie)", "text", w.kontekst, "np. promieniuje do karku, pulsujący")
+      + P("ap-kont", "Dokładniej — miejsce i cechy (opcjonalnie)", "text", w.kontekst, "np. łokieć, promieniuje do karku, pulsujący")
       + `<label style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;cursor:pointer;line-height:1.4;">
           <input class="ap-wywrocilo" type="checkbox" ${w.wywrocilo_dzien ? "checked" : ""} style="width:17px;height:17px;flex:0 0 auto;margin-top:1px;">
           <span>To wywróciło mi dzień <span style="color:var(--ink-soft);">— odwołane plany, nieprzepracowany dzień</span></span>
