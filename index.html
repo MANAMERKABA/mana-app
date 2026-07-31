@@ -5763,8 +5763,11 @@ async function otworzRozmowe(p) {
       }
       const ext = jestPdf ? "pdf" : "jpg";
       const sciezka = `${p.id}/${crypto.randomUUID()}.${ext}`;
+      /* iOS: File/Blob trzeba ZMATERIALIZOWAC do arrayBuffer, inaczej upload = „No content provided". */
+      const buf = await blob.arrayBuffer();
+      if (!buf || buf.byteLength === 0) { trzosToast("Plik jest pusty — wybierz go jeszcze raz."); return; }
       const { error: upErr } = await supabase.storage.from("czat-pliki")
-        .upload(sciezka, blob, { contentType: jestPdf ? "application/pdf" : "image/jpeg" });
+        .upload(sciezka, buf, { contentType: jestPdf ? "application/pdf" : "image/jpeg" });
       if (upErr) { trzosToast("Nie wysłano: " + upErr.message); return; }
       const zalacznik = { sciezka, typ: jestPdf ? "pdf" : "zdjecie", nazwa: (file.name || "").slice(0, 120), rozmiar: blob.size, mini };
       const { data, error } = await supabase.from("wiadomosci")
