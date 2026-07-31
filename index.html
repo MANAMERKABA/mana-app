@@ -5430,6 +5430,18 @@ async function otworzRozmowe(p) {
   const lista = overlay.querySelector(".rz-lista");
   const input = overlay.querySelector(".rz-input");
   const btn = overlay.querySelector(".rz-wyslij");
+  /* CYTAT — odpowiadanie na konkretna wiadomosc. Migawka {id, traveler_id, fragment}. */
+  let odpowiadamNa = null;
+  const cytatBox = overlay.querySelector(".rz-cytat"), cytatTresc = overlay.querySelector(".rz-cytat-tresc");
+  const ustawCytat = (w) => {
+    const frag = (w.tresc || (w.zalacznik ? (w.zalacznik.typ === "pdf" ? "📄 " + (w.zalacznik.nazwa || "dokument") : "📷 zdjęcie") : "")).slice(0, 120);
+    odpowiadamNa = { id: w.id, traveler_id: w.traveler_id, fragment: frag };
+    if (cytatTresc) cytatTresc.innerHTML = `<b style="color:#1a7158;">↩ ${escP(w.traveler_id === mojeId ? "Ty" : nickOf(w.traveler_id))}</b><br>${escP(frag)}`;
+    if (cytatBox) cytatBox.style.display = "flex";
+    input.focus();
+  };
+  const wyczyscCytat = () => { odpowiadamNa = null; if (cytatBox) cytatBox.style.display = "none"; };
+  if (overlay.querySelector(".rz-cytat-x")) overlay.querySelector(".rz-cytat-x").addEventListener("click", wyczyscCytat);
   let jezykMoj = (TRAVELER && TRAVELER.jezyk) || (navigator.language || "pl").slice(0, 2).toLowerCase();
   let tlumaczOn = false;
   let tryb = "auto";
@@ -5613,14 +5625,21 @@ async function otworzRozmowe(p) {
     } else {
       zawartosc = escP(w.tresc);
     }
+    const cytatHtml = w.odpowiedz_na ? `<div class="rz-qt" data-qid="${escP(w.odpowiedz_na.id || "")}" style="border-left:3px solid ${moje ? "rgba(255,255,255,.6)" : "#1a7158"};padding:3px 8px;margin-bottom:5px;font-size:12px;opacity:.9;cursor:pointer;border-radius:0 6px 6px 0;background:${moje ? "rgba(255,255,255,.15)" : "rgba(0,0,0,.04)"};"><b>↩ ${escP(w.odpowiedz_na.traveler_id === mojeId ? "Ty" : nickOf(w.odpowiedz_na.traveler_id))}</b><br>${escP((w.odpowiedz_na.fragment || "").slice(0, 100))}</div>` : "";
     const row = el(`<div data-wid="${w.id}" style="display:flex;flex-direction:column;align-items:${moje ? "flex-end" : "flex-start"};">
-      <div class="rz-bubble" style="max-width:80%;background:${moje ? "var(--turkus,#1f9e8f)" : "#efece3"};color:${moje ? "#fff" : "var(--ink)"};border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;word-break:break-word;white-space:pre-wrap;">${zawartosc}</div>
+      <div class="rz-bubble" style="max-width:80%;background:${moje ? "var(--turkus,#1f9e8f)" : "#efece3"};color:${moje ? "#fff" : "var(--ink)"};border-radius:14px;padding:8px 12px;font-size:14px;line-height:1.35;word-break:break-word;white-space:pre-wrap;">${cytatHtml}${zawartosc}</div>
       <div style="font-size:10.5px;color:var(--ink-soft);margin-top:2px;display:flex;gap:6px;align-items:center;">
         <span>${moje ? "" : escP(nickOf(w.traveler_id)) + " · "}${escP(czas)}<span class="rz-edyt">${w.edytowano ? " · edytowano" : ""}</span></span>
         <button class="rz-flag" title="Akcje wiadomości" style="border:none;background:none;cursor:pointer;color:var(--ink-soft);font-size:14px;line-height:1;padding:0 3px;">⋯</button>
       </div>
     </div>`);
     row.querySelector(".rz-flag").addEventListener("click", () => flagujWiadomosc(w, row));
+    const qt = row.querySelector(".rz-qt");
+    if (qt) qt.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const cel = lista.querySelector(`div[data-wid="${qt.dataset.qid}"]`);
+      if (cel) { cel.scrollIntoView({ behavior: "smooth", block: "center" }); const b = cel.querySelector(".rz-bubble"); if (b) { const t = b.style.transition; b.style.transition = "box-shadow .2s"; b.style.boxShadow = "0 0 0 3px rgba(26,113,88,.5)"; setTimeout(() => { b.style.boxShadow = ""; b.style.transition = t; }, 1200); } }
+    });
     if (z && z.typ === "zdjecie") {
       const img = row.querySelector(".rz-zal-img");
       img.addEventListener("click", () => pokazZdjecie(z));
@@ -5664,6 +5683,7 @@ async function otworzRozmowe(p) {
     }
     const akc = sheet.querySelector(".fl-akcje");
     const przycisk = (label, primary) => { const b = el(`<button style="width:100%;border:${primary ? "none" : "1px solid var(--line)"};background:${primary ? "var(--turkus,#1f9e8f)" : "var(--surface)"};color:${primary ? "#fff" : "var(--ink)"};border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;">${label}</button>`); akc.appendChild(b); return b; };
+    przycisk("↩ Odpowiedz").addEventListener("click", () => { zamknijSheet(); ustawCytat(w); });
     if (moje) {
       if (!w.zalacznik) przycisk("✏️ Edytuj").addEventListener("click", () => { zamknijSheet(); edytujWiadomosc(w, row); });
       przycisk("🗑 Usuń").addEventListener("click", async () => {
@@ -5918,11 +5938,12 @@ async function otworzRozmowe(p) {
 
   async function wyslij() {
     const tresc = input.value.trim(); if (!tresc) return;
-    input.value = ""; input.style.height = "auto"; input.focus();
+    const cyt = odpowiadamNa;
+    input.value = ""; input.style.height = "auto"; wyczyscCytat(); input.focus();
     if (typeof aktualizujLive === "function") aktualizujLive();
     const { data, error } = await supabase.from("wiadomosci")
-      .insert({ plemie_id: p.id, traveler_id: mojeId, tresc }).select("id, traveler_id, tresc, created_at").single();
-    if (error) { trzosToast("Nie wysłano: " + error.message); input.value = tresc; return; }
+      .insert({ plemie_id: p.id, traveler_id: mojeId, tresc, odpowiedz_na: cyt }).select("id, traveler_id, tresc, created_at, odpowiedz_na").single();
+    if (error) { trzosToast("Nie wysłano: " + error.message); input.value = tresc; if (cyt) ustawCytat({ id: cyt.id, traveler_id: cyt.traveler_id, tresc: cyt.fragment }); return; }
     if (data && !znane.has(data.id)) { znane.add(data.id); const pusto = lista.querySelector("div[style*='text-align:center']"); if (pusto) pusto.remove(); dodajWiersz(data); doDolu(); }
     if (data && typeof pushPoWiadomosci === "function") pushPoWiadomosci(data.id); // push do reszty plemienia (zamknięte apki)
   }
