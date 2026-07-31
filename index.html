@@ -5634,6 +5634,22 @@ async function otworzRozmowe(p) {
       </div>
     </div>`);
     row.querySelector(".rz-flag").addEventListener("click", () => flagujWiadomosc(w, row));
+    /* Swipe w bok = odpowiedz (jak WhatsApp). Poziomy ruch > 50px w prawo cytuje. */
+    {
+      let sx = 0, sy = 0, dxNow = 0, kier = false;
+      const bub = row.querySelector(".rz-bubble");
+      row.addEventListener("touchstart", (e) => { const t = e.touches[0]; sx = t.clientX; sy = t.clientY; dxNow = 0; kier = false; }, { passive: true });
+      row.addEventListener("touchmove", (e) => {
+        const t = e.touches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+        if (!kier && Math.abs(dx) > Math.abs(dy) + 6) kier = true;
+        if (kier && dx > 0 && bub) { dxNow = Math.min(dx, 70); bub.style.transform = `translateX(${dxNow}px)`; }
+      }, { passive: true });
+      row.addEventListener("touchend", () => {
+        if (bub) { bub.style.transition = "transform .15s"; bub.style.transform = ""; setTimeout(() => { if (bub) bub.style.transition = ""; }, 170); }
+        if (dxNow > 50) ustawCytat(w);
+        dxNow = 0;
+      });
+    }
     const qt = row.querySelector(".rz-qt");
     if (qt) qt.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -5900,7 +5916,7 @@ async function otworzRozmowe(p) {
 
   try { await supabase.rpc("sprzataj_znikajace", { p_plemie: p.id }); } catch (e) {}
   const { data: wiad = [], error } = await supabase
-    .from("wiadomosci").select("id, traveler_id, tresc, created_at, zalacznik")
+    .from("wiadomosci").select("id, traveler_id, tresc, created_at, zalacznik, odpowiedz_na")
     .eq("plemie_id", p.id).order("created_at", { ascending: true }).limit(300);
   lista.innerHTML = "";
   if (error) { lista.innerHTML = `<div style="color:#c4513a;font-size:13px;">Błąd: ${escP(error.message)}</div>`; }
