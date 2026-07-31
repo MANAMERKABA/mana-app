@@ -5131,7 +5131,11 @@ const LISTA_TYPY = [
 function listaTypEt(t) { const x = LISTA_TYPY.find((y) => y.k === t); return x ? x.ik + " " + x.et : t; }
 function kwotaTxt(poz) {
   if (poz.kwota == null) return "";
-  return Number(poz.kwota).toLocaleString("pl-PL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " " + (poz.waluta || "PLN");
+  const w = poz.waluta || "PLN";
+  const fmt = (n) => Number(n).toLocaleString("pl-PL", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  if (poz.kwota_na_osobe) return fmt(poz.kwota) + " " + w + "/os";
+  if (poz.dzielony_na && poz.dzielony_na > 0) return fmt(poz.kwota) + " " + w + " ÷ " + poz.dzielony_na + " = " + fmt(poz.kwota / poz.dzielony_na) + "/os";
+  return fmt(poz.kwota) + " " + w;
 }
 
 async function otworzListe(p) {
@@ -5296,7 +5300,7 @@ async function renderKokpit(tresc, p, owner, listaId) {
 
 function formPozycja(tresc, p, owner, listaId, anchor) {
   const ist = tresc.querySelector(".lp-form"); if (ist) { ist.remove(); return; }
-  let typ = "zadanie", model = "wlasny";
+  let typ = "zadanie", model = "wlasny", kmode = "na_osobe";
   const f = el(`<div class="lp-form" style="border:1px solid var(--line);border-radius:12px;padding:11px;margin:0 0 12px;background:var(--surface);">
     <div class="lp-typy" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>
     <input class="lp-t" type="text" placeholder="Nazwa pozycji" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
@@ -5304,6 +5308,11 @@ function formPozycja(tresc, p, owner, listaId, anchor) {
       <div style="display:flex;gap:6px;margin-bottom:8px;">
         <input class="lp-kw" type="number" inputmode="decimal" placeholder="Kwota" style="flex:1;min-width:0;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
         <select class="lp-wal" style="width:88px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${LISTA_WALUTY.map((w) => `<option>${w}</option>`).join("")}</select>
+      </div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Jak liczyć kwotę:</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+        <button type="button" class="lp-kmode" data-km="na_osobe" style="${BG}flex:1;min-width:130px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;">na osobę</button>
+        <button type="button" class="lp-kmode" data-km="laczna" style="${BG}flex:1;min-width:130px;">łączna do podziału</button>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
         <button type="button" class="lp-model" data-m="wlasny" style="${BG}flex:1;min-width:130px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;">Każdy płaci sam</button>
@@ -5333,7 +5342,12 @@ function formPozycja(tresc, p, owner, listaId, anchor) {
   f.querySelectorAll(".lp-model").forEach((b) => b.addEventListener("click", () => {
     model = b.dataset.m; f.querySelectorAll(".lp-model").forEach((x) => (x.style.cssText = BG + "flex:1;min-width:130px;"));
     b.style.cssText = BG + "flex:1;min-width:130px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;";
-    f.querySelector(".lp-dziel-wrap").style.display = model === "organizator" ? "block" : "none";
+  }));
+  f.querySelectorAll(".lp-kmode").forEach((b) => b.addEventListener("click", () => {
+    kmode = b.dataset.km; f.querySelectorAll(".lp-kmode").forEach((x) => (x.style.cssText = BG + "flex:1;min-width:130px;"));
+    b.style.cssText = BG + "flex:1;min-width:130px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;";
+    f.querySelector(".lp-dziel-wrap").style.display = kmode === "laczna" ? "block" : "none";
+    f.querySelector(".lp-kw").placeholder = kmode === "laczna" ? "Kwota łączna" : "Kwota na osobę";
   }));
   f.querySelector(".lp-anu").addEventListener("click", () => f.remove());
   f.querySelector(".lp-ok").addEventListener("click", async () => {
@@ -5346,8 +5360,9 @@ function formPozycja(tresc, p, owner, listaId, anchor) {
       rek.waluta = f.querySelector(".lp-wal").value;
       rek.koszt_model = model;
       rek.kwota_widoczna = f.querySelector(".lp-kwwid").checked;
+      rek.kwota_na_osobe = (kmode === "na_osobe");
       const dz = parseInt(f.querySelector(".lp-dziel").value, 10);
-      if (model === "organizator" && !isNaN(dz) && dz > 0) rek.dzielony_na = dz;
+      if (kmode === "laczna" && !isNaN(dz) && dz > 0) rek.dzielony_na = dz;
     }
     if (typ === "dokument") { const u = f.querySelector(".lp-url").value.trim(); if (u) rek.link_url = u; }
     const { error } = await supabase.from("lista_pozycje").insert(rek);
