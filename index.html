@@ -4927,8 +4927,10 @@ function kartaPlemienia(p) {
     const r2 = rzad();
     const inv = el(`<button class="pl-zapros-btn" style="${BT}">➕ Zaproś</button>`);
     inv.addEventListener("click", () => zaprosZKontaktow(p.id, p.nazwa)); r2.appendChild(inv);
-    const dz = el(`<button style="${BG}">+ Dodaj dziecko</button>`);
+    const dz = el(`<button style="${BG}">+ Dziecko</button>`);
     dz.addEventListener("click", () => formDodajDziecko(p, card)); r2.appendChild(dz);
+    const ob = el(`<button style="${BG}">+ Os. bez konta</button>`);
+    ob.addEventListener("click", () => formOsBezKonta(p, card)); r2.appendChild(ob);
   }
   // Rząd 3 — rozmowa + zarządzanie
   const r3 = rzad();
@@ -5285,13 +5287,36 @@ async function renderKokpit(tresc, p, owner, listaId) {
       if (rozw && osoby) rozw.addEventListener("click", () => {
         const open = osoby.style.display === "block";
         osoby.style.display = open ? "none" : "block"; rozw.textContent = open ? "Kto ma to na sobie" : "Zwiń";
-        if (!open) osoby.innerHTML = czl.map((c) => {
+        if (open) return;
+        osoby.innerHTML = "";
+        const jestKoszt = z.typ === "koszt" && z.kwota != null;
+        const baza = jestKoszt ? (z.kwota_na_osobe ? z.kwota : (z.dzielony_na && z.dzielony_na > 0 ? z.kwota / z.dzielony_na : z.kwota)) : null;
+        const nalTxt = (u) => baza != null ? (baza * u).toLocaleString("pl-PL", { maximumFractionDigits: 2 }) + " " + (z.waluta || "PLN") : "";
+        if (jestKoszt) osoby.appendChild(el(`<div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">Udziały — daj komuś 2, jeśli płaci za kogoś bez konta (np. partnera).</div>`));
+        czl.forEach((c) => {
           const s = stany2.find((y) => y.traveler_id === c.traveler_id);
           const st = s ? s.stan : "oczekuje";
           const kolor = (st === "przyjete" || st === "zrobione") ? "#1a7158" : (st === "odrzucone" ? "#c0392b" : "var(--ink-soft)");
           const et = st === "oczekuje" ? "czeka" : st;
-          return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;"><span>${escP(c.nick || "uczestnik")}</span><span style="color:${kolor};">${escP(et)}</span></div>`;
-        }).join("");
+          const ud = s && s.udzialy ? s.udzialy : 1;
+          const row = el(`<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0;">
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escP(c.nick || "uczestnik")}</span>
+            ${jestKoszt
+              ? `<span style="display:flex;align-items:center;gap:4px;"><button class="ud-m" style="width:22px;height:22px;border:1px solid var(--line);border-radius:6px;background:#efece3;cursor:pointer;line-height:1;">−</button><span class="ud-v" style="min-width:14px;text-align:center;">${ud}</span><button class="ud-p" style="width:22px;height:22px;border:1px solid var(--line);border-radius:6px;background:#efece3;cursor:pointer;line-height:1;">+</button><span style="font-size:10.5px;color:var(--ink-soft);">udz.</span></span><span class="ud-nal" style="min-width:78px;text-align:right;color:#1a7158;">${nalTxt(ud)}</span>`
+              : `<span style="color:${kolor};">${escP(et)}</span>`}
+          </div>`);
+          if (jestKoszt && owner) {
+            const vEl = row.querySelector(".ud-v"), nalEl = row.querySelector(".ud-nal");
+            const setUd = async (nowe) => {
+              nowe = Math.max(0, nowe);
+              vEl.textContent = nowe; if (nalEl) nalEl.textContent = nalTxt(nowe);
+              await supabase.from("lista_pozycja_stan").upsert({ pozycja_id: z.id, traveler_id: c.traveler_id, udzialy: nowe }, { onConflict: "pozycja_id,traveler_id" });
+            };
+            row.querySelector(".ud-m").addEventListener("click", () => setUd((parseInt(vEl.textContent, 10) || 1) - 1));
+            row.querySelector(".ud-p").addEventListener("click", () => setUd((parseInt(vEl.textContent, 10) || 1) + 1));
+          }
+          osoby.appendChild(row);
+        });
       });
     }
     tresc.appendChild(row);
@@ -5544,6 +5569,27 @@ function formDodajDziecko(p, card) {
 }
 async function dodajDziecko(plemie, imie, rok, zgoda) {
   const { data, error } = await supabase.rpc("dodaj_dziecko", { p_plemie: plemie, p_imie: imie, p_rok: rok, p_zgoda: zgoda });
+  if (error) { alert("Błąd: " + error.message); return; }
+  if (!data || !data.ok) { alert((data && data.error) || "Nie dodano."); return; }
+  renderPlemie();
+}
+function formOsBezKonta(p, card) {
+  const ist = card.querySelector(".pl-ozk-form"); if (ist) { ist.remove(); return; }
+  const f = el(`<div class="pl-ozk-form" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px;">
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;">Dorosły uczestnik bez własnego konta (np. partner kogoś z grupy). Prowadzisz go jako opiekun — odhaczasz i przyjmujesz koszty za niego, jego udział spływa na Ciebie. Gdy założy konto, przejmie swój profil.</div>
+    <input class="ozk-imie" type="text" placeholder="Imię (np. Daniel)" maxlength="80" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+    <div style="display:flex;gap:8px;"><button class="ozk-dodaj" style="${BT}">Dodaj</button><button class="ozk-anu" style="${BG}">Anuluj</button></div>
+  </div>`);
+  f.querySelector(".ozk-anu").addEventListener("click", () => f.remove());
+  f.querySelector(".ozk-dodaj").addEventListener("click", () => {
+    const im = f.querySelector(".ozk-imie").value.trim();
+    if (!im) { alert("Podaj imię."); return; }
+    dodajOsobeBezKonta(p.id, im);
+  });
+  card.appendChild(f);
+}
+async function dodajOsobeBezKonta(plemie, imie) {
+  const { data, error } = await supabase.rpc("dodaj_osobe_bez_konta", { p_plemie: plemie, p_imie: imie });
   if (error) { alert("Błąd: " + error.message); return; }
   if (!data || !data.ok) { alert((data && data.error) || "Nie dodano."); return; }
   renderPlemie();
