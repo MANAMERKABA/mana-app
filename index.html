@@ -5166,7 +5166,7 @@ async function renderListyIndex(tresc, p, owner) {
     wzor.addEventListener("click", () => formNowaLista(tresc, p, owner, true));
     akc.appendChild(nowa); akc.appendChild(wzor); tresc.appendChild(akc);
   }
-  if (!listy.length) { tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Brak list. ${owner ? "Utwórz pierwszą — np. „Sierpniówka"." : "Organizator jeszcze nic nie utworzył."}</div>`)); return; }
+  if (!listy.length) { tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Brak list. ${owner ? "Utwórz pierwszą — np. „Sierpniówka”." : "Organizator jeszcze nic nie utworzył."}</div>`)); return; }
   listy.forEach((L) => {
     const card = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px;">
       <div style="flex:1;"><div style="font-size:15px;font-weight:600;">${escP(L.tytul)}</div>
