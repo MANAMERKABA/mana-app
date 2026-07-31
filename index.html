@@ -4918,6 +4918,8 @@ function kartaPlemienia(p) {
   kalBtn.addEventListener("click", () => otworzKalendarzPlemienia(p)); r1.appendChild(kalBtn);
   const zadBtn = el(`<button style="${BG}">📋 Zadania</button>`);
   zadBtn.addEventListener("click", () => otworzZadaniaPlemienia(p)); r1.appendChild(zadBtn);
+  const listaBtn = el(`<button style="${BG}">🗂 Lista</button>`);
+  listaBtn.addEventListener("click", () => otworzListe(p)); r1.appendChild(listaBtn);
   const zz = el(`<button style="${BG}">➕ Zadanie</button>`);
   zz.addEventListener("click", () => formZadajZadanie(p, card)); r1.appendChild(zz);
   // Rząd 2 — ludzie (tylko założyciel)
@@ -5111,6 +5113,248 @@ async function otworzZadaniaPlemienia(p) {
     }
   }
   odswiez();
+}
+
+/* ============================================================
+   KAFEL LISTA — kokpit orkiestracji w plemieniu.
+   Pozycje (zadanie/koszt/dokument/rzecz) ze STANEM PER OSOBA.
+   Organizator tworzy (od zera lub z wzorca), uczestnik przyjmuje u siebie.
+   Ten sam kafel co w gospodarzu (lustro). Slice 1 = strona organizatora.
+   ============================================================ */
+const LISTA_WALUTY = ["PLN", "GBP", "EUR", "USD"];
+const LISTA_TYPY = [
+  { k: "zadanie", ik: "✓", et: "Zadanie" },
+  { k: "koszt", ik: "💰", et: "Koszt" },
+  { k: "dokument", ik: "📄", et: "Dokument / link" },
+  { k: "rzecz", ik: "🎒", et: "Do zabrania" },
+];
+function listaTypEt(t) { const x = LISTA_TYPY.find((y) => y.k === t); return x ? x.ik + " " + x.et : t; }
+function kwotaTxt(poz) {
+  if (poz.kwota == null) return "";
+  return Number(poz.kwota).toLocaleString("pl-PL", { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + " " + (poz.waluta || "PLN");
+}
+
+async function otworzListe(p) {
+  const owner = ((TRAVELER && TRAVELER.id) === p.owner_traveler_id) || p.moja_rola === "zalozyciel";
+  const overlay = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head">
+      <span class="m-modal__tytul">Listy · ${escP(p.nazwa)}</span>
+      <button class="m-modal__x" aria-label="Zamknij">&#10005;</button>
+    </div>
+    <div class="m-form" id="lst-tresc"><div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div></div>
+  </div></div>`);
+  document.body.appendChild(overlay);
+  const zamknij = () => overlay.remove();
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
+  overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  renderListyIndex(overlay.querySelector("#lst-tresc"), p, owner);
+}
+
+async function renderListyIndex(tresc, p, owner) {
+  tresc.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
+  const { data: listy = [], error } = await supabase.from("listy")
+    .select("id,tytul,status,waluta_domyslna,created_at")
+    .eq("plemie_id", p.id).eq("szablon", false)
+    .order("created_at", { ascending: false });
+  if (error) { tresc.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(error.message)}</div>`; return; }
+  tresc.innerHTML = "";
+  if (owner) {
+    const akc = el(`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;"></div>`);
+    const nowa = el(`<button style="${BT}">+ Nowa lista</button>`);
+    nowa.addEventListener("click", () => formNowaLista(tresc, p, owner, false));
+    const wzor = el(`<button style="${BG}">📑 Z wzorca</button>`);
+    wzor.addEventListener("click", () => formNowaLista(tresc, p, owner, true));
+    akc.appendChild(nowa); akc.appendChild(wzor); tresc.appendChild(akc);
+  }
+  if (!listy.length) { tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Brak list. ${owner ? "Utwórz pierwszą — np. „Sierpniówka"." : "Organizator jeszcze nic nie utworzył."}</div>`)); return; }
+  listy.forEach((L) => {
+    const card = el(`<div style="border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:8px;cursor:pointer;display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;"><div style="font-size:15px;font-weight:600;">${escP(L.tytul)}</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${escP(L.status)}</div></div>
+      <span style="color:var(--ink-soft);">›</span></div>`);
+    card.addEventListener("click", () => renderKokpit(tresc, p, owner, L.id));
+    tresc.appendChild(card);
+  });
+}
+
+async function formNowaLista(tresc, p, owner, zWzorca) {
+  tresc.innerHTML = "";
+  const back = el(`<button style="${BG}font-size:12px;margin-bottom:10px;">‹ Wróć</button>`);
+  back.addEventListener("click", () => renderListyIndex(tresc, p, owner));
+  tresc.appendChild(back);
+  if (zWzorca) {
+    const { data: szab = [] } = await supabase.from("listy").select("id,tytul").eq("szablon", true).order("created_at", { ascending: false });
+    tresc.appendChild(el(`<div style="font-weight:700;font-size:14px;margin-bottom:8px;">Klonuj z wzorca</div>`));
+    if (!szab.length) tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:13.5px;">Brak zapisanych wzorców. Zbuduj listę i zapisz ją jako wzorzec.</div>`));
+    szab.forEach((s) => {
+      const r = el(`<div style="border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:7px;display:flex;gap:10px;align-items:center;">
+        <div style="flex:1;font-size:14px;">${escP(s.tytul)}</div><button style="${BT}font-size:12px;padding:5px 11px;">Klonuj</button></div>`);
+      r.querySelector("button").addEventListener("click", () => klonujListe(tresc, p, owner, s.id));
+      tresc.appendChild(r);
+    });
+    return;
+  }
+  const f = el(`<div>
+    <input class="nl-t" type="text" placeholder="Nazwa listy (np. Sierpniówka)" maxlength="80" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+    <label style="font-size:12px;color:var(--ink-soft);">Waluta domyślna</label>
+    <select class="nl-w" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin:4px 0 10px;">${LISTA_WALUTY.map((w) => `<option>${w}</option>`).join("")}</select>
+    <div style="display:flex;gap:8px;"><button class="nl-ok" style="${BT}">Utwórz</button></div>
+    <div class="nl-out" style="font-size:13px;margin-top:6px;"></div></div>`);
+  tresc.appendChild(f);
+  f.querySelector(".nl-ok").addEventListener("click", async () => {
+    const t = f.querySelector(".nl-t").value.trim();
+    if (!t) { alert("Podaj nazwę listy."); return; }
+    const { data, error } = await supabase.from("listy").insert({
+      kontekst: "plemie", plemie_id: p.id, tytul: t, owner_traveler_id: TRAVELER.id, waluta_domyslna: f.querySelector(".nl-w").value,
+    }).select("id").single();
+    if (error) { f.querySelector(".nl-out").innerHTML = `<span style="color:#c4513a;">Błąd: ${escP(error.message)}</span>`; return; }
+    renderKokpit(tresc, p, owner, data.id);
+  });
+}
+
+async function klonujListe(tresc, p, owner, szablonId) {
+  const { data: src } = await supabase.from("listy").select("tytul,waluta_domyslna").eq("id", szablonId).single();
+  const { data: poz = [] } = await supabase.from("lista_pozycje").select("*").eq("lista_id", szablonId).order("kolejnosc");
+  const { data: nowa, error } = await supabase.from("listy").insert({
+    kontekst: "plemie", plemie_id: p.id, tytul: (src && src.tytul) || "Lista", owner_traveler_id: TRAVELER.id,
+    waluta_domyslna: (src && src.waluta_domyslna) || "PLN", klon_z: szablonId,
+  }).select("id").single();
+  if (error) { alert("Błąd klonowania: " + error.message); return; }
+  if (poz.length) {
+    const rows = poz.map((z) => ({
+      lista_id: nowa.id, typ: z.typ, tytul: z.tytul, opis: z.opis, kolejnosc: z.kolejnosc,
+      widocznosc_statusu: z.widocznosc_statusu, kwota: z.kwota, waluta: z.waluta, koszt_model: z.koszt_model,
+      kwota_widoczna: z.kwota_widoczna, dzielony_na: z.dzielony_na, link_url: z.link_url, dla_kogo: z.dla_kogo,
+    }));
+    await supabase.from("lista_pozycje").insert(rows);
+  }
+  renderKokpit(tresc, p, owner, nowa.id);
+}
+
+async function renderKokpit(tresc, p, owner, listaId) {
+  tresc.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
+  const [rL, rPoz] = await Promise.all([
+    supabase.from("listy").select("*").eq("id", listaId).single(),
+    supabase.from("lista_pozycje").select("*").eq("lista_id", listaId).order("kolejnosc").order("created_at"),
+  ]);
+  const L = rL.data; const poz = rPoz.data || [];
+  let stany = [];
+  if (poz.length) { const { data } = await supabase.from("lista_pozycja_stan").select("*").in("pozycja_id", poz.map((z) => z.id)); stany = data || []; }
+  const czl = p.czlonkowie || [];
+  const stByPoz = {};
+  stany.forEach((s) => { (stByPoz[s.pozycja_id] = stByPoz[s.pozycja_id] || []).push(s); });
+
+  tresc.innerHTML = "";
+  const back = el(`<button style="${BG}font-size:12px;margin-bottom:10px;">‹ Wszystkie listy</button>`);
+  back.addEventListener("click", () => renderListyIndex(tresc, p, owner));
+  tresc.appendChild(back);
+  tresc.appendChild(el(`<div style="font-size:17px;font-weight:700;margin-bottom:2px;">${escP(L.tytul)}</div>`));
+  tresc.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;">${czl.length} os. · waluta ${escP(L.waluta_domyslna)}</div>`));
+
+  if (owner) {
+    const add = el(`<button style="${BT}margin-bottom:12px;">+ Pozycja</button>`);
+    add.addEventListener("click", () => formPozycja(tresc, p, owner, listaId, add));
+    tresc.appendChild(add);
+  }
+
+  if (!poz.length) { tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Brak pozycji. ${owner ? "Dodaj pierwszą." : ""}</div>`)); return; }
+
+  poz.forEach((z) => {
+    const stany2 = stByPoz[z.id] || [];
+    const zrob = stany2.filter((s) => s.stan === "przyjete" || s.stan === "zrobione").length;
+    const komuTxt = z.dla_kogo === "wszyscy" ? `${zrob}/${czl.length}` : `${zrob}`;
+    const kw = z.typ === "koszt" && z.kwota != null ? (z.kwota_widoczna ? " · " + kwotaTxt(z) : " · kwota prywatna") : "";
+    const modelTxt = z.typ === "koszt" ? (z.koszt_model === "organizator" ? " · zapłacił organizator" : " · każdy sam") : "";
+    const ukr = z.widocznosc_statusu === "organizator" ? " · 🔒" : "";
+    const row = el(`<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px;">
+      <div style="display:flex;align-items:flex-start;gap:8px;">
+        <div style="flex:1;"><div style="font-size:14.5px;">${esc(z.tytul)}</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${listaTypEt(z.typ)}${kw}${modelTxt}${z.typ !== "dokument" ? " · " + komuTxt : ""}${ukr}</div></div>
+        ${owner ? `<button class="lp-x" title="Usuń" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:15px;line-height:1;">×</button>` : ""}
+      </div>
+      ${(owner && z.typ !== "dokument") ? `<button class="lp-rozw" style="${BG}font-size:11.5px;padding:4px 9px;margin-top:7px;">Kto ma to na sobie</button><div class="lp-osoby" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:7px;"></div>` : ""}
+    </div>`);
+    if (owner) {
+      const x = row.querySelector(".lp-x");
+      if (x) x.addEventListener("click", async () => { if (!confirm("Usunąć pozycję?")) return; await supabase.from("lista_pozycje").delete().eq("id", z.id); renderKokpit(tresc, p, owner, listaId); });
+      const rozw = row.querySelector(".lp-rozw"), osoby = row.querySelector(".lp-osoby");
+      if (rozw && osoby) rozw.addEventListener("click", () => {
+        const open = osoby.style.display === "block";
+        osoby.style.display = open ? "none" : "block"; rozw.textContent = open ? "Kto ma to na sobie" : "Zwiń";
+        if (!open) osoby.innerHTML = czl.map((c) => {
+          const s = stany2.find((y) => y.traveler_id === c.traveler_id);
+          const st = s ? s.stan : "oczekuje";
+          const kolor = (st === "przyjete" || st === "zrobione") ? "#1a7158" : (st === "odrzucone" ? "#c0392b" : "var(--ink-soft)");
+          const et = st === "oczekuje" ? "czeka" : st;
+          return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0;"><span>${escP(c.nick || "uczestnik")}</span><span style="color:${kolor};">${escP(et)}</span></div>`;
+        }).join("");
+      });
+    }
+    tresc.appendChild(row);
+  });
+}
+
+function formPozycja(tresc, p, owner, listaId, anchor) {
+  const ist = tresc.querySelector(".lp-form"); if (ist) { ist.remove(); return; }
+  let typ = "zadanie", model = "wlasny";
+  const f = el(`<div class="lp-form" style="border:1px solid var(--line);border-radius:12px;padding:11px;margin:0 0 12px;background:var(--surface);">
+    <div class="lp-typy" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;"></div>
+    <input class="lp-t" type="text" placeholder="Nazwa pozycji" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;margin-bottom:8px;">
+    <div class="lp-koszt" style="display:none;">
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <input class="lp-kw" type="number" inputmode="decimal" placeholder="Kwota" style="flex:1;min-width:0;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+        <select class="lp-wal" style="width:88px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${LISTA_WALUTY.map((w) => `<option>${w}</option>`).join("")}</select>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+        <button type="button" class="lp-model" data-m="wlasny" style="${BG}flex:1;min-width:130px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;">Każdy płaci sam</button>
+        <button type="button" class="lp-model" data-m="organizator" style="${BG}flex:1;min-width:130px;">Zapłacił organizator</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;"><input type="checkbox" class="lp-kwwid" checked style="width:16px;height:16px;"> kwota widoczna dla wszystkich</label>
+      <div class="lp-dziel-wrap" style="display:none;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Podziel łączny koszt na <input class="lp-dziel" type="number" inputmode="numeric" style="width:60px;padding:5px;border:1px solid var(--line);border-radius:6px;"> osób</div>
+    </div>
+    <div class="lp-link" style="display:none;margin-bottom:8px;">
+      <input class="lp-url" type="text" placeholder="Link (opcjonalnie)" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
+    </div>
+    <label class="lp-widst-wrap" style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" class="lp-widst" style="width:16px;height:16px;"> status tylko dla organizatora (inni nie widzą, kto odhaczył)</label>
+    <div style="display:flex;gap:8px;"><button class="lp-ok" style="${BT}">Dodaj</button><button class="lp-anu" style="${BG}">Anuluj</button></div>
+    <div class="lp-out" style="font-size:13px;margin-top:6px;"></div>
+  </div>`);
+  const typyBox = f.querySelector(".lp-typy");
+  LISTA_TYPY.forEach((t) => {
+    const b = el(`<button type="button" data-k="${t.k}" style="${BG}${t.k === "zadanie" ? "outline:2px solid var(--turkus,#1f9e8f);font-weight:600;" : ""}">${t.ik} ${escP(t.et)}</button>`);
+    b.addEventListener("click", () => {
+      typ = t.k; typyBox.querySelectorAll("button").forEach((x) => (x.style.cssText = BG)); b.style.cssText = BG + "outline:2px solid var(--turkus,#1f9e8f);font-weight:600;";
+      f.querySelector(".lp-koszt").style.display = typ === "koszt" ? "block" : "none";
+      f.querySelector(".lp-link").style.display = typ === "dokument" ? "block" : "none";
+      f.querySelector(".lp-widst-wrap").style.display = typ === "dokument" ? "none" : "flex";
+    });
+    typyBox.appendChild(b);
+  });
+  f.querySelectorAll(".lp-model").forEach((b) => b.addEventListener("click", () => {
+    model = b.dataset.m; f.querySelectorAll(".lp-model").forEach((x) => (x.style.cssText = BG + "flex:1;min-width:130px;"));
+    b.style.cssText = BG + "flex:1;min-width:130px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;";
+    f.querySelector(".lp-dziel-wrap").style.display = model === "organizator" ? "block" : "none";
+  }));
+  f.querySelector(".lp-anu").addEventListener("click", () => f.remove());
+  f.querySelector(".lp-ok").addEventListener("click", async () => {
+    const t = f.querySelector(".lp-t").value.trim();
+    if (!t) { alert("Podaj nazwę pozycji."); return; }
+    const rek = { lista_id: listaId, typ, tytul: t, widocznosc_statusu: f.querySelector(".lp-widst").checked ? "organizator" : "publiczny", kolejnosc: Date.now() % 100000 };
+    if (typ === "koszt") {
+      const kw = parseFloat(String(f.querySelector(".lp-kw").value).replace(",", "."));
+      if (!isNaN(kw)) rek.kwota = kw;
+      rek.waluta = f.querySelector(".lp-wal").value;
+      rek.koszt_model = model;
+      rek.kwota_widoczna = f.querySelector(".lp-kwwid").checked;
+      const dz = parseInt(f.querySelector(".lp-dziel").value, 10);
+      if (model === "organizator" && !isNaN(dz) && dz > 0) rek.dzielony_na = dz;
+    }
+    if (typ === "dokument") { const u = f.querySelector(".lp-url").value.trim(); if (u) rek.link_url = u; }
+    const { error } = await supabase.from("lista_pozycje").insert(rek);
+    if (error) { f.querySelector(".lp-out").innerHTML = `<span style="color:#c4513a;">Błąd: ${escP(error.message)}</span>`; return; }
+    renderKokpit(tresc, p, owner, listaId);
+  });
+  anchor.after(f);
 }
 
 function formNowePlemie(wrap, btn) {
