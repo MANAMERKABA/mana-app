@@ -1960,6 +1960,22 @@ const KAT_POZ_TRZOS = ["", "paliwo", "spożywka", "jedzenie", "higiena", "kosmet
 const METODY_TRZOS = ["", "gotówka", "karta", "przelew", "BLIK"];
 let TRZOS_PLEMIE_MAP = {}, TRZOS_OSOBA_MAP = {}, TRZOS_PLEMIONA = [], TRZOS_ZAKRES = null;
 const fmtZl = (n) => (Number(n) || 0).toFixed(2).replace(".", ",") + " zł";
+const WAL_SYM = { PLN: "zł", EUR: "€", USD: "$", GBP: "£", CHF: "CHF" };
+const fmtWal = (n, w) => (Number(n) || 0).toFixed(2).replace(".", ",") + " " + (WAL_SYM[String(w || "PLN").toUpperCase()] || w);
+const jestWal = (t) => !!(t && t.waluta && String(t.waluta).toUpperCase() !== "PLN");
+const plnOf = (t) => Number(t && t.kwota_pln != null ? t.kwota_pln : (t ? t.kwota : 0)) || 0;
+/* Przelicza walutę obcą na PLN wg reguły księgowej: średni kurs NBP Tabela A z ostatniego dnia roboczego PRZED datą dokumentu (edge nbp-kurs). Nie blokuje zapisu gdy NBP niedostępne. */
+async function przeliczWaluta(waluta, data, kwota) {
+  const w = String(waluta || "PLN").toUpperCase();
+  if (w === "PLN") return { waluta: "PLN", kurs: 1, data_tabeli: null, nr_tabeli: null, kwota_pln: kwota != null ? kwota : null };
+  try {
+    const { data: r, error } = await supabase.functions.invoke("nbp-kurs", { body: { waluta: w, data, kwota } });
+    if (error || !r || !r.ok) throw (error || new Error("nbp"));
+    return { waluta: w, kurs: r.kurs, data_tabeli: r.data_tabeli, nr_tabeli: r.nr_tabeli, kwota_pln: r.kwota_pln };
+  } catch (e) {
+    return { waluta: w, kurs: null, data_tabeli: null, nr_tabeli: null, kwota_pln: null };
+  }
+}
 
 function trzosToast(t) {
   let b = $("trzos-toast");
@@ -2000,8 +2016,8 @@ async function renderTrzos() {
     const widoczne = txy.filter((t) => (t.plemie_id ? sel.has(t.plemie_id) : sel.has("moj")));
     const wybranePlem = TRZOS_PLEMIONA.filter((p) => sel.has(p.id));
 
-    const przychod = widoczne.filter((t) => t.typ === "przychod").reduce((s, t) => s + Number(t.kwota || 0), 0);
-    const koszt = widoczne.filter((t) => t.typ === "koszt").reduce((s, t) => s + Number(t.kwota || 0), 0);
+    const przychod = widoczne.filter((t) => t.typ === "przychod").reduce((s, t) => s + plnOf(t), 0);
+    const koszt = widoczne.filter((t) => t.typ === "koszt").reduce((s, t) => s + plnOf(t), 0);
     const bilans = przychod - koszt;
 
     // chipy
@@ -2021,10 +2037,10 @@ async function renderTrzos() {
       const perOsoba = {};
       plemRows.forEach((t) => {
         const k = t.traveler_id; perOsoba[k] = perOsoba[k] || { p: 0, k: 0 };
-        if (t.typ === "przychod") perOsoba[k].p += Number(t.kwota || 0); else perOsoba[k].k += Number(t.kwota || 0);
+        if (t.typ === "przychod") perOsoba[k].p += plnOf(t); else perOsoba[k].k += plnOf(t);
       });
       const perKat = {};
-      plemRows.filter((t) => t.typ === "koszt").forEach((t) => { const k = t.kategoria || "bez kategorii"; perKat[k] = (perKat[k] || 0) + Number(t.kwota || 0); });
+      plemRows.filter((t) => t.typ === "koszt").forEach((t) => { const k = t.kategoria || "bez kategorii"; perKat[k] = (perKat[k] || 0) + plnOf(t); });
       const osobaHtml = Object.entries(perOsoba).sort((a, b) => (b[1].k + b[1].p) - (a[1].k + a[1].p)).map(([tid, v]) =>
         `<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${escP(TRZOS_OSOBA_MAP[tid] || (tid === (TRAVELER && TRAVELER.id) ? "Ja" : "—"))}</span><span style="color:var(--ink-soft);">${v.p ? `<span style='color:#1a7158;'>+${fmtZl(v.p)}</span> ` : ""}<span style="color:#c4513a;">−${fmtZl(v.k)}</span></span></div>`).join("");
       const katHtml = Object.entries(perKat).sort((a, b) => b[1] - a[1]).map(([k, v]) =>
@@ -2105,7 +2121,7 @@ function wierszTrzos(t) {
       <div style="font-size:14px;">${esc(t.opis || t.kategoria || (dodatnia ? "Przychód" : "Koszt"))}</div>
       <div style="font-size:11px;color:var(--ink-soft);">${esc(t.data)}${t.kategoria ? " · " + esc(t.kategoria) : ""}${t.metoda_platnosci ? " · " + esc(t.metoda_platnosci) : ""}${dok ? " · 📎" : ""}${poz.length ? " · " + poz.length + " poz." : ""}${t.plemie_id ? ` · <span style="color:#1a7158;">👥 ${escP(TRZOS_PLEMIE_MAP[t.plemie_id] || "rodzina")}</span>` : ""}${(t.plemie_id && t.traveler_id !== (TRAVELER && TRAVELER.id)) ? " · od " + escP(TRZOS_OSOBA_MAP[t.traveler_id] || "kogoś") : ""}${niezgodne ? ` · <span style="color:#c4513a;font-weight:600;">⚠ pozycje nie sumują się do kwoty (${rozjazd > 0 ? "brakuje " : "nadwyżka "}${fmtZl(Math.abs(rozjazd))})</span>` : bezKat ? ` · <span style="color:#b8842a;font-weight:600;">⚠ ${bezKat} bez kategorii</span>` : ""}</div>
     </div>
-    <div style="font-size:15px;font-weight:600;color:${kolor};white-space:nowrap;">${znak} ${fmtZl(t.kwota)}</div>
+    <div style="font-size:15px;font-weight:600;color:${kolor};white-space:nowrap;text-align:right;">${znak} ${jestWal(t) ? fmtWal(t.kwota, t.waluta) : fmtZl(t.kwota)}${jestWal(t) ? `<div style="font-size:11px;font-weight:400;color:var(--ink-soft);">${t.kwota_pln != null ? "≈ " + fmtZl(t.kwota_pln) + (t.tabela_nbp ? " · " + esc(t.tabela_nbp) : "") : "kurs do uzupełnienia"}</div>` : ""}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;width:100%;justify-content:flex-end;"></div>
   </div>`);
   const akcje = row.lastElementChild;
@@ -7034,7 +7050,16 @@ async function asystentParagon(file) {
     if (up.error) throw up.error;
     const dok = await supabase.from("dokumenty").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "paragon", kontekst: "finanse", plik_url: sciezka, mime: file.type || null, zrodlo: "zdjecie", ocr_status: "oczekuje" }).select("id").single();
     if (dok.error) throw dok.error;
-    const { data, error } = await supabase.functions.invoke("ocr-dokument", { body: { dokument_id: dok.data.id } });
+    let { data, error } = await supabase.functions.invoke("ocr-dokument", { body: { dokument_id: dok.data.id } });
+    // Timeout/limit bramki potrafi zwrócić non-2xx MIMO że funkcja skończyła i zapisała wynik do dokumentu — sprawdź zanim ogłosisz porażkę.
+    if (error || !data || !data.ok) {
+      for (let i = 0; i < 6 && (error || !data || !data.ok); i++) {
+        await new Promise((res) => setTimeout(res, 1500));
+        const { data: dd } = await supabase.from("dokumenty").select("ocr_status, ocr_dane").eq("id", dok.data.id).maybeSingle();
+        if (dd && dd.ocr_status === "gotowe" && dd.ocr_dane) { data = { ok: true, dane: dd.ocr_dane }; error = null; break; }
+        if (dd && dd.ocr_status === "blad") break;
+      }
+    }
     mysl.remove();
     if (error || !data || !data.ok) { dodajWiadomosc("asystent", "Nie udało się odczytać paragonu" + (error ? ": " + error.message : "") + "."); trwaRozmowa = false; return; }
     const d = data.dane || {};
@@ -7064,7 +7089,8 @@ async function asystentParagon(file) {
     let podsum = `<div><strong>Paragon odczytany</strong></div>`;
     if (d.sprzedawca) podsum += `<div>Sprzedawca: ${esc(d.sprzedawca)}</div>`;
     if (d.data) podsum += `<div>Data: ${esc(d.data)}</div>`;
-    if (kwota != null) podsum += `<div>Razem: ${fmtZl(kwota)}</div>`;
+    if (kwota != null) podsum += `<div>Razem: ${(d.waluta && String(d.waluta).toUpperCase() !== "PLN") ? fmtWal(kwota, d.waluta) : fmtZl(kwota)}</div>`;
+    if (d.waluta && String(d.waluta).toUpperCase() !== "PLN") podsum += `<div style="color:#8c887e;font-size:12px;">Waluta ${esc(d.waluta)} — przeliczę na PLN po kursie NBP z dnia przed datą paragonu.</div>`;
     if (poz.length) podsum += `<div style="margin-top:4px;">Pozycje:</div><ul>${poz.map((p) => `<li>${esc(p.nazwa)}${p.kwota != null ? " — " + fmtZl(p.kwota) : ""}${p.kategoria ? ` <span style="color:#8c887e;">(${esc(p.kategoria)})</span>` : ""}</li>`).join("")}</ul>`;
     const bubel = el(`<div class="m-msg m-msg--asystent">${podsum}<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;"><button class="par-zapisz" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">Zapisz do Trzosu</button><button class="par-przekaz" style="background:#1a7158;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">→ Przekaż osobie</button><button class="par-anuluj" style="background:#efece3;color:#26241f;border:none;border-radius:8px;padding:7px 12px;font-size:13px;cursor:pointer;">Anuluj</button></div></div>`);
     $("m-stream").appendChild(bubel); $("m-stream").scrollTop = $("m-stream").scrollHeight;
@@ -7073,10 +7099,11 @@ async function asystentParagon(file) {
       const btn = bubel.querySelector(".par-przekaz"); btn.disabled = true; btn.textContent = "Zapisuję…";
       try {
         const dzis = czesciWarszawy(new Date()).dataISO;
-        const tx = await supabase.from("transakcje").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "koszt", kwota: kwota != null ? kwota : 0, data: d.data || dzis, kategoria: d.kategoria || null, metoda_platnosci: d.metoda_platnosci || null, opis: d.sprzedawca || null, nip_sprzedawcy: d.nip || null, numer_dokumentu: nrDok || null, dokument_typ: d.dokument_typ || "paragon", kwota_netto: d.kwota_netto != null ? d.kwota_netto : null, kwota_vat: d.kwota_vat != null ? d.kwota_vat : null, paragon_url: sciezka }).select("id").single();
+        const walObj = await przeliczWaluta(d.waluta, d.data || dzis, kwota);
+        const tx = await supabase.from("transakcje").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "koszt", kwota: kwota != null ? kwota : 0, data: d.data || dzis, kategoria: d.kategoria || null, metoda_platnosci: d.metoda_platnosci || null, opis: d.sprzedawca || null, nip_sprzedawcy: d.nip || null, numer_dokumentu: nrDok || null, dokument_typ: d.dokument_typ || "paragon", kwota_netto: d.kwota_netto != null ? d.kwota_netto : null, kwota_vat: d.kwota_vat != null ? d.kwota_vat : null, paragon_url: sciezka, waluta: walObj.waluta, kurs: walObj.kurs, kurs_data: walObj.data_tabeli, tabela_nbp: walObj.nr_tabeli, kwota_pln: walObj.kwota_pln }).select("id").single();
         if (tx.error) throw tx.error;
         await supabase.from("dokumenty").update({ transakcja_id: tx.data.id }).eq("id", dok.data.id);
-        if (poz.length) { const rows = poz.map((p) => ({ transakcja_id: tx.data.id, typ: "zakup", nazwa: String(p.nazwa), ilosc: p.ilosc != null ? p.ilosc : 1, jednostka: p.jednostka || "szt", cena_jedn: p.cena_jedn != null ? p.cena_jedn : null, kwota: p.kwota != null ? p.kwota : null, kategoria: p.kategoria || null })); await supabase.from("transakcja_pozycje").insert(rows); }
+        if (poz.length) { const rows = poz.map((p) => ({ transakcja_id: tx.data.id, typ: "zakup", nazwa: String(p.nazwa), ilosc: p.ilosc != null ? p.ilosc : 1, jednostka: p.jednostka || "szt", cena_jedn: p.cena_jedn != null ? p.cena_jedn : null, kwota: p.kwota != null ? p.kwota : null, kwota_pln: (p.kwota != null && walObj.kurs != null) ? Math.round(p.kwota * walObj.kurs * 100) / 100 : null, kategoria: p.kategoria || null })); await supabase.from("transakcja_pozycje").insert(rows); }
         bubel.querySelector("div:last-child").remove();
         dodajWiadomosc("asystent", "Zapisałem paragon ✓ — wybierz komu go przekazać.");
         oknoWyslijKoszt(tx.data.id, d.sprzedawca, kwota);
@@ -7086,15 +7113,17 @@ async function asystentParagon(file) {
       const btn = bubel.querySelector(".par-zapisz"); btn.disabled = true; btn.textContent = "Zapisuję…";
       try {
         const dzis = czesciWarszawy(new Date()).dataISO;
-        const tx = await supabase.from("transakcje").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "koszt", kwota: kwota != null ? kwota : 0, data: d.data || dzis, kategoria: d.kategoria || null, metoda_platnosci: d.metoda_platnosci || null, opis: d.sprzedawca || null, nip_sprzedawcy: d.nip || null, numer_dokumentu: nrDok || null, dokument_typ: d.dokument_typ || "paragon", kwota_netto: d.kwota_netto != null ? d.kwota_netto : null, kwota_vat: d.kwota_vat != null ? d.kwota_vat : null, paragon_url: sciezka }).select("id").single();
+        const walObj = await przeliczWaluta(d.waluta, d.data || dzis, kwota);
+        const tx = await supabase.from("transakcje").insert({ traveler_id: TRAVELER.id, org_id: null, typ: "koszt", kwota: kwota != null ? kwota : 0, data: d.data || dzis, kategoria: d.kategoria || null, metoda_platnosci: d.metoda_platnosci || null, opis: d.sprzedawca || null, nip_sprzedawcy: d.nip || null, numer_dokumentu: nrDok || null, dokument_typ: d.dokument_typ || "paragon", kwota_netto: d.kwota_netto != null ? d.kwota_netto : null, kwota_vat: d.kwota_vat != null ? d.kwota_vat : null, paragon_url: sciezka, waluta: walObj.waluta, kurs: walObj.kurs, kurs_data: walObj.data_tabeli, tabela_nbp: walObj.nr_tabeli, kwota_pln: walObj.kwota_pln }).select("id").single();
         if (tx.error) throw tx.error;
         await supabase.from("dokumenty").update({ transakcja_id: tx.data.id }).eq("id", dok.data.id);
         if (poz.length) {
-          const rows = poz.map((p) => ({ transakcja_id: tx.data.id, typ: "zakup", nazwa: String(p.nazwa), ilosc: p.ilosc != null ? p.ilosc : 1, jednostka: p.jednostka || "szt", cena_jedn: p.cena_jedn != null ? p.cena_jedn : null, kwota: p.kwota != null ? p.kwota : null, kategoria: p.kategoria || null }));
+          const rows = poz.map((p) => ({ transakcja_id: tx.data.id, typ: "zakup", nazwa: String(p.nazwa), ilosc: p.ilosc != null ? p.ilosc : 1, jednostka: p.jednostka || "szt", cena_jedn: p.cena_jedn != null ? p.cena_jedn : null, kwota: p.kwota != null ? p.kwota : null, kwota_pln: (p.kwota != null && walObj.kurs != null) ? Math.round(p.kwota * walObj.kurs * 100) / 100 : null, kategoria: p.kategoria || null }));
           await supabase.from("transakcja_pozycje").insert(rows);
         }
         bubel.querySelector("div:last-child").remove();
-        dodajWiadomosc("asystent", "Zapisałem w Trzosie ✓" + (kwota != null ? " (" + fmtZl(kwota) + ")" : "") + (poz.length ? `, pozycji: ${poz.length}` : ""));
+        const kwotaTxt = kwota != null ? (walObj.waluta !== "PLN" ? fmtWal(kwota, walObj.waluta) + (walObj.kwota_pln != null ? ` ≈ ${fmtZl(walObj.kwota_pln)} (kurs ${walObj.kurs}, tab. ${walObj.nr_tabeli})` : " — kurs do uzupełnienia") : fmtZl(kwota)) : "";
+        dodajWiadomosc("asystent", "Zapisałem w Trzosie ✓" + (kwotaTxt ? " (" + kwotaTxt + ")" : "") + (poz.length ? `, pozycji: ${poz.length}` : ""));
         // KONTEKST dla asystenta — żeby wiedział o paragonie w kolejnej turze (Fix A)
         try {
           const pozTekst = poz.length ? poz.map((p) => `${p.nazwa}${p.kwota != null ? " " + p.kwota + " zł" : ""}${p.kategoria ? " (" + p.kategoria + ")" : ""}`).join("; ") : "brak pozycji";
