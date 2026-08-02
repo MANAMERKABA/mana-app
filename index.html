@@ -5270,8 +5270,27 @@ async function renderKokpit(tresc, p, owner, listaId) {
   const back = el(`<button style="${BG}font-size:12px;margin-bottom:10px;">‹ Wszystkie listy</button>`);
   back.addEventListener("click", () => renderListyIndex(tresc, p, owner));
   tresc.appendChild(back);
-  tresc.appendChild(el(`<div style="font-size:17px;font-weight:700;margin-bottom:2px;">${escP(L.tytul)}</div>`));
+  const naglowek = el(`<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:2px;">
+    <div style="flex:1;font-size:17px;font-weight:700;">${escP(L.tytul)}</div>
+    ${owner ? `<button class="lst-rename" title="Zmień nazwę" style="border:none;background:none;cursor:pointer;font-size:16px;padding:2px 5px;color:var(--ink-soft);">✎</button><button class="lst-usun" title="Usuń listę" style="border:none;background:none;cursor:pointer;font-size:15px;padding:2px 5px;color:#c4513a;">🗑</button>` : ""}
+  </div>`);
+  tresc.appendChild(naglowek);
   tresc.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;">${czl.length} os. · waluta ${escP(L.waluta_domyslna)}</div>`));
+  if (owner) {
+    naglowek.querySelector(".lst-rename").addEventListener("click", async () => {
+      const nowa = (prompt("Nowa nazwa listy:", L.tytul || "") || "").trim();
+      if (!nowa || nowa === (L.tytul || "")) return;
+      const { error } = await supabase.from("listy").update({ tytul: nowa }).eq("id", listaId);
+      if (error) { alert("Nie zmieniono nazwy: " + error.message); return; }
+      renderKokpit(tresc, p, owner, listaId);
+    });
+    naglowek.querySelector(".lst-usun").addEventListener("click", async () => {
+      if (!confirm(`Usunąć całą listę „${L.tytul}”? Znikną też jej pozycje i odhaczenia. Tego nie da się cofnąć.`)) return;
+      const { error } = await supabase.from("listy").delete().eq("id", listaId);
+      if (error) { alert("Nie udało się usunąć: " + error.message); return; }
+      renderListyIndex(tresc, p, owner);
+    });
+  }
 
   if (owner) {
     const add = el(`<button style="${BT}margin-bottom:12px;">+ Pozycja</button>`);
