@@ -5155,6 +5155,22 @@ function kwotaTxt(poz) {
   if (poz.dzielony_na && poz.dzielony_na > 0) return fmt(poz.kwota) + " " + w + " ÷ " + poz.dzielony_na + " = " + fmt(poz.kwota / poz.dzielony_na) + "/os";
   return fmt(poz.kwota) + " " + w;
 }
+/* ── Odhaczanie pozycji listy: kółka-stany + reguły przejść ──
+   zadanie/rzecz: każdy odhacza sam (○→🟡→🟢). koszt „każdy sam": uczestnik ○→🟢. koszt „organizator zapłacił": dwustronny — płacący ○→🔴 (wpłaciłem, czeka), odbiorca(organizator) potwierdza 🔴→🟢. */
+const STAN_KOLOR = { oczekuje: "transparent", w_trakcie: "#e0a020", przyjete: "#e0a020", wplacono: "#c0392b", zrobione: "#1a7158", potwierdzone: "#1a7158" };
+const stanKolor = (st) => STAN_KOLOR[st || "oczekuje"] || "transparent";
+const stanEtyk = (st) => ({ oczekuje: "nie zrobione", w_trakcie: "w trakcie", przyjete: "w trakcie", wplacono: "wpłacone — czeka na potwierdzenie", zrobione: "zrobione", potwierdzone: "wpłata potwierdzona" })[st || "oczekuje"] || st;
+const przeplyw = (typ, model) => (typ === "koszt" && model === "organizator") ? "platnosc2" : (typ === "koszt") ? "platnosc1" : "zadanie";
+function kolejnyStan(przep, st, rola) {
+  st = st || "oczekuje";
+  if (przep === "zadanie") { if (rola !== "self" && rola !== "owner") return null; return st === "oczekuje" ? "w_trakcie" : st === "w_trakcie" ? "zrobione" : "oczekuje"; }
+  if (przep === "platnosc1") { if (rola !== "self" && rola !== "owner") return null; return (st === "zrobione" || st === "potwierdzone") ? "oczekuje" : "zrobione"; }
+  // platnosc2 — dwustronna
+  if (rola === "owner") return st === "oczekuje" ? "wplacono" : st === "wplacono" ? "potwierdzone" : "oczekuje";
+  if (rola === "self") { if (st === "potwierdzone") return null; return st === "oczekuje" ? "wplacono" : "oczekuje"; }
+  return null;
+}
+function skrocImie(pelne) { const s = String(pelne || "").trim(); if (!s) return ""; const p = s.split(/\s+/); return p.length > 1 ? p[0] + " " + p[1][0].toUpperCase() + "." : p[0]; }
 
 async function otworzListe(p) {
   const owner = ((TRAVELER && TRAVELER.id) === p.owner_traveler_id) || p.moja_rola === "zalozyciel";
@@ -5265,6 +5281,11 @@ async function renderKokpit(tresc, p, owner, listaId) {
   const czl = p.czlonkowie || [];
   const stByPoz = {};
   stany.forEach((s) => { (stByPoz[s.pozycja_id] = stByPoz[s.pozycja_id] || []).push(s); });
+  // imiona z książki kontaktów oglądającego (imię + litera nazwiska); fallback do nicku
+  const _ids = czl.map((c) => c.traveler_id).filter(Boolean);
+  const kontMap = {};
+  if (_ids.length) { const { data: _kn } = await supabase.from("kontakty").select("target_traveler_id, imie").eq("owner_traveler_id", TRAVELER.id).in("target_traveler_id", _ids); (_kn || []).forEach((k) => { if (k.target_traveler_id && k.imie) kontMap[k.target_traveler_id] = k.imie; }); }
+  const nazwaOsoby = (c) => skrocImie(kontMap[c.traveler_id] || c.nick || (c.traveler_id === (TRAVELER && TRAVELER.id) ? "Ja" : "uczestnik")) || "uczestnik";
 
   tresc.innerHTML = "";
   const back = el(`<button style="${BG}font-size:12px;margin-bottom:10px;">‹ Wszystkie listy</button>`);
@@ -5275,7 +5296,12 @@ async function renderKokpit(tresc, p, owner, listaId) {
     ${owner ? `<button class="lst-rename" title="Zmień nazwę" style="border:none;background:none;cursor:pointer;font-size:16px;padding:2px 5px;color:var(--ink-soft);">✎</button><button class="lst-usun" title="Usuń listę" style="border:none;background:none;cursor:pointer;font-size:15px;padding:2px 5px;color:#c4513a;">🗑</button>` : ""}
   </div>`);
   tresc.appendChild(naglowek);
-  tresc.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:12px;">${czl.length} os. · waluta ${escP(L.waluta_domyslna)}</div>`));
+  tresc.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">${czl.length} os. · waluta ${escP(L.waluta_domyslna)}</div>`));
+  tresc.appendChild(el(`<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;">
+    <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid #bdb7a8;vertical-align:-1px;"></span> nie zrobione</span>
+    <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#e0a020;vertical-align:-1px;"></span> w trakcie</span>
+    <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#c0392b;vertical-align:-1px;"></span> wpłacone — czeka</span>
+    <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#1a7158;vertical-align:-1px;"></span> zrobione / potwierdzone</span></div>`));
   if (owner) {
     naglowek.querySelector(".lst-rename").addEventListener("click", async () => {
       const nowa = (prompt("Nowa nazwa listy:", L.tytul || "") || "").trim();
@@ -5302,55 +5328,81 @@ async function renderKokpit(tresc, p, owner, listaId) {
 
   poz.forEach((z) => {
     const stany2 = stByPoz[z.id] || [];
-    const zrob = stany2.filter((s) => s.stan === "przyjete" || s.stan === "zrobione").length;
+    const przep = przeplyw(z.typ, z.koszt_model);
+    const zrob = stany2.filter((s) => s.stan === "zrobione" || s.stan === "potwierdzone").length;
     const komuTxt = z.dla_kogo === "wszyscy" ? `${zrob}/${czl.length}` : `${zrob}`;
     const kw = z.typ === "koszt" && z.kwota != null ? (z.kwota_widoczna ? " · " + kwotaTxt(z) : " · kwota prywatna") : "";
     const modelTxt = z.typ === "koszt" ? (z.koszt_model === "organizator" ? " · zapłacił organizator" : " · każdy sam") : "";
     const ukr = z.widocznosc_statusu === "organizator" ? " · 🔒" : "";
+    const prywatny = z.widocznosc_statusu === "organizator";
+    const jestKoszt = z.typ === "koszt" && z.kwota != null;
     const row = el(`<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px;">
       <div style="display:flex;align-items:flex-start;gap:8px;">
         <div style="flex:1;"><div style="font-size:14.5px;">${esc(z.tytul)}</div>
         <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${listaTypEt(z.typ)}${kw}${modelTxt}${z.typ !== "dokument" ? " · " + komuTxt : ""}${ukr}</div></div>
         ${owner ? `<button class="lp-x" title="Usuń" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:15px;line-height:1;">×</button>` : ""}
       </div>
-      ${(owner && z.typ !== "dokument") ? `<button class="lp-rozw" style="${BG}font-size:11.5px;padding:4px 9px;margin-top:7px;">Kto ma to na sobie</button><div class="lp-osoby" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:7px;"></div>` : ""}
+      ${z.typ !== "dokument" ? `<div class="lp-krag" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>` : ""}
+      ${(owner && jestKoszt) ? `<button class="lp-rozw" style="${BG}font-size:11.5px;padding:4px 9px;margin-top:7px;">Udziały kosztu</button><div class="lp-osoby" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:7px;"></div>` : ""}
     </div>`);
     if (owner) {
       const x = row.querySelector(".lp-x");
       if (x) x.addEventListener("click", async () => { if (!confirm("Usunąć pozycję?")) return; await supabase.from("lista_pozycje").delete().eq("id", z.id); renderKokpit(tresc, p, owner, listaId); });
+    }
+    // Kółka-stany per osoba (imię + litera nazwiska)
+    const kregBox = row.querySelector(".lp-krag");
+    if (kregBox) {
+      czl.forEach((c) => {
+        const s = stany2.find((y) => y.traveler_id === c.traveler_id);
+        const st = s ? s.stan : "oczekuje";
+        const isSelf = c.traveler_id === (TRAVELER && TRAVELER.id);
+        const rola = owner ? "owner" : isSelf ? "self" : "inny";
+        const widac = !prywatny || owner || isSelf;                 // prywatny status: nie-organizator widzi tylko swoje
+        const pokazSt = widac ? st : "oczekuje";
+        const klik = widac && !!kolejnyStan(przep, st, rola);
+        const tlo = (pokazSt === "oczekuje") ? "transparent" : stanKolor(pokazSt);
+        const brzeg = (pokazSt === "oczekuje") ? "#bdb7a8" : stanKolor(pokazSt);
+        const pill = el(`<button ${klik ? "" : "disabled"} title="${escP(nazwaOsoby(c))} — ${escP(widac ? stanEtyk(st) : "ukryte")}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 11px 4px 6px;background:var(--surface);font-size:12.5px;${klik ? "cursor:pointer;" : "cursor:default;"}">
+          <span style="width:15px;height:15px;border-radius:50%;border:2px solid ${brzeg};background:${tlo};display:inline-block;flex:none;"></span>
+          <span>${escP(nazwaOsoby(c))}${isSelf ? " (Ty)" : ""}</span>
+        </button>`);
+        if (klik) pill.addEventListener("click", async () => {
+          const nowe = kolejnyStan(przep, st, rola);
+          if (!nowe) return;
+          const { error } = await supabase.from("lista_pozycja_stan").upsert({ pozycja_id: z.id, traveler_id: c.traveler_id, stan: nowe, przyjeto_at: new Date().toISOString() }, { onConflict: "pozycja_id,traveler_id" });
+          if (error) { alert("Nie zapisano: " + error.message); return; }
+          renderKokpit(tresc, p, owner, listaId);
+        });
+        kregBox.appendChild(pill);
+      });
+    }
+    // Udziały kosztu (organizator) — rozdział łącznej kwoty
+    if (owner && jestKoszt) {
       const rozw = row.querySelector(".lp-rozw"), osoby = row.querySelector(".lp-osoby");
       if (rozw && osoby) rozw.addEventListener("click", () => {
         const open = osoby.style.display === "block";
-        osoby.style.display = open ? "none" : "block"; rozw.textContent = open ? "Kto ma to na sobie" : "Zwiń";
+        osoby.style.display = open ? "none" : "block"; rozw.textContent = open ? "Udziały kosztu" : "Zwiń";
         if (open) return;
         osoby.innerHTML = "";
-        const jestKoszt = z.typ === "koszt" && z.kwota != null;
-        const baza = jestKoszt ? (z.kwota_na_osobe ? z.kwota : (z.dzielony_na && z.dzielony_na > 0 ? z.kwota / z.dzielony_na : z.kwota)) : null;
+        const baza = z.kwota_na_osobe ? z.kwota : (z.dzielony_na && z.dzielony_na > 0 ? z.kwota / z.dzielony_na : z.kwota);
         const nalTxt = (u) => baza != null ? (baza * u).toLocaleString("pl-PL", { maximumFractionDigits: 2 }) + " " + (z.waluta || "PLN") : "";
-        if (jestKoszt) osoby.appendChild(el(`<div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">Udziały — daj komuś 2, jeśli płaci za kogoś bez konta (np. partnera).</div>`));
+        osoby.appendChild(el(`<div style="font-size:11px;color:var(--ink-soft);margin-bottom:4px;">Udziały — daj komuś 2, jeśli płaci za kogoś bez konta (np. partnera).</div>`));
         czl.forEach((c) => {
           const s = stany2.find((y) => y.traveler_id === c.traveler_id);
-          const st = s ? s.stan : "oczekuje";
-          const kolor = (st === "przyjete" || st === "zrobione") ? "#1a7158" : (st === "odrzucone" ? "#c0392b" : "var(--ink-soft)");
-          const et = st === "oczekuje" ? "czeka" : st;
           const ud = s && s.udzialy ? s.udzialy : 1;
-          const row = el(`<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0;">
-            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escP(c.nick || "uczestnik")}</span>
-            ${jestKoszt
-              ? `<span style="display:flex;align-items:center;gap:4px;"><button class="ud-m" style="width:22px;height:22px;border:1px solid var(--line);border-radius:6px;background:#efece3;cursor:pointer;line-height:1;">−</button><span class="ud-v" style="min-width:14px;text-align:center;">${ud}</span><button class="ud-p" style="width:22px;height:22px;border:1px solid var(--line);border-radius:6px;background:#efece3;cursor:pointer;line-height:1;">+</button><span style="font-size:10.5px;color:var(--ink-soft);">udz.</span></span><span class="ud-nal" style="min-width:78px;text-align:right;color:#1a7158;">${nalTxt(ud)}</span>`
-              : `<span style="color:${kolor};">${escP(et)}</span>`}
+          const rw = el(`<div style="display:flex;align-items:center;gap:8px;font-size:13px;padding:3px 0;">
+            <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escP(nazwaOsoby(c))}</span>
+            <span style="display:flex;align-items:center;gap:4px;"><button class="ud-m" style="width:22px;height:22px;border:1px solid var(--line);border-radius:6px;background:#efece3;cursor:pointer;line-height:1;">−</button><span class="ud-v" style="min-width:14px;text-align:center;">${ud}</span><button class="ud-p" style="width:22px;height:22px;border:1px solid var(--line);border-radius:6px;background:#efece3;cursor:pointer;line-height:1;">+</button><span style="font-size:10.5px;color:var(--ink-soft);">udz.</span></span><span class="ud-nal" style="min-width:78px;text-align:right;color:#1a7158;">${nalTxt(ud)}</span>
           </div>`);
-          if (jestKoszt && owner) {
-            const vEl = row.querySelector(".ud-v"), nalEl = row.querySelector(".ud-nal");
-            const setUd = async (nowe) => {
-              nowe = Math.max(0, nowe);
-              vEl.textContent = nowe; if (nalEl) nalEl.textContent = nalTxt(nowe);
-              await supabase.from("lista_pozycja_stan").upsert({ pozycja_id: z.id, traveler_id: c.traveler_id, udzialy: nowe }, { onConflict: "pozycja_id,traveler_id" });
-            };
-            row.querySelector(".ud-m").addEventListener("click", () => setUd((parseInt(vEl.textContent, 10) || 1) - 1));
-            row.querySelector(".ud-p").addEventListener("click", () => setUd((parseInt(vEl.textContent, 10) || 1) + 1));
-          }
-          osoby.appendChild(row);
+          const vEl = rw.querySelector(".ud-v"), nalEl = rw.querySelector(".ud-nal");
+          const setUd = async (nowe) => {
+            nowe = Math.max(0, nowe);
+            vEl.textContent = nowe; if (nalEl) nalEl.textContent = nalTxt(nowe);
+            await supabase.from("lista_pozycja_stan").upsert({ pozycja_id: z.id, traveler_id: c.traveler_id, udzialy: nowe }, { onConflict: "pozycja_id,traveler_id" });
+          };
+          rw.querySelector(".ud-m").addEventListener("click", () => setUd((parseInt(vEl.textContent, 10) || 1) - 1));
+          rw.querySelector(".ud-p").addEventListener("click", () => setUd((parseInt(vEl.textContent, 10) || 1) + 1));
+          osoby.appendChild(rw);
         });
       });
     }
