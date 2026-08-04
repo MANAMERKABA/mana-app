@@ -5160,13 +5160,25 @@ function kwotaTxt(poz) {
 const STAN_KOLOR = { oczekuje: "transparent", w_trakcie: "#e0a020", przyjete: "#e0a020", wplacono: "#c0392b", zrobione: "#1a7158", potwierdzone: "#1a7158" };
 const stanKolor = (st) => STAN_KOLOR[st || "oczekuje"] || "transparent";
 const stanEtyk = (st) => ({ oczekuje: "nie zrobione", w_trakcie: "w trakcie", przyjete: "w trakcie", wplacono: "wpłacone — czeka na potwierdzenie", zrobione: "zrobione", potwierdzone: "wpłata potwierdzona" })[st || "oczekuje"] || st;
+// Droga długu (koszt organizatora, z ratami): 🔴 należność → 🟠 częściowo → 🟡 pełna wpłata (czeka) → 🟢 potwierdzone
+const DLUG_KOL = { nal: "#c0392b", czesc: "#e0871a", pelna: "#e8c020", ok: "#1a7158" };
+// zwraca { faza, kol, etyk } na podstawie wpłacono/należność/potwierdzone
+function dlugFaza(wplacono, naleznosc, potwierdzone) {
+  if (potwierdzone) return { faza: "ok", kol: DLUG_KOL.ok, etyk: "rozliczone" };
+  const w = Number(wplacono) || 0, n = Number(naleznosc) || 0;
+  if (n > 0 && w >= n) return { faza: "pelna", kol: DLUG_KOL.pelna, etyk: "pełna wpłata — czeka na potwierdzenie" };
+  if (w > 0) return { faza: "czesc", kol: DLUG_KOL.czesc, etyk: "częściowo spłacone" };
+  return { faza: "nal", kol: DLUG_KOL.nal, etyk: "należność — brak wpłaty" };
+}
 const przeplyw = (typ, model) => (typ === "koszt" && model === "organizator") ? "platnosc2" : (typ === "koszt") ? "platnosc1" : "zadanie";
 function kolejnyStan(przep, st, rola) {
   st = st || "oczekuje";
-  if (przep === "zadanie") { if (rola !== "self" && rola !== "owner") return null; return st === "oczekuje" ? "w_trakcie" : st === "w_trakcie" ? "zrobione" : "oczekuje"; }
-  if (przep === "platnosc1") { if (rola !== "self" && rola !== "owner") return null; return (st === "zrobione" || st === "potwierdzone") ? "oczekuje" : "zrobione"; }
-  // platnosc2 — dwustronna
-  if (rola === "owner") return st === "oczekuje" ? "wplacono" : st === "wplacono" ? "potwierdzone" : "oczekuje";
+  const jaMoge = (rola === "self" || rola === "owner_self" || rola === "owner_other");
+  if (przep === "zadanie") { if (!jaMoge) return null; return st === "oczekuje" ? "w_trakcie" : st === "w_trakcie" ? "zrobione" : "oczekuje"; }
+  if (przep === "platnosc1") { if (!jaMoge) return null; return (st === "zrobione" || st === "potwierdzone") ? "oczekuje" : "zrobione"; }
+  // platnosc2 — koszt organizatora, dwustronny (organizator zapłacił, inni oddają jemu)
+  if (rola === "owner_self") return null;                                             // Twój udział pokryty — brak akcji
+  if (rola === "owner_other") return st === "potwierdzone" ? "oczekuje" : "potwierdzone"; // potwierdzam odbiór -> od razu zielone
   if (rola === "self") { if (st === "potwierdzone") return null; return st === "oczekuje" ? "wplacono" : "oczekuje"; }
   return null;
 }
@@ -5262,6 +5274,7 @@ async function klonujListe(tresc, p, owner, szablonId) {
     const rows = poz.map((z) => ({
       lista_id: nowa.id, typ: z.typ, tytul: z.tytul, opis: z.opis, kolejnosc: z.kolejnosc,
       widocznosc_statusu: z.widocznosc_statusu, kwota: z.kwota, waluta: z.waluta, koszt_model: z.koszt_model,
+      platnik_traveler_id: z.platnik_traveler_id, kwota_na_osobe: z.kwota_na_osobe,
       kwota_widoczna: z.kwota_widoczna, dzielony_na: z.dzielony_na, link_url: z.link_url, dla_kogo: z.dla_kogo,
     }));
     await supabase.from("lista_pozycje").insert(rows);
@@ -5278,6 +5291,9 @@ async function renderKokpit(tresc, p, owner, listaId) {
   const L = rL.data; const poz = rPoz.data || [];
   let stany = [];
   if (poz.length) { const { data } = await supabase.from("lista_pozycja_stan").select("*").in("pozycja_id", poz.map((z) => z.id)); stany = data || []; }
+  // płatności (droga długu): wpłacono + potwierdzone per pozycja+dłużnik; SECURITY DEFINER (organizator widzi wszystko, uczestnik swoje)
+  const platMap = {};
+  { const { data: _pl } = await supabase.rpc("lista_platnosci", { p_lista_id: listaId }); (_pl || []).forEach((r) => { platMap[r.pozycja_id + ":" + r.dluznik_traveler_id] = r; }); }
   const czl = p.czlonkowie || [];
   const stByPoz = {};
   stany.forEach((s) => { (stByPoz[s.pozycja_id] = stByPoz[s.pozycja_id] || []).push(s); });
@@ -5297,11 +5313,13 @@ async function renderKokpit(tresc, p, owner, listaId) {
   </div>`);
   tresc.appendChild(naglowek);
   tresc.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">${czl.length} os. · waluta ${escP(L.waluta_domyslna)}</div>`));
-  tresc.appendChild(el(`<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;">
-    <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid #bdb7a8;vertical-align:-1px;"></span> nie zrobione</span>
-    <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#e0a020;vertical-align:-1px;"></span> w trakcie</span>
-    <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#c0392b;vertical-align:-1px;"></span> wpłacone — czeka</span>
-    <span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#1a7158;vertical-align:-1px;"></span> zrobione / potwierdzone</span></div>`));
+  const _leg = (kol, brzeg, txt) => `<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;${kol ? "background:" + kol : "border:2px solid " + (brzeg || "#bdb7a8")};vertical-align:-1px;"></span> ${txt}</span>`;
+  tresc.appendChild(el(`<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:4px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;">
+    <span style="font-weight:600;color:var(--ink);">Zadania:</span>
+    ${_leg("", "#bdb7a8", "do zrobienia")}${_leg("#e0a020", "", "w trakcie")}${_leg("#1a7158", "", "zrobione")}</div>`));
+  tresc.appendChild(el(`<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;">
+    <span style="font-weight:600;color:var(--ink);">Koszty:</span>
+    ${_leg(DLUG_KOL.nal, "", "należność")}${_leg(DLUG_KOL.czesc, "", "częściowo")}${_leg(DLUG_KOL.pelna, "", "pełna — czeka")}${_leg(DLUG_KOL.ok, "", "rozliczone")}</div>`));
   if (owner) {
     naglowek.querySelector(".lst-rename").addEventListener("click", async () => {
       const nowa = (prompt("Nowa nazwa listy:", L.tytul || "") || "").trim();
@@ -5352,17 +5370,84 @@ async function renderKokpit(tresc, p, owner, listaId) {
     // Kółka-stany per osoba (imię + litera nazwiska)
     const kregBox = row.querySelector(".lp-krag");
     if (kregBox) {
+      const meId = (TRAVELER && TRAVELER.id);
+      const creditor = (przep === "platnosc2") ? (z.platnik_traveler_id || L.owner_traveler_id) : null;
+      const baza = z.kwota_na_osobe ? z.kwota : (z.dzielony_na && z.dzielony_na > 0 ? z.kwota / z.dzielony_na : z.kwota);
+      const meCreditor = (creditor != null) && (meId === creditor);
+      const waluta = z.waluta || (L.waluta_domyslna || "PLN");
+      const fmt = (n) => Number(n).toLocaleString("pl-PL", { maximumFractionDigits: 2 });
       czl.forEach((c) => {
+        const isSelf = c.traveler_id === meId;
+        // ── DROGA DŁUGU (koszt organizatora / konkretnej osoby, z ratami) ──
+        if (przep === "platnosc2") {
+          const isCreditor = c.traveler_id === creditor;
+          const s = stany2.find((y) => y.traveler_id === c.traveler_id);
+          const udz = s && s.udzialy ? s.udzialy : 1;
+          const naleznosc = (baza != null) ? baza * udz : null;
+          const info = platMap[z.id + ":" + c.traveler_id];
+          const wpl = info ? (Number(info.wplacono) || 0) : 0;
+          const potw = info ? !!info.potwierdzone : false;
+          const widac = owner || meCreditor || isSelf;       // uczestnik widzi tylko swój postęp
+          let kol = DLUG_KOL.nal, tlo = "transparent", brzeg = "#bdb7a8", etyk, postep = "";
+          if (isCreditor) {
+            kol = DLUG_KOL.ok; tlo = kol; brzeg = kol; etyk = "zapłacił(a)";
+          } else if (!widac) {
+            etyk = "ukryte";
+          } else {
+            const fz = dlugFaza(wpl, naleznosc, potw);
+            kol = fz.kol; etyk = fz.etyk;
+            tlo = (fz.faza === "nal") ? "transparent" : kol;
+            brzeg = (fz.faza === "nal") ? DLUG_KOL.nal : kol;
+            if (naleznosc != null && !potw && wpl > 0 && wpl < naleznosc) postep = fmt(wpl) + "/" + fmt(naleznosc);
+          }
+          const jaDluznik = isSelf && !isCreditor;
+          const jaMogePotw = (meCreditor || owner) && !isCreditor;
+          const klik = widac && naleznosc != null && ((jaDluznik && !potw) || jaMogePotw);
+          const kwotaTyt = (naleznosc != null) ? " (" + fmt(wpl) + "/" + fmt(naleznosc) + " " + escP(waluta) + ")" : "";
+          const pill = el(`<button ${klik ? "" : "disabled"} title="${escP(nazwaOsoby(c))} — ${escP(etyk)}${kwotaTyt}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 11px 4px 6px;background:var(--surface);font-size:12.5px;${klik ? "cursor:pointer;" : "cursor:default;"}">
+            <span style="width:15px;height:15px;border-radius:50%;border:2px solid ${brzeg};background:${tlo};display:inline-block;flex:none;"></span>
+            <span>${escP(nazwaOsoby(c))}${isSelf ? " (Ty)" : ""}${isCreditor ? " 💳" : ""}</span>
+            ${postep ? `<span style="font-size:10.5px;color:var(--ink-soft);">${escP(postep)}</span>` : ""}
+          </button>`);
+          if (klik && jaDluznik) {
+            pill.addEventListener("click", async () => {
+              const zostalo = (naleznosc != null) ? Math.max(0, naleznosc - wpl) : 0;
+              const raw = prompt(`Wpłata dla: ${nazwaOsoby(c)} — należność ${fmt(naleznosc)} ${waluta}, wpłacono ${fmt(wpl)}, zostało ${fmt(zostalo)}.\nPodaj kwotę wpłaty (puste = wyczyść wpłaty):`, zostalo ? String(zostalo) : "");
+              if (raw === null) return;
+              const kw = parseFloat(String(raw).replace(",", "."));
+              if (isNaN(kw) || kw <= 0) {
+                if (wpl > 0 && confirm("Wyczyścić Twoje dotychczasowe wpłaty na tej pozycji?")) {
+                  const { error } = await supabase.rpc("lista_cofnij_wplaty", { p_pozycja_id: z.id });
+                  if (error) { alert("Nie cofnięto: " + error.message); return; }
+                  renderKokpit(tresc, p, owner, listaId);
+                }
+                return;
+              }
+              const { error } = await supabase.rpc("lista_wplac", { p_pozycja_id: z.id, p_kwota: kw });
+              if (error) { alert("Nie zapisano wpłaty: " + error.message); return; }
+              renderKokpit(tresc, p, owner, listaId);
+            });
+          } else if (klik && jaMogePotw) {
+            pill.addEventListener("click", async () => {
+              const { error } = await supabase.rpc("lista_potwierdz", { p_pozycja_id: z.id, p_dluznik: c.traveler_id, p_potwierdz: !potw });
+              if (error) { alert("Nie zapisano: " + error.message); return; }
+              renderKokpit(tresc, p, owner, listaId);
+            });
+          }
+          kregBox.appendChild(pill);
+          return;
+        }
+        // ── ZADANIE / RZECZ / KOSZT każdy-sam (bez zmian) ──
         const s = stany2.find((y) => y.traveler_id === c.traveler_id);
         const st = s ? s.stan : "oczekuje";
-        const isSelf = c.traveler_id === (TRAVELER && TRAVELER.id);
-        const rola = owner ? "owner" : isSelf ? "self" : "inny";
+        const rola = owner ? (isSelf ? "owner_self" : "owner_other") : (isSelf ? "self" : "inny");
         const widac = !prywatny || owner || isSelf;                 // prywatny status: nie-organizator widzi tylko swoje
         const pokazSt = widac ? st : "oczekuje";
         const klik = widac && !!kolejnyStan(przep, st, rola);
+        const tytulSt = widac ? stanEtyk(st) : "ukryte";
         const tlo = (pokazSt === "oczekuje") ? "transparent" : stanKolor(pokazSt);
         const brzeg = (pokazSt === "oczekuje") ? "#bdb7a8" : stanKolor(pokazSt);
-        const pill = el(`<button ${klik ? "" : "disabled"} title="${escP(nazwaOsoby(c))} — ${escP(widac ? stanEtyk(st) : "ukryte")}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 11px 4px 6px;background:var(--surface);font-size:12.5px;${klik ? "cursor:pointer;" : "cursor:default;"}">
+        const pill = el(`<button ${klik ? "" : "disabled"} title="${escP(nazwaOsoby(c))} — ${escP(tytulSt)}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px 11px 4px 6px;background:var(--surface);font-size:12.5px;${klik ? "cursor:pointer;" : "cursor:default;"}">
           <span style="width:15px;height:15px;border-radius:50%;border:2px solid ${brzeg};background:${tlo};display:inline-block;flex:none;"></span>
           <span>${escP(nazwaOsoby(c))}${isSelf ? " (Ty)" : ""}</span>
         </button>`);
@@ -5426,9 +5511,14 @@ function formPozycja(tresc, p, owner, listaId, anchor) {
         <button type="button" class="lp-kmode" data-km="na_osobe" style="${BG}flex:1;min-width:130px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;">na osobę</button>
         <button type="button" class="lp-kmode" data-km="laczna" style="${BG}flex:1;min-width:130px;">łączna do podziału</button>
       </div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Kto zapłacił:</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
-        <button type="button" class="lp-model" data-m="wlasny" style="${BG}flex:1;min-width:130px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;">Każdy płaci sam</button>
-        <button type="button" class="lp-model" data-m="organizator" style="${BG}flex:1;min-width:130px;">Zapłacił organizator</button>
+        <button type="button" class="lp-model" data-m="wlasny" style="${BG}flex:1;min-width:110px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;">Każdy sam</button>
+        <button type="button" class="lp-model" data-m="organizator" style="${BG}flex:1;min-width:110px;">Organizator</button>
+        <button type="button" class="lp-model" data-m="osoba" style="${BG}flex:1;min-width:110px;">Konkretna osoba</button>
+      </div>
+      <div class="lp-platnik-wrap" style="display:none;margin-bottom:8px;">
+        <select class="lp-platnik" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;"></select>
       </div>
       <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;"><input type="checkbox" class="lp-kwwid" checked style="width:16px;height:16px;"> kwota widoczna dla wszystkich</label>
       <div class="lp-dziel-wrap" style="display:none;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Podziel łączny koszt na <input class="lp-dziel" type="number" inputmode="numeric" style="width:60px;padding:5px;border:1px solid var(--line);border-radius:6px;"> osób</div>
@@ -5451,9 +5541,18 @@ function formPozycja(tresc, p, owner, listaId, anchor) {
     });
     typyBox.appendChild(b);
   });
+  // Opcje płatnika = członkowie z kontem (osoba bez konta = profil zarządzany też ma traveler_id)
+  const platnikSel = f.querySelector(".lp-platnik");
+  if (platnikSel) {
+    (p.czlonkowie || []).filter((c) => c.traveler_id).forEach((c) => {
+      const nm = skrocImie(c.nick || "uczestnik") || "uczestnik";
+      platnikSel.appendChild(el(`<option value="${escP(c.traveler_id)}">${escP(nm)}</option>`));
+    });
+  }
   f.querySelectorAll(".lp-model").forEach((b) => b.addEventListener("click", () => {
-    model = b.dataset.m; f.querySelectorAll(".lp-model").forEach((x) => (x.style.cssText = BG + "flex:1;min-width:130px;"));
-    b.style.cssText = BG + "flex:1;min-width:130px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;";
+    model = b.dataset.m; f.querySelectorAll(".lp-model").forEach((x) => (x.style.cssText = BG + "flex:1;min-width:110px;"));
+    b.style.cssText = BG + "flex:1;min-width:110px;outline:2px solid var(--turkus,#1f9e8f);font-weight:600;";
+    const pw = f.querySelector(".lp-platnik-wrap"); if (pw) pw.style.display = model === "osoba" ? "block" : "none";
   }));
   f.querySelectorAll(".lp-kmode").forEach((b) => b.addEventListener("click", () => {
     kmode = b.dataset.km; f.querySelectorAll(".lp-kmode").forEach((x) => (x.style.cssText = BG + "flex:1;min-width:130px;"));
@@ -5470,7 +5569,9 @@ function formPozycja(tresc, p, owner, listaId, anchor) {
       const kw = parseFloat(String(f.querySelector(".lp-kw").value).replace(",", "."));
       if (!isNaN(kw)) rek.kwota = kw;
       rek.waluta = f.querySelector(".lp-wal").value;
-      rek.koszt_model = model;
+      // model: wlasny=każdy sam · organizator=owner listy płaci · osoba=konkretny członek płaci (koszt_model organizator + platnik)
+      rek.koszt_model = (model === "wlasny") ? "wlasny" : "organizator";
+      rek.platnik_traveler_id = (model === "osoba") ? (parseInt(f.querySelector(".lp-platnik").value, 10) || null) : null;
       rek.kwota_widoczna = f.querySelector(".lp-kwwid").checked;
       rek.kwota_na_osobe = (kmode === "na_osobe");
       const dz = parseInt(f.querySelector(".lp-dziel").value, 10);
