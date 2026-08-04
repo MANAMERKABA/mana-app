@@ -5294,7 +5294,9 @@ async function renderKokpit(tresc, p, owner, listaId) {
   // płatności (droga długu): wpłacono + potwierdzone per pozycja+dłużnik; SECURITY DEFINER (organizator widzi wszystko, uczestnik swoje)
   const platMap = {};
   { const { data: _pl } = await supabase.rpc("lista_platnosci", { p_lista_id: listaId }); (_pl || []).forEach((r) => { platMap[r.pozycja_id + ":" + r.dluznik_traveler_id] = r; }); }
-  const czl = p.czlonkowie || [];
+  // Kolejność osób: założyciel → z uprawnieniami (inna rola niż członek) → zwykli członkowie; w obrębie rangi stabilnie
+  const rangaCzl = (c) => c.rola === "zalozyciel" ? 0 : (c.rola && c.rola !== "czlonek" ? 1 : 2);
+  const czl = (p.czlonkowie || []).slice().sort((a, b) => rangaCzl(a) - rangaCzl(b));
   const stByPoz = {};
   stany.forEach((s) => { (stByPoz[s.pozycja_id] = stByPoz[s.pozycja_id] || []).push(s); });
   // imiona z książki kontaktów oglądającego (imię + litera nazwiska); fallback do nicku
@@ -5356,11 +5358,11 @@ async function renderKokpit(tresc, p, owner, listaId) {
     const jestKoszt = z.typ === "koszt" && z.kwota != null;
     const row = el(`<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px;">
       <div style="display:flex;align-items:flex-start;gap:8px;">
-        <div style="flex:1;"><div style="font-size:14.5px;">${esc(z.tytul)}</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${listaTypEt(z.typ)}${kw}${modelTxt}${z.typ !== "dokument" ? " · " + komuTxt : ""}${ukr}</div></div>
+        <div class="lp-head" style="flex:1;"><div style="font-size:14.5px;">${esc(z.tytul)}</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${listaTypEt(z.typ)}${kw}${modelTxt}${z.typ !== "dokument" ? " · " + komuTxt : ""}${ukr}${z.typ !== "dokument" ? ` <span class="lp-chev" style="color:var(--turkus,#1f9e8f);">▾</span>` : ""}</div></div>
         ${owner ? `<button class="lp-x" title="Usuń" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:15px;line-height:1;">×</button>` : ""}
       </div>
-      ${z.typ !== "dokument" ? `<div class="lp-krag" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>` : ""}
+      ${z.typ !== "dokument" ? `<div class="lp-krag" style="display:none;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>` : ""}
       ${(owner && jestKoszt) ? `<button class="lp-rozw" style="${BG}font-size:11.5px;padding:4px 9px;margin-top:7px;">Udziały kosztu</button><div class="lp-osoby" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:7px;"></div>` : ""}
     </div>`);
     if (owner) {
@@ -5459,6 +5461,16 @@ async function renderKokpit(tresc, p, owner, listaId) {
           renderKokpit(tresc, p, owner, listaId);
         });
         kregBox.appendChild(pill);
+      });
+    }
+    // Zwiń/rozwiń pigułki osób — domyślnie widać tylko licznik w podtytule
+    const head = row.querySelector(".lp-head");
+    if (head && kregBox) {
+      head.style.cursor = "pointer";
+      head.addEventListener("click", () => {
+        const pokaz = kregBox.style.display === "none";
+        kregBox.style.display = pokaz ? "flex" : "none";
+        const ch = head.querySelector(".lp-chev"); if (ch) ch.textContent = pokaz ? "▴" : "▾";
       });
     }
     // Udziały kosztu (organizator) — rozdział łącznej kwoty
