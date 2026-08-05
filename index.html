@@ -4814,6 +4814,15 @@ function pokazLinkZaproszenia(k, link, grupa, tryb) {
     catch (e) { prompt("Skopiuj link:", link); }
   });
 }
+/* Drugie wejście do „Wyślij link do MANA": z poziomu plemienia, dla członka który już należy ale się zgubił (zgubił link / nie dodał do ekranu). Ten sam arkusz co „Zaproś do MANA" dla osoby z kontem. */
+async function pomozWejscCzlonek(c) {
+  let k = { imie: c.nick || "uczestnik", telefon: "", email: "" };
+  try {
+    const { data: kon } = await supabase.from("kontakty").select("imie,telefon,email").eq("owner_traveler_id", TRAVELER.id).eq("target_traveler_id", c.traveler_id).limit(1);
+    if (kon && kon[0]) k = { imie: kon[0].imie || c.nick || "uczestnik", telefon: kon[0].telefon || "", email: kon[0].email || "" };
+  } catch (e) {}
+  pokazLinkZaproszenia(k, location.origin, null, "wejscie");
+}
 async function dodajZPlemienia() {
   const [{ data: pls }, { data: istn = [] }] = await Promise.all([
     supabase.rpc("moje_plemiona_full"),
@@ -4978,6 +4987,11 @@ function kartaPlemienia(p) {
       const rb = el(`<button title="${zal ? "Odbierz prawa zarządzania" : "Nadaj prawa zarządzania (współzałożyciel)"}" style="border:none;background:${zal ? "#e7f3f0" : "none"};border-radius:12px;cursor:pointer;font-size:10.5px;line-height:1;padding:2px 7px;color:${zal ? "#1a7158" : "var(--ink-soft)"};">${zal ? "⭐ zarządza" : "☆ nadaj prawa"}</button>`);
       rb.addEventListener("click", () => zmienRole(p.id, c.traveler_id, zal ? "czlonek" : "zalozyciel", c.nick));
       chip.appendChild(rb);
+    }
+    if (!dziecko && !mojWard && c.traveler_id !== mojeId) {
+      const wej = el(`<button title="Wyślij link do wejścia + instrukcję dodania do ekranu" style="border:none;background:none;cursor:pointer;font-size:13px;line-height:1;padding:0 0 0 2px;">📲</button>`);
+      wej.addEventListener("click", (e) => { e.stopPropagation(); pomozWejscCzlonek(c); });
+      chip.appendChild(wej);
     }
     czlBox.appendChild(chip);
   });
