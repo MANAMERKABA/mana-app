@@ -5353,12 +5353,37 @@ async function renderKokpit(tresc, p, owner, listaId) {
 
   if (!poz.length) { tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Brak pozycji. ${owner ? "Dodaj pierwszą." : ""}</div>`)); return; }
 
-  // Auto-grupowanie w sekcje po typie: Koszty → Do zabrania → Zadania → Dokumenty
-  const SEK_RANGA = { koszt: 0, rzecz: 1, zadanie: 2, dokument: 3 };
-  const SEK_ET = { koszt: "Koszty", rzecz: "Do zabrania", zadanie: "Zadania", dokument: "Dokumenty / info" };
-  const SEK_IK = { koszt: "💰", rzecz: "🎒", zadanie: "✓", dokument: "📄" };
+  // Auto-grupowanie w sekcje wg pilności: Koszty (finanse) → Zadania (organizacja) → Do zabrania → Dokumenty
+  const SEK_RANGA = { koszt: 0, zadanie: 1, rzecz: 2, dokument: 3 };
+  const SEK_ET = { koszt: "Koszty", zadanie: "Zadania", rzecz: "Do zabrania", dokument: "Dokumenty / info" };
+  const SEK_IK = { koszt: "💰", zadanie: "✓", rzecz: "🎒", dokument: "📄" };
+  const _meId = (TRAVELER && TRAVELER.id);
+  // pilność z MOJEJ perspektywy: 0 do zrobienia/należność → 1 częściowo/w trakcie → 2 czeka → 3 zrobione/rozliczone
+  const _pilnosc = (z) => {
+    if (z.typ === "dokument") return 0;
+    const st2 = stByPoz[z.id] || [];
+    if (przeplyw(z.typ, z.koszt_model) === "platnosc2") {
+      const cr = z.platnik_traveler_id || L.owner_traveler_id;
+      if (_meId === cr) return 3;
+      const s = st2.find((y) => y.traveler_id === _meId);
+      const ud = s && s.udzialy ? s.udzialy : 1;
+      const bz = z.kwota_na_osobe ? z.kwota : (z.dzielony_na && z.dzielony_na > 0 ? z.kwota / z.dzielony_na : z.kwota);
+      const nl = (bz != null) ? bz * ud : null;
+      const nf = platMap[z.id + ":" + _meId];
+      const wp = nf ? (Number(nf.wplacono) || 0) : 0;
+      if (nf && nf.potwierdzone) return 3;
+      if (nl != null && wp >= nl) return 2;
+      if (wp > 0) return 1;
+      return 0;
+    }
+    const s = st2.find((y) => y.traveler_id === _meId);
+    const stt = s ? s.stan : "oczekuje";
+    if (stt === "zrobione" || stt === "potwierdzone") return 3;
+    if (stt === "w_trakcie" || stt === "przyjete") return 1;
+    return 0;
+  };
   let _sekPrev = null;
-  const pozGrp = poz.slice().sort((a, b) => ((SEK_RANGA[a.typ] ?? 9) - (SEK_RANGA[b.typ] ?? 9)) || ((a.kolejnosc || 0) - (b.kolejnosc || 0)));
+  const pozGrp = poz.slice().sort((a, b) => ((SEK_RANGA[a.typ] ?? 9) - (SEK_RANGA[b.typ] ?? 9)) || (_pilnosc(a) - _pilnosc(b)) || ((a.kolejnosc || 0) - (b.kolejnosc || 0)));
   pozGrp.forEach((z) => {
     if (z.typ !== _sekPrev) { tresc.appendChild(el(`<div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin:14px 0 7px;display:flex;align-items:center;gap:6px;">${SEK_IK[z.typ] || ""} ${escP(SEK_ET[z.typ] || z.typ)}</div>`)); _sekPrev = z.typ; }
     const stany2 = stByPoz[z.id] || [];
@@ -5375,12 +5400,15 @@ async function renderKokpit(tresc, p, owner, listaId) {
         ${z.typ !== "dokument" ? `<span class="lp-me" title="Twój status" style="width:20px;height:20px;border-radius:50%;flex:none;box-sizing:border-box;margin-top:1px;"></span>` : ""}
         <div class="lp-head" style="flex:1;"><div style="font-size:14.5px;">${esc(z.tytul)}</div>
         <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${listaTypEt(z.typ)}${kw}${modelTxt}${z.typ !== "dokument" ? " · " + komuTxt : ""}${ukr}${z.typ !== "dokument" ? ` <span class="lp-chev" style="color:var(--turkus,#1f9e8f);">▾</span>` : ""}</div></div>
-        ${owner ? `<button class="lp-x" title="Usuń" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:15px;line-height:1;">×</button>` : ""}
+        ${owner ? `<button class="lp-edit" title="Edytuj" style="border:none;background:none;color:var(--ink-soft);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;">✎</button><button class="lp-x" title="Usuń" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:15px;line-height:1;">×</button>` : ""}
       </div>
       ${z.typ !== "dokument" ? `<div class="lp-krag" style="display:none;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>` : ""}
       ${(owner && jestKoszt) ? `<button class="lp-rozw" style="${BG}font-size:11.5px;padding:4px 9px;margin-top:7px;">Udziały kosztu</button><div class="lp-osoby" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:7px;"></div>` : ""}
     </div>`);
+    if (_pilnosc(z) === 3) row.style.opacity = "0.55";   // zrobione/rozliczone — schodzi z oczu
     if (owner) {
+      const ed = row.querySelector(".lp-edit");
+      if (ed) ed.addEventListener("click", () => formPozycja(tresc, p, owner, listaId, row, z));
       const x = row.querySelector(".lp-x");
       if (x) x.addEventListener("click", async () => { if (!confirm("Usunąć pozycję?")) return; await supabase.from("lista_pozycje").delete().eq("id", z.id); renderKokpit(tresc, p, owner, listaId); });
     }
@@ -5580,7 +5608,7 @@ async function renderKokpit(tresc, p, owner, listaId) {
   });
 }
 
-function formPozycja(tresc, p, owner, listaId, anchor) {
+function formPozycja(tresc, p, owner, listaId, anchor, poz) {
   const ist = tresc.querySelector(".lp-form"); if (ist) { ist.remove(); return; }
   let typ = "zadanie", model = "wlasny", kmode = "na_osobe";
   const f = el(`<div class="lp-form" style="border:1px solid var(--line);border-radius:12px;padding:11px;margin:0 0 12px;background:var(--surface);">
@@ -5645,14 +5673,32 @@ function formPozycja(tresc, p, owner, listaId, anchor) {
     f.querySelector(".lp-dziel-wrap").style.display = kmode === "laczna" ? "block" : "none";
     f.querySelector(".lp-kw").placeholder = kmode === "laczna" ? "Kwota łączna" : "Kwota na osobę";
   }));
+  // Tryb edycji — prefill istniejącej pozycji (symulujemy kliknięcia, żeby reużyć logikę pokazywania pól)
+  if (poz) {
+    f.querySelector(".lp-t").value = poz.tytul || "";
+    const tb = typyBox.querySelector(`button[data-k="${poz.typ}"]`); if (tb) tb.click();
+    if (poz.typ === "koszt") {
+      f.querySelector(".lp-kw").value = (poz.kwota != null) ? poz.kwota : "";
+      if (poz.waluta) f.querySelector(".lp-wal").value = poz.waluta;
+      f.querySelector(".lp-kwwid").checked = poz.kwota_widoczna !== false;
+      const kmb = f.querySelector(`.lp-kmode[data-km="${poz.kwota_na_osobe ? "na_osobe" : "laczna"}"]`); if (kmb) kmb.click();
+      if (poz.dzielony_na) f.querySelector(".lp-dziel").value = poz.dzielony_na;
+      const mdl = (poz.koszt_model === "wlasny") ? "wlasny" : (poz.platnik_traveler_id ? "osoba" : "organizator");
+      const mb = f.querySelector(`.lp-model[data-m="${mdl}"]`); if (mb) mb.click();
+      if (mdl === "osoba" && poz.platnik_traveler_id) f.querySelector(".lp-platnik").value = String(poz.platnik_traveler_id);
+    }
+    if (poz.typ === "dokument" && poz.link_url) f.querySelector(".lp-url").value = poz.link_url;
+    f.querySelector(".lp-widst").checked = poz.widocznosc_statusu === "organizator";
+    f.querySelector(".lp-ok").textContent = "Zapisz";
+  }
   f.querySelector(".lp-anu").addEventListener("click", () => f.remove());
   f.querySelector(".lp-ok").addEventListener("click", async () => {
     const t = f.querySelector(".lp-t").value.trim();
     if (!t) { alert("Podaj nazwę pozycji."); return; }
-    const rek = { lista_id: listaId, typ, tytul: t, widocznosc_statusu: f.querySelector(".lp-widst").checked ? "organizator" : "publiczny", kolejnosc: Date.now() % 100000 };
+    const rek = { lista_id: listaId, typ, tytul: t, widocznosc_statusu: f.querySelector(".lp-widst").checked ? "organizator" : "publiczny", kolejnosc: poz ? poz.kolejnosc : Date.now() % 100000 };
     if (typ === "koszt") {
       const kw = parseFloat(String(f.querySelector(".lp-kw").value).replace(",", "."));
-      if (!isNaN(kw)) rek.kwota = kw;
+      rek.kwota = isNaN(kw) ? null : kw;
       rek.waluta = f.querySelector(".lp-wal").value;
       // model: wlasny=każdy sam · organizator=owner listy płaci · osoba=konkretny członek płaci (koszt_model organizator + platnik)
       rek.koszt_model = (model === "wlasny") ? "wlasny" : "organizator";
@@ -5660,10 +5706,16 @@ function formPozycja(tresc, p, owner, listaId, anchor) {
       rek.kwota_widoczna = f.querySelector(".lp-kwwid").checked;
       rek.kwota_na_osobe = (kmode === "na_osobe");
       const dz = parseInt(f.querySelector(".lp-dziel").value, 10);
-      if (kmode === "laczna" && !isNaN(dz) && dz > 0) rek.dzielony_na = dz;
+      rek.dzielony_na = (kmode === "laczna" && !isNaN(dz) && dz > 0) ? dz : null;
+    } else if (poz) {
+      // zmiana typu z kosztu na inny — wyzeruj pola kosztowe
+      rek.kwota = null; rek.koszt_model = null; rek.platnik_traveler_id = null; rek.dzielony_na = null;
     }
-    if (typ === "dokument") { const u = f.querySelector(".lp-url").value.trim(); if (u) rek.link_url = u; }
-    const { error } = await supabase.from("lista_pozycje").insert(rek);
+    if (typ === "dokument") { const u = f.querySelector(".lp-url").value.trim(); rek.link_url = u || null; }
+    else if (poz) rek.link_url = null;
+    let error;
+    if (poz) { delete rek.lista_id; ({ error } = await supabase.from("lista_pozycje").update(rek).eq("id", poz.id)); }
+    else ({ error } = await supabase.from("lista_pozycje").insert(rek));
     if (error) { f.querySelector(".lp-out").innerHTML = `<span style="color:#c4513a;">Błąd: ${escP(error.message)}</span>`; return; }
     renderKokpit(tresc, p, owner, listaId);
   });
