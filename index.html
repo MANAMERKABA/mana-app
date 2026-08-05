@@ -5907,7 +5907,7 @@ async function zaprosZKontaktow(plemieId, plemieNazwa) {
   }).join("") : `<div style="font-size:12.5px;color:var(--ink-soft);padding:6px 0;">Brak kontaktów jeszcze.</div>`;
   const ov = el(`<div class="m-overlay"><div class="m-modal">
     <div class="m-modal__head"><span class="m-modal__tytul">Zaproś do: ${escP(plemieNazwa)}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
-    <div class="m-form" id="zk-body" style="max-height:62vh;overflow-y:auto;"><button class="zk-nowy" style="${BT}margin-bottom:10px;">+ Nowy kontakt</button><input class="zk-szukaj" type="search" placeholder="Szukaj po imieniu…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:8px;"><label>Zaznacz osoby</label>${wiersze}<button class="zk-wyslij" style="${BT}width:100%;margin-top:10px;">Zaproś zaznaczonych</button></div>
+    <div class="m-form" id="zk-body" style="max-height:62vh;overflow-y:auto;"><div style="position:sticky;top:0;background:var(--surface);z-index:2;display:flex;gap:8px;align-items:center;padding-bottom:8px;"><button class="zk-nowy" style="${BT}flex:1;">+ Nowy kontakt</button><button class="zk-wyslij" style="${BT}flex:1;display:none;">Zaproś zaznaczonych</button></div><input class="zk-szukaj" type="search" placeholder="Szukaj po imieniu…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:8px;"><label>Zaznacz osoby</label>${wiersze}</div>
   </div></div>`);
   document.body.appendChild(ov);
   const zamknij = () => ov.remove();
@@ -5917,6 +5917,8 @@ async function zaprosZKontaktow(plemieId, plemieNazwa) {
   const szuk = ov.querySelector(".zk-szukaj");
   if (szuk) szuk.addEventListener("input", () => { const q = szuk.value.trim().toLowerCase(); ov.querySelectorAll(".zk-wiersz").forEach((el2) => { el2.style.display = (!q || (el2.dataset.szukaj || "").includes(q)) ? "" : "none"; }); });
   const bwyslij = ov.querySelector(".zk-wyslij");
+  const odswiezWyslij = () => { const n = ov.querySelectorAll(".zk-check:checked").length; if (bwyslij) { bwyslij.style.display = n ? "" : "none"; bwyslij.textContent = "Zaproś zaznaczonych (" + n + ")"; } };
+  ov.querySelectorAll(".zk-check").forEach((c) => c.addEventListener("change", odswiezWyslij));
   if (bwyslij) bwyslij.addEventListener("click", async () => {
     const wybrane = [...ov.querySelectorAll(".zk-check:checked")].map((c) => c.dataset.id);
     if (!wybrane.length) { trzosToast("Zaznacz kogoś."); return; }
