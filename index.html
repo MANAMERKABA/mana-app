@@ -4041,9 +4041,6 @@ async function renderRozmowyInbox() {
   const nowa = el(`<button style="width:100%;border:1px dashed var(--turkus,#1f9e8f);background:#eef6f3;color:#1a7158;border-radius:12px;padding:11px;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:10px;">＋ Nowa rozmowa</button>`);
   nowa.addEventListener("click", nowaRozmowa);
   wrap.appendChild(nowa);
-  const goscBtn = el(`<button style="width:100%;border:1px dashed #b98a3e;background:#faf4e8;color:#8a6416;border-radius:12px;padding:10px;font-size:13.5px;font-weight:500;cursor:pointer;margin-bottom:12px;">🔗 Zaproś kogoś spoza MANA (link)</button>`);
-  goscBtn.addEventListener("click", zaprosGoscia);
-  wrap.appendChild(goscBtn);
   const mkRow = (p) => {
     const n = nieprzMap[p.id] || 0;
     const ost = ostatnia[p.id];
@@ -4066,10 +4063,7 @@ async function renderRozmowyInbox() {
   };
   const rozmowy = plemiona.filter((p) => p.typ === "rozmowa");
   const grupy = plemiona.filter((p) => p.typ === "grupa");
-  if (!plemiona.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:13.5px;padding:6px 2px;">Zacznij pierwszą rozmowę — wybierz osobę z kontaktów.</div>`));
-  else if (!rozmowy.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:13px;padding:4px 2px 8px;">Brak rozmów 1:1 — zacznij nową powyżej.</div>`));
-  for (const p of rozmowy) wrap.appendChild(mkRow(p));
-  // Grupy — zwinięte pod paskiem, żeby nie zakłócać 1:1
+  // Rozmowy plemienne (grupy) — zwinięte, NA GÓRZE (w miejscu usuniętego „Zaproś spoza MANA")
   if (grupy.length) {
     let grupyUnread = 0; grupy.forEach((p) => { if ((nieprzMap[p.id] || 0) > 0) grupyUnread++; });
     const bar = el(`<button style="width:100%;display:flex;align-items:center;gap:8px;background:#f3efe6;border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin:4px 0 8px;cursor:pointer;text-align:left;font:inherit;font-size:14px;font-weight:500;color:var(--ink);">
@@ -4083,6 +4077,10 @@ async function renderRozmowyInbox() {
     bar.addEventListener("click", () => { _rozmGrupyOtwarte = !_rozmGrupyOtwarte; cont.style.display = _rozmGrupyOtwarte ? "" : "none"; const ch = bar.querySelector(".rg-chev"); if (ch) ch.textContent = _rozmGrupyOtwarte ? "▲" : "▼"; });
     wrap.appendChild(bar); wrap.appendChild(cont);
   }
+  // Rozmowy 1:1 — pod plemionami
+  if (!plemiona.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:13.5px;padding:6px 2px;">Zacznij pierwszą rozmowę — wybierz osobę z kontaktów.</div>`));
+  else if (!rozmowy.length) wrap.appendChild(el(`<div style="color:var(--ink-soft);font-size:13px;padding:4px 2px 8px;">Brak rozmów 1:1 — zacznij nową powyżej.</div>`));
+  for (const p of rozmowy) wrap.appendChild(mkRow(p));
   box.appendChild(wrap);
 }
 /* Zaproś kogoś SPOZA MANA do rozmowy 1:1 — tworzy rozmowę + zaproszenie „gość" (konto zablokowane do komunikatora) + link. */
