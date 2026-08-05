@@ -5372,6 +5372,7 @@ async function renderKokpit(tresc, p, owner, listaId) {
     const jestKoszt = z.typ === "koszt" && z.kwota != null;
     const row = el(`<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px;">
       <div style="display:flex;align-items:flex-start;gap:8px;">
+        ${z.typ !== "dokument" ? `<span class="lp-me" title="Twój status" style="width:20px;height:20px;border-radius:50%;flex:none;box-sizing:border-box;margin-top:1px;"></span>` : ""}
         <div class="lp-head" style="flex:1;"><div style="font-size:14.5px;">${esc(z.tytul)}</div>
         <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${listaTypEt(z.typ)}${kw}${modelTxt}${z.typ !== "dokument" ? " · " + komuTxt : ""}${ukr}${z.typ !== "dokument" ? ` <span class="lp-chev" style="color:var(--turkus,#1f9e8f);">▾</span>` : ""}</div></div>
         ${owner ? `<button class="lp-x" title="Usuń" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:15px;line-height:1;">×</button>` : ""}
@@ -5383,7 +5384,66 @@ async function renderKokpit(tresc, p, owner, listaId) {
       const x = row.querySelector(".lp-x");
       if (x) x.addEventListener("click", async () => { if (!confirm("Usunąć pozycję?")) return; await supabase.from("lista_pozycje").delete().eq("id", z.id); renderKokpit(tresc, p, owner, listaId); });
     }
-    // Kółka-stany per osoba (imię + litera nazwiska)
+    // KÓŁKO Z LEWEJ = Twój status; odhaczasz/wpłacasz jednym tapnięciem, bez rozwijania
+    const meKolo = row.querySelector(".lp-me");
+    if (meKolo) {
+      const meId0 = (TRAVELER && TRAVELER.id);
+      if (przep === "platnosc2") {
+        const cred0 = z.platnik_traveler_id || L.owner_traveler_id;
+        const isCred0 = meId0 === cred0;
+        const s0 = stany2.find((y) => y.traveler_id === meId0);
+        const udz0 = s0 && s0.udzialy ? s0.udzialy : 1;
+        const baza0 = z.kwota_na_osobe ? z.kwota : (z.dzielony_na && z.dzielony_na > 0 ? z.kwota / z.dzielony_na : z.kwota);
+        const nal0 = (baza0 != null) ? baza0 * udz0 : null;
+        const inf0 = platMap[z.id + ":" + meId0];
+        const wpl0 = inf0 ? (Number(inf0.wplacono) || 0) : 0;
+        const potw0 = inf0 ? !!inf0.potwierdzone : false;
+        const wal0 = z.waluta || (L.waluta_domyslna || "PLN");
+        const f0 = (n) => Number(n).toLocaleString("pl-PL", { maximumFractionDigits: 2 });
+        let tl0, br0, ty0;
+        if (isCred0) { tl0 = DLUG_KOL.ok; br0 = DLUG_KOL.ok; ty0 = "Ty zapłaciłeś"; }
+        else { const fz0 = dlugFaza(wpl0, nal0, potw0); tl0 = fz0.tlo; br0 = fz0.brzeg; ty0 = fz0.etyk; }
+        meKolo.style.background = tl0; meKolo.style.border = "2px solid " + br0; meKolo.title = ty0;
+        if (!isCred0 && !potw0 && nal0 != null) {
+          meKolo.style.cursor = "pointer";
+          meKolo.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const zost0 = Math.max(0, nal0 - wpl0);
+            const raw0 = prompt(`Twoja wpłata — należność ${f0(nal0)} ${wal0}, wpłacono ${f0(wpl0)}, zostało ${f0(zost0)}.\nPodaj kwotę (puste = wyczyść):`, zost0 ? String(zost0) : "");
+            if (raw0 === null) return;
+            const kv0 = parseFloat(String(raw0).replace(",", "."));
+            if (isNaN(kv0) || kv0 <= 0) {
+              if (wpl0 > 0 && confirm("Wyczyścić Twoje wpłaty na tej pozycji?")) {
+                const { error } = await supabase.rpc("lista_cofnij_wplaty", { p_pozycja_id: z.id });
+                if (error) { alert("Nie cofnięto: " + error.message); return; }
+                renderKokpit(tresc, p, owner, listaId);
+              }
+              return;
+            }
+            const { error } = await supabase.rpc("lista_wplac", { p_pozycja_id: z.id, p_kwota: kv0 });
+            if (error) { alert("Nie zapisano wpłaty: " + error.message); return; }
+            renderKokpit(tresc, p, owner, listaId);
+          });
+        } else { meKolo.style.cursor = "default"; }
+      } else {
+        const s0 = stany2.find((y) => y.traveler_id === meId0);
+        const st0 = s0 ? s0.stan : "oczekuje";
+        meKolo.style.background = (st0 === "oczekuje") ? "transparent" : stanKolor(st0);
+        meKolo.style.border = "2px solid " + ((st0 === "oczekuje") ? "#bdb7a8" : stanKolor(st0));
+        meKolo.title = stanEtyk(st0);
+        const nowe0 = kolejnyStan(przep, st0, owner ? "owner_self" : "self");
+        if (nowe0) {
+          meKolo.style.cursor = "pointer";
+          meKolo.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const { error } = await supabase.from("lista_pozycja_stan").upsert({ pozycja_id: z.id, traveler_id: meId0, stan: nowe0, przyjeto_at: new Date().toISOString() }, { onConflict: "pozycja_id,traveler_id" });
+            if (error) { alert("Nie zapisano: " + error.message); return; }
+            renderKokpit(tresc, p, owner, listaId);
+          });
+        } else { meKolo.style.cursor = "default"; }
+      }
+    }
+    // Kółka-stany per osoba (imię + litera nazwiska) — po rozwinięciu, BEZ Ciebie (Twoje jest z lewej)
     const kregBox = row.querySelector(".lp-krag");
     if (kregBox) {
       const meId = (TRAVELER && TRAVELER.id);
@@ -5393,7 +5453,8 @@ async function renderKokpit(tresc, p, owner, listaId) {
       const waluta = z.waluta || (L.waluta_domyslna || "PLN");
       const fmt = (n) => Number(n).toLocaleString("pl-PL", { maximumFractionDigits: 2 });
       czl.forEach((c) => {
-        const isSelf = c.traveler_id === meId;
+        if (c.traveler_id === meId) return;   // siebie pokazuje kółko z lewej — w rozwinięciu tylko inni
+        const isSelf = false;
         // ── DROGA DŁUGU (koszt organizatora / konkretnej osoby, z ratami) ──
         if (przep === "platnosc2") {
           const isCreditor = c.traveler_id === creditor;
