@@ -4821,6 +4821,26 @@ async function pomozWejscCzlonek(c) {
   } catch (e) {}
   pokazLinkZaproszenia(k, location.origin, null, "wejscie");
 }
+/* Wyraźne wejście z karty plemienia: wybierz członka → wyślij mu link do wejścia + instrukcję. Dla kogoś, kto już należy, ale zgubił dostęp. */
+async function otworzPomocWejscia(p) {
+  const mojeId = TRAVELER && TRAVELER.id;
+  const czl = (p.czlonkowie || []).filter((c) => c.traveler_id && !c.zarzadzany && c.traveler_id !== mojeId);
+  const ov = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">Pomóż wejść · ${escP(p.nazwa)}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form"><div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">Wyślij członkowi link do wejścia i instrukcję dodania MANA do ekranu — dla kogoś, kto już należy, ale zgubił dostęp.</div><div id="pw-lista"></div></div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zamknij = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zamknij(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  const lista = ov.querySelector("#pw-lista");
+  if (!czl.length) { lista.appendChild(el(`<div style="font-size:13.5px;color:var(--ink-soft);">Brak członków z kontem do wysłania.</div>`)); return; }
+  czl.forEach((c) => {
+    const b = el(`<button style="width:100%;text-align:left;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:7px;background:var(--surface);cursor:pointer;font-size:14px;display:flex;align-items:center;gap:8px;"><span>📲</span><span style="flex:1;min-width:0;">${escP(c.nick || "uczestnik")}</span><span style="color:var(--turkus,#1f9e8f);font-size:12px;white-space:nowrap;">Wyślij link ›</span></button>`);
+    b.addEventListener("click", () => { zamknij(); pomozWejscCzlonek(c); });
+    lista.appendChild(b);
+  });
+}
 async function dodajZPlemienia() {
   const [{ data: pls }, { data: istn = [] }] = await Promise.all([
     supabase.rpc("moje_plemiona_full"),
@@ -5014,6 +5034,8 @@ function kartaPlemienia(p) {
     const r2 = rzad();
     const inv = el(`<button class="pl-zapros-btn" style="${BT}">➕ Zaproś</button>`);
     inv.addEventListener("click", () => zaprosZKontaktow(p.id, p.nazwa)); r2.appendChild(inv);
+    const pom = el(`<button style="${BG}">📲 Pomóż wejść</button>`);
+    pom.addEventListener("click", () => otworzPomocWejscia(p)); r2.appendChild(pom);
     const dz = el(`<button style="${BG}">+ Dziecko</button>`);
     dz.addEventListener("click", () => formDodajDziecko(p, card)); r2.appendChild(dz);
     const ob = el(`<button style="${BG}">+ Os. bez konta</button>`);
