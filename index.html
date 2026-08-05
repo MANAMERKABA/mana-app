@@ -1691,6 +1691,10 @@ function subskrybujRealtime() {
       odswiezRozmowyLive();
       alarmNowaWiadomosc(payload && payload.new);
     })
+    .on("postgres_changes", { event: "*", schema: "public", table: "kontakty" }, () => {
+      const kk = $("wiezi-sekcja-kon");
+      if (kk && kk.style.display !== "none" && typeof renderKontakty === "function") renderKontakty();
+    })
     .subscribe();
 }
 
@@ -4237,6 +4241,34 @@ function plikiZDok(d) {
   if (d.plik_url) return [{ sciezka: d.plik_url, mime: d.mime || null }];
   return [];
 }
+/* Skrót do dokumentów Sejfu udostępnionych tej grupie — otwierasz z poziomu plemienia, bez wchodzenia do Sejfu. Oryginał zostaje w Sejfie właściciela. */
+async function otworzDokumentyPlemienia(p) {
+  const overlay = el(`<div class="m-overlay"><div class="m-modal">
+    <div class="m-modal__head"><span class="m-modal__tytul">Dokumenty · ${escP(p.nazwa)}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form" id="dokpl-tresc"><div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div></div>
+  </div></div>`);
+  document.body.appendChild(overlay);
+  const zamknij = () => overlay.remove();
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) zamknij(); });
+  overlay.querySelector(".m-modal__x").addEventListener("click", zamknij);
+  const tresc = overlay.querySelector("#dokpl-tresc");
+  const { data: doks, error } = await supabase.from("dokumenty").select("*").eq("kontekst", "sejf").eq("plemie_id", p.id);
+  if (error) { tresc.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(error.message)}</div>`; return; }
+  tresc.innerHTML = "";
+  tresc.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">Udostępnione tej grupie z Sejfu. To skróty — oryginał zostaje w Sejfie właściciela.</div>`));
+  if (!doks || !doks.length) { tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Brak. Udostępnij dokument w Sejfie (przypisz go do tej grupy).</div>`)); return; }
+  doks.forEach((d) => {
+    const pl = plikiZDok(d);
+    const row = el(`<div style="border:1px solid var(--line);border-radius:11px;padding:9px 11px;margin-bottom:7px;display:flex;align-items:center;gap:10px;">
+      <div style="flex:1;min-width:0;"><div style="font-size:14.5px;">${esc(d.tytul || "(bez tytułu)")}</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${esc(d.rodzaj || "dokument")}${pl.length ? " · 📎 " + pl.length + (pl.length === 1 ? " plik" : " str.") : ""}</div></div>
+      ${pl.length ? `<button class="dokpl-otw" style="${BG}font-size:12px;padding:5px 11px;flex:none;">📄 Otwórz</button>` : ""}
+    </div>`);
+    const b = row.querySelector(".dokpl-otw");
+    if (b) b.addEventListener("click", () => otworzPlikiSejf(pl));
+    tresc.appendChild(row);
+  });
+}
 function liczbaPlikow(d) { return plikiZDok(d).length; }
 async function otworzPlikiSejf(pliki) {
   if (!pliki || !pliki.length) return;
@@ -4726,7 +4758,10 @@ async function zaprosKontakt(k) {
       bMana.disabled = true;
       const { data, error } = await supabase.rpc("zapros_do_many", { p_kontakt_id: k.id });
       if (error) { trzosToast("Błąd: " + error.message); bMana.disabled = false; return; }
-      if (!data || !data.ok) { trzosToast((data && data.error) || "Nie wysłano."); bMana.disabled = false; return; }
+      if (!data || !data.ok) {
+        if (data && data.ma_juz_konto) { zamknij(); pokazLinkZaproszenia(k, location.origin, null, "wejscie"); return; }
+        trzosToast((data && data.error) || "Nie wysłano."); bMana.disabled = false; return;
+      }
       zamknij();
       const link = location.origin + "/?zaproszenie=" + data.zaproszenie_id;
       pokazLinkZaproszenia(k, link, null);
@@ -4749,10 +4784,13 @@ async function zaprosKontakt(k) {
   }));
 }
 /* Link zaproszenia do ręcznego wysłania — przyciski WhatsApp / SMS / E-mail / Kopiuj (zamiast prompt, który na telefonie bywał niewidoczny). */
-function pokazLinkZaproszenia(k, link, grupa) {
-  const msg = grupa
-    ? `Zapraszam Cię do grupy „${grupa}" w MANA: ${link}\n\nPo wejściu z telefonu dodaj MANA do ekranu głównego: iPhone — Udostępnij → „Do ekranu początkowego"; Android — menu ⋮ → „Dodaj do ekranu głównego".`
-    : `Zapraszam Cię do MANA — dołącz: ${link}\n\nPo wejściu z telefonu dodaj MANA do ekranu głównego: iPhone — Udostępnij → „Do ekranu początkowego"; Android — menu ⋮ → „Dodaj do ekranu głównego".`;
+function pokazLinkZaproszenia(k, link, grupa, tryb) {
+  const INSTR = `\n\nPo wejściu z telefonu dodaj MANA do ekranu głównego: iPhone — Udostępnij → „Do ekranu początkowego"; Android — menu ⋮ → „Dodaj do ekranu głównego".`;
+  const msg = (tryb === "wejscie")
+    ? `Wejdź do MANA: ${link}${INSTR}`
+    : (grupa
+      ? `Zapraszam Cię do grupy „${grupa}" w MANA: ${link}${INSTR}`
+      : `Zapraszam Cię do MANA — dołącz: ${link}${INSTR}`);
   const tel = (k.telefon || "").replace(/[^\d]/g, "");
   const B = `display:block;width:100%;text-align:center;text-decoration:none;border:none;border-radius:12px;padding:12px;font-size:15px;cursor:pointer;margin-bottom:8px;box-sizing:border-box;`;
   let akcje = "";
@@ -4761,8 +4799,8 @@ function pokazLinkZaproszenia(k, link, grupa) {
   if (k.email) akcje += `<a href="mailto:${encodeURIComponent(k.email)}?subject=${encodeURIComponent("Zaproszenie do MANA")}&body=${encodeURIComponent(msg)}" style="${B}background:var(--turkus,#1f9e8f);color:#fff;">E-mail</a>`;
   const sheet = el(`<div class="m-overlay" style="align-items:flex-end;">
     <div style="background:var(--surface);width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:14px 16px 20px;box-shadow:0 -8px 30px rgba(0,0,0,.2);">
-      <div style="font-size:13px;font-weight:600;margin-bottom:2px;">Wyślij zaproszenie: ${escP(k.imie || "kontakt")}</div>
-      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">Link jest jednorazowy, tylko dla tej osoby. ${grupa ? `Po rejestracji dołączy do „${escP(grupa)}".` : "Po rejestracji będziecie połączeni jako kontakty w MANA."} Wiadomość zawiera też instrukcję dodania MANA do ekranu telefonu.</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:2px;">${tryb === "wejscie" ? "Wyślij link do MANA" : "Wyślij zaproszenie"}: ${escP(k.imie || "kontakt")}</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:10px;">${tryb === "wejscie" ? "Ta osoba ma już konto — wyślij jej link, żeby weszła i dodała MANA do ekranu telefonu." : `Link jest jednorazowy, tylko dla tej osoby. ${grupa ? `Po rejestracji dołączy do „${escP(grupa)}".` : "Po rejestracji będziecie połączeni jako kontakty w MANA."} Wiadomość zawiera też instrukcję dodania MANA do ekranu telefonu.`}</div>
       ${akcje}
       <button class="zl-kopiuj" style="${B}background:var(--surface);border:1px solid var(--line);color:var(--ink);">Kopiuj link</button>
       <button class="zl-x" style="${B}background:none;color:var(--ink-soft);margin-bottom:0;">Zamknij</button>
@@ -4955,6 +4993,8 @@ function kartaPlemienia(p) {
   zadBtn.addEventListener("click", () => otworzZadaniaPlemienia(p)); r1.appendChild(zadBtn);
   const listaBtn = el(`<button style="${BG}">🗂 Lista</button>`);
   listaBtn.addEventListener("click", () => otworzListe(p)); r1.appendChild(listaBtn);
+  const dokBtn = el(`<button style="${BG}">📄 Dokumenty</button>`);
+  dokBtn.addEventListener("click", () => otworzDokumentyPlemienia(p)); r1.appendChild(dokBtn);
   const zz = el(`<button style="${BG}">➕ Zadanie</button>`);
   zz.addEventListener("click", () => formZadajZadanie(p, card)); r1.appendChild(zz);
   // Rząd 2 — ludzie (tylko założyciel)
