@@ -5298,6 +5298,10 @@ async function renderKokpit(tresc, p, owner, listaId) {
   // płatności (droga długu): wpłacono + potwierdzone per pozycja+dłużnik; SECURITY DEFINER (organizator widzi wszystko, uczestnik swoje)
   const platMap = {};
   { const { data: _pl } = await supabase.rpc("lista_platnosci", { p_lista_id: listaId }); (_pl || []).forEach((r) => { platMap[r.pozycja_id + ":" + r.dluznik_traveler_id] = r; }); }
+  // Wgrane pliki (dokument_id → ścieżka w storage) — do przycisku „Otwórz plik"
+  const docMap = {};
+  { const docIds = poz.filter((z) => z.typ === "dokument" && z.dokument_id).map((z) => z.dokument_id);
+    if (docIds.length) { const { data: _dc } = await supabase.from("dokumenty").select("id,plik_url,mime").in("id", docIds); (_dc || []).forEach((d) => { docMap[d.id] = { sciezka: d.plik_url, mime: d.mime }; }); } }
   // Kolejność osób — spójna z kartą plemienia: właściciel → współzałożyciele → członkowie
   const rangaCzl = (c) => c.traveler_id === p.owner_traveler_id ? 0 : (c.rola === "zalozyciel" ? 1 : 2);
   const czl = (p.czlonkowie || []).slice().sort((a, b) => rangaCzl(a) - rangaCzl(b));
@@ -5399,7 +5403,7 @@ async function renderKokpit(tresc, p, owner, listaId) {
       <div style="display:flex;align-items:flex-start;gap:8px;">
         ${z.typ !== "dokument" ? `<span class="lp-me" title="Twój status" style="width:20px;height:20px;border-radius:50%;flex:none;box-sizing:border-box;margin-top:1px;"></span>` : ""}
         <div class="lp-head" style="flex:1;"><div style="font-size:14.5px;">${esc(z.tytul)}</div>
-        <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${listaTypEt(z.typ)}${kw}${modelTxt}${z.typ !== "dokument" ? " · " + komuTxt : ""}${ukr}${z.typ !== "dokument" ? ` <span class="lp-chev" style="color:var(--turkus,#1f9e8f);">▾</span>` : ""}</div>${z.typ === "dokument" && z.link_url ? `<div style="margin-top:5px;"><a href="${escP(z.link_url)}" target="_blank" rel="noopener" style="font-size:12.5px;color:#1a7158;text-decoration:underline;word-break:break-all;">↗ Otwórz link</a></div>` : ""}</div>
+        <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px;">${listaTypEt(z.typ)}${kw}${modelTxt}${z.typ !== "dokument" ? " · " + komuTxt : ""}${ukr}${z.typ !== "dokument" ? ` <span class="lp-chev" style="color:var(--turkus,#1f9e8f);">▾</span>` : ""}</div>${z.typ === "dokument" && z.dokument_id && docMap[z.dokument_id] ? `<div style="margin-top:5px;"><button class="lp-plikbtn" style="border:none;background:none;padding:0;font-size:12.5px;color:#1a7158;text-decoration:underline;cursor:pointer;">↗ Otwórz plik</button></div>` : (z.typ === "dokument" && z.link_url ? `<div style="margin-top:5px;"><a href="${escP(z.link_url)}" target="_blank" rel="noopener" style="font-size:12.5px;color:#1a7158;text-decoration:underline;word-break:break-all;">↗ Otwórz link</a></div>` : "")}</div>
         ${owner ? `<button class="lp-edit" title="Edytuj" style="border:none;background:none;color:var(--ink-soft);cursor:pointer;font-size:14px;line-height:1;padding:0 2px;">✎</button><button class="lp-x" title="Usuń" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:15px;line-height:1;">×</button>` : ""}
       </div>
       ${z.typ !== "dokument" ? `<div class="lp-krag" style="display:none;flex-wrap:wrap;gap:6px;margin-top:8px;"></div>` : ""}
@@ -5411,6 +5415,17 @@ async function renderKokpit(tresc, p, owner, listaId) {
       if (ed) ed.addEventListener("click", () => formPozycja(tresc, p, owner, listaId, row, z));
       const x = row.querySelector(".lp-x");
       if (x) x.addEventListener("click", async () => { if (!confirm("Usunąć pozycję?")) return; await supabase.from("lista_pozycje").delete().eq("id", z.id); renderKokpit(tresc, p, owner, listaId); });
+    }
+    // Otwórz wgrany plik (PDF / zdjęcie) — świeży podpisany URL na klik
+    const plikBtn = row.querySelector(".lp-plikbtn");
+    if (plikBtn && z.dokument_id && docMap[z.dokument_id]) {
+      plikBtn.addEventListener("click", async () => {
+        const sc = docMap[z.dokument_id].sciezka;
+        if (!sc) { alert("Brak pliku."); return; }
+        const { data, error } = await supabase.storage.from("dokumenty").createSignedUrl(sc, 300);
+        if (error || !data) { alert("Nie udało się otworzyć pliku: " + (error ? error.message : "")); return; }
+        window.open(data.signedUrl, "_blank", "noopener");
+      });
     }
     // KÓŁKO Z LEWEJ = Twój status; odhaczasz/wpłacasz jednym tapnięciem, bez rozwijania
     const meKolo = row.querySelector(".lp-me");
@@ -5637,7 +5652,9 @@ function formPozycja(tresc, p, owner, listaId, anchor, poz) {
       <div class="lp-dziel-wrap" style="display:none;font-size:12.5px;color:var(--ink-soft);margin-bottom:6px;">Podziel łączny koszt na <input class="lp-dziel" type="number" inputmode="numeric" style="width:60px;padding:5px;border:1px solid var(--line);border-radius:6px;"> osób</div>
     </div>
     <div class="lp-link" style="display:none;margin-bottom:8px;">
-      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Wklej link (adres URL):</div>
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">Wgraj plik (PDF lub zdjęcie) do przeczytania:</div>
+      <input class="lp-plik" type="file" accept="image/*,application/pdf" style="width:100%;box-sizing:border-box;font-size:13px;margin-bottom:10px;">
+      <div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:4px;">…albo wklej link (adres URL):</div>
       <input class="lp-url" type="text" inputmode="url" placeholder="https://…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">
     </div>
     <label class="lp-widst-wrap" style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;"><input type="checkbox" class="lp-widst" style="width:16px;height:16px;"> status tylko dla organizatora (inni nie widzą, kto odhaczył)</label>
@@ -5712,8 +5729,32 @@ function formPozycja(tresc, p, owner, listaId, anchor, poz) {
       // zmiana typu z kosztu na inny — wyzeruj pola kosztowe
       rek.kwota = null; rek.koszt_model = null; rek.platnik_traveler_id = null; rek.dzielony_na = null;
     }
-    if (typ === "dokument") { const u = f.querySelector(".lp-url").value.trim(); rek.link_url = u || null; }
-    else if (poz) rek.link_url = null;
+    if (typ === "dokument") {
+      const fileInput = f.querySelector(".lp-plik");
+      const plik = fileInput && fileInput.files && fileInput.files[0];
+      const u = f.querySelector(".lp-url").value.trim();
+      if (plik) {
+        const okB = f.querySelector(".lp-ok"); okB.disabled = true; okB.textContent = "Wgrywam…";
+        try {
+          let ext = ((plik.name || "").split(".").pop() || "").toLowerCase();
+          if (!ext || ext.length > 5) ext = (plik.type === "image/png") ? "png" : (plik.type === "application/pdf") ? "pdf" : "jpg";
+          const mime = plik.type || (ext === "png" ? "image/png" : ext === "pdf" ? "application/pdf" : "image/jpeg");
+          const buf = await plik.arrayBuffer();
+          if (!buf || buf.byteLength === 0) throw new Error("Plik pusty — dodaj jeszcze raz.");
+          const sciezka = `traveler/${TRAVELER.id}/${crypto.randomUUID()}.${ext}`;
+          const { error: upErr } = await supabase.storage.from("dokumenty").upload(sciezka, buf, { contentType: mime, upsert: false });
+          if (upErr) throw upErr;
+          const { data: dins, error: derr } = await supabase.from("dokumenty").insert({
+            traveler_id: TRAVELER.id, org_id: null, plemie_id: p.id, typ: "inne", kontekst: "lista",
+            plik_url: sciezka, mime, pliki: [{ sciezka, mime, nazwa: plik.name }], zrodlo: "plik", ocr_status: "pominiete", tytul: t,
+          }).select("id").single();
+          if (derr) throw derr;
+          rek.dokument_id = dins.id; rek.link_url = null;
+        } catch (e2) { const okB2 = f.querySelector(".lp-ok"); okB2.disabled = false; okB2.textContent = poz ? "Zapisz" : "Dodaj"; f.querySelector(".lp-out").innerHTML = `<span style="color:#c4513a;">Błąd pliku: ${escP(e2.message || e2)}</span>`; return; }
+      } else if (u) { rek.link_url = u; rek.dokument_id = null; }
+      else if (poz) { rek.link_url = poz.link_url || null; rek.dokument_id = poz.dokument_id || null; }
+      else { rek.link_url = null; rek.dokument_id = null; }
+    } else if (poz) { rek.link_url = null; rek.dokument_id = null; }
     let error;
     if (poz) { delete rek.lista_id; ({ error } = await supabase.from("lista_pozycje").update(rek).eq("id", poz.id)); }
     else ({ error } = await supabase.from("lista_pozycje").insert(rek));
