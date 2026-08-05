@@ -5160,20 +5160,21 @@ function kwotaTxt(poz) {
 }
 /* ── Odhaczanie pozycji listy: kółka-stany + reguły przejść ──
    zadanie/rzecz: każdy odhacza sam (○→🟡→🟢). koszt „każdy sam": uczestnik ○→🟢. koszt „organizator zapłacił": dwustronny — płacący ○→🔴 (wpłaciłem, czeka), odbiorca(organizator) potwierdza 🔴→🟢. */
-const STAN_KOLOR = { oczekuje: "transparent", w_trakcie: "#e0a020", przyjete: "#e0a020", wplacono: "#c0392b", zrobione: "#1a7158", potwierdzone: "#1a7158" };
+const STAN_KOLOR = { oczekuje: "transparent", w_trakcie: "#e8c020", przyjete: "#e8c020", wplacono: "#c0392b", zrobione: "#1a7158", potwierdzone: "#1a7158" };
 const stanKolor = (st) => STAN_KOLOR[st || "oczekuje"] || "transparent";
 const stanEtyk = (st) => ({ oczekuje: "nie zrobione", w_trakcie: "w trakcie", przyjete: "w trakcie", wplacono: "wpłacone — czeka na potwierdzenie", zrobione: "zrobione", potwierdzone: "wpłata potwierdzona" })[st || "oczekuje"] || st;
-// Droga długu (koszt organizatora, z ratami): 🔴 należność → 🟠 częściowo → 🟡 pełna wpłata (czeka) → 🟢 potwierdzone
-const DLUG_KOL = { nal: "#c0392b", czesc: "#e0871a", pelna: "#e8c020", ok: "#1a7158" };
-// zwraca { faza, kol, etyk } na podstawie wpłacono/należność/potwierdzone
+// Droga długu (koszt do zwrotu, z ratami): należność (czerw. obwódka, biały) → częściowo (czerw. obwódka + żółty) → pełna-czeka (pomarańcz pełny) → zatwierdzone (zielony)
+const DLUG_KOL = { nal: "#c0392b", zolty: "#e8c020", pomarancz: "#e0871a", ok: "#1a7158" };
+// zwraca { faza, tlo, brzeg, etyk } na podstawie wpłacono/należność/potwierdzone
 function dlugFaza(wplacono, naleznosc, potwierdzone) {
-  if (potwierdzone) return { faza: "ok", kol: DLUG_KOL.ok, etyk: "rozliczone" };
+  if (potwierdzone) return { faza: "ok", tlo: DLUG_KOL.ok, brzeg: DLUG_KOL.ok, etyk: "rozliczone" };
   const w = Number(wplacono) || 0, n = Number(naleznosc) || 0;
-  if (n > 0 && w >= n) return { faza: "pelna", kol: DLUG_KOL.pelna, etyk: "pełna wpłata — czeka na potwierdzenie" };
-  if (w > 0) return { faza: "czesc", kol: DLUG_KOL.czesc, etyk: "częściowo spłacone" };
-  return { faza: "nal", kol: DLUG_KOL.nal, etyk: "należność — brak wpłaty" };
+  if (n > 0 && w >= n) return { faza: "pelna", tlo: DLUG_KOL.pomarancz, brzeg: DLUG_KOL.pomarancz, etyk: "pełna wpłata — czeka na potwierdzenie" };
+  if (w > 0) return { faza: "czesc", tlo: DLUG_KOL.zolty, brzeg: DLUG_KOL.nal, etyk: "częściowo spłacone" };
+  return { faza: "nal", tlo: "transparent", brzeg: DLUG_KOL.nal, etyk: "należność — brak wpłaty" };
 }
-const przeplyw = (typ, model) => (typ === "koszt" && model === "organizator") ? "platnosc2" : (typ === "koszt") ? "platnosc1" : "zadanie";
+// zadanie = 3 stany (w trakcie); rzecz/do-zabrania i koszt osobisty = 2 stany (platnosc1); koszt organizatora = droga długu (platnosc2)
+const przeplyw = (typ, model) => (typ === "koszt" && model === "organizator") ? "platnosc2" : (typ === "koszt") ? "platnosc1" : (typ === "rzecz") ? "platnosc1" : "zadanie";
 function kolejnyStan(przep, st, rola) {
   st = st || "oczekuje";
   const jaMoge = (rola === "self" || rola === "owner_self" || rola === "owner_other");
@@ -5318,13 +5319,16 @@ async function renderKokpit(tresc, p, owner, listaId) {
   </div>`);
   tresc.appendChild(naglowek);
   tresc.appendChild(el(`<div style="font-size:11.5px;color:var(--ink-soft);margin-bottom:6px;">${czl.length} os. · waluta ${escP(L.waluta_domyslna)}</div>`));
-  const _leg = (kol, brzeg, txt) => `<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;${kol ? "background:" + kol : "border:2px solid " + (brzeg || "#bdb7a8")};vertical-align:-1px;"></span> ${txt}</span>`;
+  const _leg = (tlo, brzeg, txt) => `<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;box-sizing:border-box;background:${tlo || "transparent"};border:2px solid ${brzeg || tlo || "#bdb7a8"};vertical-align:-1px;"></span> ${txt}</span>`;
   tresc.appendChild(el(`<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:4px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;">
     <span style="font-weight:600;color:var(--ink);">Zadania:</span>
-    ${_leg("", "#bdb7a8", "do zrobienia")}${_leg("#e0a020", "", "w trakcie")}${_leg("#1a7158", "", "zrobione")}</div>`));
+    ${_leg("", "#bdb7a8", "do zrobienia")}${_leg("#e8c020", "", "w trakcie")}${_leg("#1a7158", "", "zrobione")}</div>`));
+  tresc.appendChild(el(`<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:4px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;">
+    <span style="font-weight:600;color:var(--ink);">Koszty do zwrotu:</span>
+    ${_leg("", DLUG_KOL.nal, "należność")}${_leg(DLUG_KOL.zolty, DLUG_KOL.nal, "częściowo")}${_leg(DLUG_KOL.pomarancz, "", "pełna — czeka")}${_leg(DLUG_KOL.ok, "", "rozliczone")}</div>`));
   tresc.appendChild(el(`<div style="font-size:10.5px;color:var(--ink-soft);margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;">
-    <span style="font-weight:600;color:var(--ink);">Koszty:</span>
-    ${_leg(DLUG_KOL.nal, "", "należność")}${_leg(DLUG_KOL.czesc, "", "częściowo")}${_leg(DLUG_KOL.pelna, "", "pełna — czeka")}${_leg(DLUG_KOL.ok, "", "rozliczone")}</div>`));
+    <span style="font-weight:600;color:var(--ink);">Do zabrania · koszt osobisty:</span>
+    ${_leg("", "#bdb7a8", "niezrobione")}${_leg("#1a7158", "", "zrobione")}</div>`));
   if (owner) {
     naglowek.querySelector(".lst-rename").addEventListener("click", async () => {
       const nowa = (prompt("Nowa nazwa listy:", L.tytul || "") || "").trim();
@@ -5349,7 +5353,14 @@ async function renderKokpit(tresc, p, owner, listaId) {
 
   if (!poz.length) { tresc.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;">Brak pozycji. ${owner ? "Dodaj pierwszą." : ""}</div>`)); return; }
 
-  poz.forEach((z) => {
+  // Auto-grupowanie w sekcje po typie: Koszty → Do zabrania → Zadania → Dokumenty
+  const SEK_RANGA = { koszt: 0, rzecz: 1, zadanie: 2, dokument: 3 };
+  const SEK_ET = { koszt: "Koszty", rzecz: "Do zabrania", zadanie: "Zadania", dokument: "Dokumenty / info" };
+  const SEK_IK = { koszt: "💰", rzecz: "🎒", zadanie: "✓", dokument: "📄" };
+  let _sekPrev = null;
+  const pozGrp = poz.slice().sort((a, b) => ((SEK_RANGA[a.typ] ?? 9) - (SEK_RANGA[b.typ] ?? 9)) || ((a.kolejnosc || 0) - (b.kolejnosc || 0)));
+  pozGrp.forEach((z) => {
+    if (z.typ !== _sekPrev) { tresc.appendChild(el(`<div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin:14px 0 7px;display:flex;align-items:center;gap:6px;">${SEK_IK[z.typ] || ""} ${escP(SEK_ET[z.typ] || z.typ)}</div>`)); _sekPrev = z.typ; }
     const stany2 = stByPoz[z.id] || [];
     const przep = przeplyw(z.typ, z.koszt_model);
     const zrob = stany2.filter((s) => s.stan === "zrobione" || s.stan === "potwierdzone").length;
@@ -5393,16 +5404,14 @@ async function renderKokpit(tresc, p, owner, listaId) {
           const wpl = info ? (Number(info.wplacono) || 0) : 0;
           const potw = info ? !!info.potwierdzone : false;
           const widac = owner || meCreditor || isSelf;       // uczestnik widzi tylko swój postęp
-          let kol = DLUG_KOL.nal, tlo = "transparent", brzeg = "#bdb7a8", etyk, postep = "";
+          let tlo = "transparent", brzeg = "#bdb7a8", etyk, postep = "";
           if (isCreditor) {
-            kol = DLUG_KOL.ok; tlo = kol; brzeg = kol; etyk = "zapłacił(a)";
+            tlo = DLUG_KOL.ok; brzeg = DLUG_KOL.ok; etyk = "zapłacił(a)";
           } else if (!widac) {
             etyk = "ukryte";
           } else {
             const fz = dlugFaza(wpl, naleznosc, potw);
-            kol = fz.kol; etyk = fz.etyk;
-            tlo = (fz.faza === "nal") ? "transparent" : kol;
-            brzeg = (fz.faza === "nal") ? DLUG_KOL.nal : kol;
+            etyk = fz.etyk; tlo = fz.tlo; brzeg = fz.brzeg;
             if (naleznosc != null && !potw && wpl > 0 && wpl < naleznosc) postep = fmt(wpl) + "/" + fmt(naleznosc);
           }
           const jaDluznik = isSelf && !isCreditor;
