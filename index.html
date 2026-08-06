@@ -785,6 +785,10 @@ const SUPABASE_URL = "https://olyqkajsgcgrjfmhfycb.supabase.co";
 const SUPABASE_KEY = "sb_publishable_lEM7JYJreuymivywT9xELw_gHaUnrC9";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Formatowanie numerów per kraj — ładowane bezpiecznie (dynamicznie): błąd biblioteki nie rozwala apki, fmtTel ma fallback
+let _parsePhone = null;
+import("https://esm.sh/libphonenumber-js@1.11.4").then((m) => { _parsePhone = (m && (m.parsePhoneNumber || (m.default && m.default.parsePhoneNumber))) || null; }).catch(() => {});
+
 const POKOJE = [
   { nazwa: "Horyzont", zywy: true, akcja: "horyzont",
     ikona: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
@@ -1718,14 +1722,20 @@ function renderHeader() {
     marka.addEventListener("click", otworzPanelAdmina);
   }
 }
-// Format numeru: kierunkowy + grupy po 3 (np. +48 696 552 202). Standard wyświetlania w całej apce.
+// Format numeru per kraj (libphonenumber-js — standard branżowy: zna zapis, długość i grupowanie każdego kraju).
 function fmtTel(t) {
   if (!t) return "";
   const s = String(t).trim();
-  const m = s.match(/^(\+\d{1,3})\s*(.*)$/);
-  if (!m) return s.replace(/(\d{3})(?=\d)/g, "$1 ");
-  const reszta = m[2].replace(/\D/g, "").replace(/(\d{3})(?=\d)/g, "$1 ");
-  return (m[1] + " " + reszta).trim();
+  try { if (_parsePhone && s.startsWith("+")) { const pn = _parsePhone(s); if (pn && pn.isValid()) return pn.formatInternational(); } } catch (e) {}
+  // fallback (numer niepełny / niezparsowany): kierunkowy + grupy po 3, z najdłuższym znanym kodem
+  const s2 = s.replace(/\s+/g, "");
+  const grupuj = (x) => x.replace(/(\d{3})(?=\d)/g, "$1 ");
+  if (!s2.startsWith("+")) return grupuj(s2.replace(/\D/g, ""));
+  const kody = ["+420", "+421", "+358", "+353", "+351", "+359", "+385", "+386", "+971", "+972", "+380", "+370", "+371", "+372", "+48", "+44", "+49", "+33", "+39", "+34", "+31", "+32", "+41", "+43", "+36", "+40", "+45", "+46", "+47", "+30", "+90", "+86", "+81", "+82", "+91", "+61", "+55", "+52", "+27", "+1", "+7"];
+  let pref = "";
+  for (const k of kody) { if (s2.startsWith(k) && k.length > pref.length) pref = k; }
+  if (!pref) { const m = s2.match(/^(\+\d{1,3})/); pref = m ? m[1] : "+"; }
+  return (pref + " " + grupuj(s2.slice(pref.length).replace(/\D/g, ""))).trim();
 }
 function otworzWizytowke() {
   const t = TRAVELER || {};
