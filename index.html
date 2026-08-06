@@ -1387,7 +1387,7 @@ async function pokazBannerZaproszenia() {
 async function wejdz() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: trav } = await supabase
-    .from("travels").select("id, nick, uklad_pokoi, jezyk, tryb_gosc, telefon, email, is_admin").eq("auth_user_id", session.user.id).maybeSingle();
+    .from("travels").select("id, nick, uklad_pokoi, jezyk, tryb_gosc, telefon, email, is_admin, public_id").eq("auth_user_id", session.user.id).maybeSingle();
   if (!trav) { $("m-loader").textContent = "Nie znaleziono profilu podróżnika."; return; }
   TRAVELER = trav;
   $("m-loader").style.display = "none";
@@ -1718,6 +1718,15 @@ function renderHeader() {
     marka.addEventListener("click", otworzPanelAdmina);
   }
 }
+// Format numeru: kierunkowy + grupy po 3 (np. +48 696 552 202). Standard wyświetlania w całej apce.
+function fmtTel(t) {
+  if (!t) return "";
+  const s = String(t).trim();
+  const m = s.match(/^(\+\d{1,3})\s*(.*)$/);
+  if (!m) return s.replace(/(\d{3})(?=\d)/g, "$1 ");
+  const reszta = m[2].replace(/\D/g, "").replace(/(\d{3})(?=\d)/g, "$1 ");
+  return (m[1] + " " + reszta).trim();
+}
 function otworzWizytowke() {
   const t = TRAVELER || {};
   const jezyki = [["pl", "Polski"], ["en", "English"], ["es", "Español"], ["de", "Deutsch"], ["uk", "Українська"], ["ru", "Русский"], ["fr", "Français"], ["it", "Italiano"], ["pt", "Português"], ["cs", "Čeština"]];
@@ -1733,9 +1742,16 @@ function otworzWizytowke() {
       <label>Imię i nazwisko</label>
       <input type="text" id="wiz-nick" maxlength="120" value="${esc(t.nick || "")}" placeholder="np. Adam Bielawski">
       <label>Telefon</label>
-      <input type="tel" id="wiz-tel" maxlength="40" value="${esc(t.telefon || "")}" placeholder="+48 …">
+      <input type="tel" id="wiz-tel" maxlength="40" value="${esc(fmtTel(t.telefon) || "")}" placeholder="+48 696 552 202">
       <label>E-mail (logowanie)</label>
       <input type="email" value="${esc(t.email || "")}" disabled style="opacity:.65;">
+      <label>Twój identyfikator MANA</label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="text" value="${esc(t.public_id || "")}" readonly style="flex:1;font-family:monospace;letter-spacing:1px;font-weight:600;">
+        <button type="button" id="wiz-kopiuj" style="${BG}white-space:nowrap;">Kopiuj</button>
+      </div>
+      <div style="font-size:11px;color:var(--ink-soft);margin:3px 0 6px;">Podaj go, żeby ktoś dodał Cię bez ujawniania telefonu.</div>
+      <button type="button" id="wiz-wyslij" style="${BG}width:100%;">📇 Wyślij wizytówkę</button>
       <label>Język</label>
       <select id="wiz-jezyk">${opcje}</select>
       <div style="margin-top:12px;padding:10px 12px;background:#f3efe6;border:1px solid var(--line);border-radius:10px;font-size:12.5px;color:var(--ink-soft);">🔒 Dane wrażliwe (konto, karta, dokumenty) → <b>Sejf</b>, pod osobnym kodem. <i>(wkrótce)</i></div>
@@ -1746,6 +1762,13 @@ function otworzWizytowke() {
   const zam = () => ov.remove();
   ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
   ov.querySelector(".m-modal__x").addEventListener("click", zam);
+  { const bk = ov.querySelector("#wiz-kopiuj");
+    if (bk) bk.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(t.public_id || ""); trzosToast("ID skopiowane ✓"); }
+      catch (e) { prompt("Skopiuj swój identyfikator MANA:", t.public_id || ""); }
+    }); }
+  { const bw = ov.querySelector("#wiz-wyslij");
+    if (bw) bw.addEventListener("click", () => wyslijWizytowke(t)); }
   ov.querySelector("#wiz-zapisz").addEventListener("click", async () => {
     const nick = ov.querySelector("#wiz-nick").value.trim();
     const tel = ov.querySelector("#wiz-tel").value.trim();
@@ -1757,6 +1780,12 @@ function otworzWizytowke() {
     zam();
     if (typeof trzosToast === "function") trzosToast("Wizytówka zapisana ✓");
   });
+}
+async function wyslijWizytowke(t) {
+  t = t || TRAVELER || {};
+  const msg = `Moja wizytówka MANA:\n${t.nick || ""}${t.telefon ? "\nTel: " + fmtTel(t.telefon) : ""}${t.public_id ? "\nID MANA: " + t.public_id : ""}\n\nDodaj mnie w MANA — mana-app-murex.vercel.app`;
+  if (navigator.share) { try { await navigator.share({ title: "Wizytówka MANA", text: msg }); return; } catch (e) { if (e && e.name === "AbortError") return; } }
+  try { await navigator.clipboard.writeText(msg); trzosToast("Wizytówka skopiowana ✓"); } catch (e) { prompt("Skopiuj wizytówkę:", msg); }
 }
 $("m-logout").addEventListener("click", async () => {
   await supabase.auth.signOut(); location.reload();
@@ -4546,7 +4575,7 @@ function renderOfertyKontaktow(box, oferty) {
   if (!oferty || !oferty.length) return;
   const sek = el(`<div style="margin:2px 0 16px;"><div style="font-size:12px;color:#8a6416;font-weight:600;margin:0 2px 7px;">📥 Udostępnione Tobie · ${oferty.length}</div></div>`);
   for (const o of oferty) {
-    const dane = [o.telefon, (o.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
+    const dane = [fmtTel(o.telefon), (o.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
     const row = el(`<div style="border:1px solid #e6cf9a;background:#fbf5e8;border-radius:12px;padding:10px 12px;margin-bottom:8px;">
       <div style="display:flex;align-items:center;gap:10px;">
         <span style="width:32px;height:32px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:15px;background:${o.jest_mana ? "#1a9e5f" : "#e7e3d9"};color:#fff;">${o.jest_mana ? "💬" : ""}</span>
@@ -4589,7 +4618,7 @@ function konNazwa(k) {
 function kartaKontakt(k) {
   const moje = k.owner_traveler_id === (TRAVELER && TRAVELER.id);
   const jestMana = !!k.target_traveler_id;
-  const linie = [k.telefon, (k.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
+  const linie = [fmtTel(k.telefon), (k.email || "").toLowerCase() || null].filter(Boolean).map(escP).join(" · ");
   const bubel = jestMana
     ? `<button class="kn-rozmowa" title="Rozmowa w MANA" style="width:36px;height:36px;border:none;border-radius:50%;background:#1a7158;color:#fff;font-size:16px;line-height:1;cursor:pointer;flex:none;display:flex;align-items:center;justify-content:center;">💬</button>`
     : `<span title="poza MANĄ" style="width:36px;height:36px;border-radius:50%;background:#e7e3d9;flex:none;display:inline-block;"></span>`;
@@ -4720,6 +4749,11 @@ function formKontakt(k, onSave) {
       notatka: ov.querySelector("#kn-notatka").value.trim() || null,
       plemie_id: null, // udostępnianie idzie teraz przez OFERTĘ, nie przez auto-widoczność
     };
+    // Wymóg tożsamości: telefon LUB e-mail (nie sama nazwa) — inaczej nie da się zweryfikować osoby ani zaprosić
+    if (!payload.telefon && !payload.email) {
+      alert("Podaj telefon lub e-mail — bez tego nie zweryfikujemy osoby ani nie wyślemy jej zaproszenia. Nazwisko możesz uzupełnić później.");
+      return;
+    }
     // Weryfikacja unikalności osoby: telefon + e-mail (nie sama nazwa) — lokalnie (moja książka) i globalnie (konta MANA)
     if (payload.telefon || payload.email) {
       const { data: wer } = await supabase.rpc("kontakt_weryfikuj", { p_tel: payload.telefon || null, p_email: payload.email || null, p_pomin: edycja ? k.id : null });
