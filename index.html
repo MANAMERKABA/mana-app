@@ -4581,6 +4581,11 @@ function filtrujKontakty() {
   box.querySelectorAll("div[data-szukaj]").forEach((c) => { c.style.display = (!q || (c.dataset.szukaj || "").includes(q)) ? "" : "none"; });
   box.querySelectorAll(".kon-sep").forEach((s) => { s.style.display = q ? "none" : ""; });
 }
+// Wyświetlana nazwa kontaktu: „Imię Nazwisko"; dla firmy/etykiety — pole nazwa
+function konNazwa(k) {
+  const io = [k && k.imie, k && k.nazwisko].filter((x) => x && String(x).trim()).join(" ").trim();
+  return io || (k && k.nazwa) || "(bez imienia)";
+}
 function kartaKontakt(k) {
   const moje = k.owner_traveler_id === (TRAVELER && TRAVELER.id);
   const jestMana = !!k.target_traveler_id;
@@ -4591,11 +4596,11 @@ function kartaKontakt(k) {
   const telIkona = k.telefon
     ? `<a class="kn-tel" href="tel:${escP(k.telefon)}" title="Zadzwoń" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border:1px solid var(--line);border-radius:50%;text-decoration:none;"><svg viewBox="0 0 24 24" width="15" height="15" fill="#c0392b" aria-hidden="true"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg></a>`
     : "";
-  const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:7px;">
+  const w = el(`<div data-szukaj="${escP(((k.imie || "") + " " + (k.nazwisko || "") + " " + (k.nazwa || "") + " " + (k.email || "") + " " + (k.telefon || "") + " " + (k.typ || "") + " " + (k.notatka || "")).toLowerCase())}" style="border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:7px;">
     <div class="kn-glowa" style="display:flex;align-items:center;gap:10px;cursor:pointer;">
       ${bubel}
       <div style="min-width:0;flex:1;">
-        <div style="font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(k.imie || "(bez imienia)")}</div>
+        <div style="font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(konNazwa(k))}</div>
         ${linie ? `<div style="font-size:12px;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${linie}</div>` : ""}
       </div>
       ${telIkona}
@@ -4665,8 +4670,12 @@ function formKontakt(k, onSave) {
   const ov = el(`<div class="m-overlay"><div class="m-modal">
     <div class="m-modal__head"><span class="m-modal__tytul">${edycja ? "Kontakt" : "Nowy kontakt"}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
     <div class="m-form">
-      <label>Imię / nazwa</label>
-      <input type="text" id="kn-imie" autocapitalize="words" maxlength="120" value="${edycja ? esc(k.imie || "") : ""}" placeholder="np. Mechanik EKO-GUM / Patrycja">
+      <label>Imię</label>
+      <input type="text" id="kn-imie" autocapitalize="words" maxlength="80" value="${edycja ? esc(k.imie || "") : ""}" placeholder="np. Patrycja">
+      <label>Nazwisko</label>
+      <input type="text" id="kn-nazwisko" autocapitalize="words" maxlength="80" value="${edycja ? esc(k.nazwisko || "") : ""}" placeholder="np. Dolata">
+      <label>Nazwa (firma / etykieta — opcjonalnie)</label>
+      <input type="text" id="kn-nazwa" autocapitalize="words" maxlength="120" value="${edycja ? esc(k.nazwa || "") : ""}" placeholder="np. Mechanik EKO-GUM">
       <label>Telefon</label>
       <div style="display:flex;gap:6px;">
         <select id="kn-kraj" style="flex:none;width:150px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${KRAJE.map(([kod, nazwa]) => `<option value="${kod}">${nazwa} ${kod}</option>`).join("")}</select>
@@ -4697,10 +4706,14 @@ function formKontakt(k, onSave) {
   })();
   ov.querySelector("#kn-zapisz").addEventListener("click", async () => {
     const imie = stdNazwa(ov.querySelector("#kn-imie").value);
-    if (!imie) { ov.querySelector("#kn-imie").focus(); return; }
+    const nazwisko = stdNazwa(ov.querySelector("#kn-nazwisko").value);
+    const nazwa = stdNazwa(ov.querySelector("#kn-nazwa").value);
+    if (!imie && !nazwa) { ov.querySelector("#kn-imie").focus(); return; }
     const ktoPlemie = ov.querySelector("#kn-kto").value || null;
     const payload = {
-      imie,
+      imie: imie || nazwa,
+      nazwisko: nazwisko || null,
+      nazwa: nazwa || null,
       telefon: stdTel(ov.querySelector("#kn-tel").value, ov.querySelector("#kn-kraj").value),
       email: stdEmail(ov.querySelector("#kn-email").value),
       typ: ov.querySelector("#kn-typ").value || "inny",
