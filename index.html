@@ -4732,6 +4732,9 @@ function formKontakt(k, onSave) {
   const edycja = !!k;
   const cudzy = edycja && k && k.owner_traveler_id !== (TRAVELER && TRAVELER.id);
   const opcjeTyp = KON_TYPY.map(([v, l]) => `<option value="${v}"${k && k.typ === v ? " selected" : ""}>${escP(l)}</option>`).join("");
+  const kTelS = String((k && k.telefon) || "").replace(/\s+/g, "");
+  let kTelKod = "+48", kTelNum = "";
+  { let pref = ""; for (const [kod] of KRAJE) { if (kTelS.startsWith(kod) && kod.length > pref.length) pref = kod; } if (pref) { kTelKod = pref; kTelNum = kTelS.slice(pref.length); } else { kTelNum = kTelS.replace(/^\+/, ""); } }
   const ov = el(`<div class="m-overlay"><div class="m-modal">
     <div class="m-modal__head"><span class="m-modal__tytul">${edycja ? "Kontakt" : "Nowy kontakt"}</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
     <div class="m-form">
@@ -4743,8 +4746,8 @@ function formKontakt(k, onSave) {
       <input type="text" id="kn-nazwa" autocapitalize="words" maxlength="120" value="${edycja ? esc(k.nazwa || "") : ""}" placeholder="np. Mechanik EKO-GUM">
       <label>Telefon</label>
       <div style="display:flex;gap:6px;">
-        <select id="kn-kraj" style="flex:none;width:150px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${KRAJE.map(([kod, nazwa]) => `<option value="${kod}">${nazwa} ${kod}</option>`).join("")}</select>
-        <input type="tel" id="kn-tel" inputmode="tel" maxlength="40" style="flex:1;min-width:0;" value="${edycja ? esc(k.telefon || "") : ""}" placeholder="numer">
+        <select id="kn-kraj" style="flex:none;width:150px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${KRAJE.map(([kod, nazwa]) => `<option value="${kod}"${kod === kTelKod ? " selected" : ""}>${nazwa} ${kod}</option>`).join("")}</select>
+        <input type="tel" id="kn-tel" inputmode="tel" maxlength="40" style="flex:1;min-width:0;" value="${esc(kTelNum)}" placeholder="numer">
       </div>
       <label>E-mail</label>
       <input type="email" id="kn-email" autocapitalize="off" inputmode="email" maxlength="120" value="${edycja ? esc(k.email || "") : ""}" placeholder="adres@…">
