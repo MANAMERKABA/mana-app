@@ -1761,7 +1761,7 @@ function otworzWizytowke() {
       <label>Telefon</label>
       <div style="display:flex;gap:6px;">
         <select id="wiz-kraj" style="flex:none;width:150px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${telKrajOpcje}</select>
-        <input type="tel" id="wiz-tel" inputmode="tel" maxlength="40" style="flex:1;min-width:0;" value="${esc(telNum)}" placeholder="numer">
+        <input type="tel" id="wiz-tel" inputmode="tel" maxlength="40" style="flex:1;min-width:0;" value="${esc(telNum.replace(/(\d{3})(?=\d)/g, "$1 "))}" placeholder="numer">
       </div>
       <label>E-mail (logowanie)</label>
       <input type="email" value="${esc(t.email || "")}" disabled style="opacity:.65;">
@@ -4747,7 +4747,7 @@ function formKontakt(k, onSave) {
       <label>Telefon</label>
       <div style="display:flex;gap:6px;">
         <select id="kn-kraj" style="flex:none;width:150px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${KRAJE.map(([kod, nazwa]) => `<option value="${kod}"${kod === kTelKod ? " selected" : ""}>${nazwa} ${kod}</option>`).join("")}</select>
-        <input type="tel" id="kn-tel" inputmode="tel" maxlength="40" style="flex:1;min-width:0;" value="${esc(kTelNum)}" placeholder="numer">
+        <input type="tel" id="kn-tel" inputmode="tel" maxlength="40" style="flex:1;min-width:0;" value="${esc(kTelNum.replace(/(\d{3})(?=\d)/g, "$1 "))}" placeholder="numer">
       </div>
       <label>E-mail</label>
       <input type="email" id="kn-email" autocapitalize="off" inputmode="email" maxlength="120" value="${edycja ? esc(k.email || "") : ""}" placeholder="adres@…">
