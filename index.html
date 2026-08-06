@@ -1742,6 +1742,10 @@ function otworzWizytowke() {
   const t = TRAVELER || {};
   const jezyki = [["pl", "Polski"], ["en", "English"], ["es", "Español"], ["de", "Deutsch"], ["uk", "Українська"], ["ru", "Русский"], ["fr", "Français"], ["it", "Italiano"], ["pt", "Português"], ["cs", "Čeština"]];
   const opcje = jezyki.map(([k, n]) => `<option value="${k}" ${((t.jezyk || "pl") === k) ? "selected" : ""}>${escP(n)}</option>`).join("");
+  const telS = String(t.telefon || "").replace(/\s+/g, "");
+  let telKod = "+48", telNum = "";
+  { let pref = ""; for (const [kod] of KRAJE) { if (telS.startsWith(kod) && kod.length > pref.length) pref = kod; } if (pref) { telKod = pref; telNum = telS.slice(pref.length); } else { telNum = telS.replace(/^\+/, ""); } }
+  const telKrajOpcje = KRAJE.map(([kod, nazwa]) => `<option value="${kod}"${kod === telKod ? " selected" : ""}>${nazwa} ${kod}</option>`).join("");
   const ini = (typeof inicjalyPl === "function") ? inicjalyPl(t.nick || "?") : ((t.nick || "?")[0] || "?").toUpperCase();
   const ov = el(`<div class="m-overlay"><div class="m-modal">
     <div class="m-modal__head"><span class="m-modal__tytul">Twoja wizytówka</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
@@ -1755,7 +1759,10 @@ function otworzWizytowke() {
       <label>Nazwisko</label>
       <input type="text" id="wiz-nazwisko" maxlength="80" value="${esc(t.nazwisko || "")}" placeholder="np. Bielawski">
       <label>Telefon</label>
-      <input type="tel" id="wiz-tel" maxlength="40" value="${esc(fmtTel(t.telefon) || "")}" placeholder="+48 696 552 202">
+      <div style="display:flex;gap:6px;">
+        <select id="wiz-kraj" style="flex:none;width:150px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${telKrajOpcje}</select>
+        <input type="tel" id="wiz-tel" inputmode="tel" maxlength="40" style="flex:1;min-width:0;" value="${esc(telNum)}" placeholder="numer">
+      </div>
       <label>E-mail (logowanie)</label>
       <input type="email" value="${esc(t.email || "")}" disabled style="opacity:.65;">
       <label>Twój identyfikator MANA</label>
@@ -1785,7 +1792,7 @@ function otworzWizytowke() {
   ov.querySelector("#wiz-zapisz").addEventListener("click", async () => {
     const imie = ov.querySelector("#wiz-imie").value.trim();
     const nazwisko = ov.querySelector("#wiz-nazwisko").value.trim();
-    const tel = ov.querySelector("#wiz-tel").value.trim();
+    const tel = stdTel(ov.querySelector("#wiz-tel").value, ov.querySelector("#wiz-kraj").value);
     const jez = ov.querySelector("#wiz-jezyk").value;
     const { data, error } = await supabase.rpc("zapisz_wizytowke", { p_imie: imie, p_nazwisko: nazwisko, p_telefon: tel, p_jezyk: jez });
     if (error || (data && data.ok === false)) { alert("Nie zapisano: " + ((data && data.error) || (error && error.message) || "")); return; }
