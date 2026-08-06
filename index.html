@@ -4604,14 +4604,16 @@ async function renderKontakty() {
   const box = $("sejf-kontakty");
   if (!box) return;
   box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
-  const [rK, rPl, rOf] = await Promise.all([
+  const [rK, rPl, rOf, rPid] = await Promise.all([
     supabase.from("kontakty").select("*").order("imie", { ascending: true }),
     supabase.rpc("moje_plemiona_full"),
     supabase.rpc("moje_oferty_kontaktow"),
+    supabase.rpc("kontakty_public_id"),
   ]);
   if (rK.error) { box.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(rK.error.message)}</div>`; return; }
   KON_PLEMIE_MAP = {};
   (rPl.data || []).forEach((p) => { KON_PLEMIE_MAP[p.id] = p.nazwa; });
+  const PID_MAP = {}; (rPid.data || []).forEach((r) => { if (r.target_traveler_id) PID_MAP[r.target_traveler_id] = r.public_id; });
   const kon = (rK.data || []).filter((k) => k.owner_org_id == null && k.target_traveler_id !== (TRAVELER && TRAVELER.id)); // prywatne/rodzinne; bez firmowych (CRM=gospodarz) i bez siebie (=wizytówka)
   box.innerHTML = "";
   renderOfertyKontaktow(box, rOf.data || []);
@@ -4631,6 +4633,7 @@ async function renderKontakty() {
   let poprzMana = null;
   for (const k of kon) {
     const jm = !!k.target_traveler_id;
+    if (k.target_traveler_id && PID_MAP[k.target_traveler_id]) k._public_id = PID_MAP[k.target_traveler_id];
     if (poprzMana === true && jm === false) box.appendChild(el(`<div class="kon-sep" style="height:1px;background:var(--line);margin:12px 6px 16px;"></div>`));
     box.appendChild(kartaKontakt(k));
     poprzMana = jm;
@@ -4703,6 +4706,11 @@ function kartaKontakt(k) {
       <span class="kn-chev" style="color:var(--ink-soft);font-size:15px;line-height:1;flex:none;">▸</span>
     </div>
     <div class="kn-body" style="display:none;">
+      ${k._public_id ? `<div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+        <span style="font-size:11px;color:var(--ink-soft);">ID MANA:</span>
+        <span class="kn-pid" style="font-family:monospace;font-weight:600;letter-spacing:1px;font-size:13px;">${escP(k._public_id)}</span>
+        <button class="kn-pid-kop" style="${BG}font-size:11px;padding:3px 8px;">Kopiuj</button>
+      </div>` : ""}
       ${k.typ ? `<div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">${escP(k.typ)}</div>` : ""}
       ${k.notatka ? `<div style="font-size:12px;color:var(--ink-soft);margin-top:4px;white-space:pre-wrap;">${esc(k.notatka)}</div>` : ""}
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center;">
@@ -4719,6 +4727,7 @@ function kartaKontakt(k) {
   const be = w.querySelector(".kn-edit"); if (be) be.addEventListener("click", () => formKontakt(k));
   const bu = w.querySelector(".kn-usun"); if (bu) bu.addEventListener("click", () => usunKontakt(k));
   const bz = w.querySelector(".kn-zapros"); if (bz) bz.addEventListener("click", () => zaprosKontakt(k));
+  const bpid = w.querySelector(".kn-pid-kop"); if (bpid) bpid.addEventListener("click", async (e) => { e.stopPropagation(); try { await navigator.clipboard.writeText(k._public_id || ""); trzosToast("ID skopiowane ✓"); } catch (err) { prompt("Identyfikator MANA:", k._public_id || ""); } });
   return w;
 }
 async function otworzRozmoweZKontaktu(k) {
