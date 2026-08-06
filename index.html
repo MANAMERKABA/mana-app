@@ -4707,6 +4707,15 @@ function formKontakt(k, onSave) {
       notatka: ov.querySelector("#kn-notatka").value.trim() || null,
       plemie_id: null, // udostępnianie idzie teraz przez OFERTĘ, nie przez auto-widoczność
     };
+    // Weryfikacja unikalności osoby: telefon + e-mail (nie sama nazwa) — lokalnie (moja książka) i globalnie (konta MANA)
+    if (payload.telefon || payload.email) {
+      const { data: wer } = await supabase.rpc("kontakt_weryfikuj", { p_tel: payload.telefon || null, p_email: payload.email || null, p_pomin: edycja ? k.id : null });
+      if (wer && wer.ok && wer.lokalny) {
+        alert(`Masz już kontakt „${wer.lokalny.imie || "bez imienia"}" z tym numerem lub e-mailem — użyj istniejącego zamiast zakładać drugi.`);
+        return;
+      }
+      if (wer && wer.ok && wer.globalny && !edycja) { payload.target_traveler_id = wer.globalny.traveler_id; }
+    }
     let error, kontaktId = edycja ? k.id : null;
     if (edycja && cudzy) {
       const { data: rd, error: re } = await supabase.rpc("edytuj_kontakt", { p_id: k.id, p_imie: payload.imie, p_telefon: payload.telefon, p_email: payload.email, p_typ: payload.typ, p_notatka: payload.notatka });
@@ -4714,7 +4723,7 @@ function formKontakt(k, onSave) {
     } else if (edycja) {
       ({ error } = await supabase.from("kontakty").update(payload).eq("id", k.id));
     } else {
-      const { data: nd, error: ne } = await supabase.from("kontakty").insert({ ...payload, owner_traveler_id: TRAVELER.id, polaczenie_status: "brak", aktywny: true }).select("id").single();
+      const { data: nd, error: ne } = await supabase.from("kontakty").insert({ ...payload, owner_traveler_id: TRAVELER.id, polaczenie_status: payload.target_traveler_id ? "aktywne" : "brak", aktywny: true }).select("id").single();
       error = ne; kontaktId = nd && nd.id;
     }
     if (error) { trzosToast("Błąd: " + error.message); return; }
