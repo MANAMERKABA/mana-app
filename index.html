@@ -1404,12 +1404,71 @@ async function wejdz() {
     try { const { data: t2 } = await supabase.from("travels").select("tryb_gosc").eq("id", TRAVELER.id).maybeSingle(); if (t2) TRAVELER.tryb_gosc = t2.tryb_gosc; } catch (_) {}
   }
   if (TRAVELER.tryb_gosc) { await wejdzJakoGosc(); return; }
+  if (!TRAVELER.imie || !TRAVELER.nazwisko || !TRAVELER.telefon) { await wymusUzupelnienieProfilu(); }
   renderPokoje();
   subskrybujRealtime();
   await wczytajDzien();
   await pokazIndykatorZaproszen();
   await pokazIndykatorRozjazdow();
   if (_czatDeepLink) { const id = _czatDeepLink; _czatDeepLink = null; try { localStorage.removeItem("mana_czat_deep"); } catch (_) {} otworzRozmowaPoId(id); }
+}
+/* BRAMA TOŻSAMOŚCI: pełne konto musi mieć Imię, Nazwisko, Telefon — inaczej człowiek jest nieodnajdywalny (case Daniel) i grożą duble kont.
+   Blokująca (bez zamknięcia). Po zapisie: strażnik dubla telefonu + reconciliation kontaktów (profil_wymus_uzupelnij). */
+function wymusUzupelnienieProfilu() {
+  return new Promise((resolve) => {
+    const t = TRAVELER || {};
+    const telS = String(t.telefon || "").replace(/\s+/g, "");
+    let telKod = "+48", telNum = "";
+    { let pref = ""; for (const [kod] of KRAJE) { if (telS.startsWith(kod) && kod.length > pref.length) pref = kod; } if (pref) { telKod = pref; telNum = telS.slice(pref.length); } else { telNum = telS.replace(/^\+/, ""); } }
+    const krajOpcje = KRAJE.map(([kod, nazwa]) => `<option value="${kod}"${kod === telKod ? " selected" : ""}>${nazwa} ${kod}</option>`).join("");
+    const ov = el(`<div class="m-overlay" style="z-index:9999;"><div class="m-modal">
+      <div class="m-modal__head"><span class="m-modal__tytul">Dokończ profil</span></div>
+      <div class="m-form">
+        <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-bottom:10px;">Zanim wejdziesz — uzupełnij dane. Dzięki nim łączymy Cię z osobami, które już Cię znają, i chronimy przed powstaniem drugiego konta tej samej osoby.</div>
+        <label>Imię</label>
+        <input type="text" id="gt-imie" maxlength="80" value="${esc(t.imie || "")}" placeholder="np. Adam">
+        <label>Nazwisko</label>
+        <input type="text" id="gt-nazwisko" maxlength="80" value="${esc(t.nazwisko || "")}" placeholder="np. Nażgiewicz">
+        <label>Telefon</label>
+        <div style="display:flex;gap:6px;">
+          <select id="gt-kraj" style="flex:none;width:150px;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;">${krajOpcje}</select>
+          <input type="tel" id="gt-tel" inputmode="tel" maxlength="40" style="flex:1;min-width:0;" value="${esc(fmtNumerLokalny(telNum, telKod))}" placeholder="numer">
+        </div>
+        <div id="gt-blad" style="display:none;color:#c0392b;font-size:12px;margin-top:8px;"></div>
+      </div>
+      <div class="m-modal__akcje"><button class="m-btn m-btn--zapisz" id="gt-zapisz" style="width:100%;">Zapisz i wejdź</button></div>
+    </div></div>`);
+    document.body.appendChild(ov);
+    podepnijFormatTel(ov, "gt-kraj", "gt-tel");
+    const blad = (txt) => { const b = ov.querySelector("#gt-blad"); b.textContent = txt; b.style.display = txt ? "block" : "none"; };
+    const btn = ov.querySelector("#gt-zapisz");
+    btn.addEventListener("click", async () => {
+      const imie = ov.querySelector("#gt-imie").value.trim();
+      const nazwisko = ov.querySelector("#gt-nazwisko").value.trim();
+      const num = ov.querySelector("#gt-tel").value.trim();
+      if (!imie || !nazwisko || !num) { blad("Uzupełnij imię, nazwisko i telefon."); return; }
+      const tel = stdTel(num, ov.querySelector("#gt-kraj").value);
+      blad(""); btn.disabled = true; btn.textContent = "Zapisuję…";
+      const { data, error } = await supabase.rpc("profil_wymus_uzupelnij", { p_imie: imie, p_nazwisko: nazwisko, p_telefon: tel });
+      btn.disabled = false; btn.textContent = "Zapisz i wejdź";
+      if (error) { blad("Błąd: " + error.message); return; }
+      if (!data || !data.ok) {
+        if (data && data.powod === "dubel_telefon") {
+          const k = data.konto || {};
+          blad(`Ten numer należy już do konta „${k.nick || "?"}" (${k.email || "?"}). Jeśli to Twoje drugie konto — zaloguj się na nie. Jeśli pomyłka — popraw numer.`);
+        } else if (data && data.powod === "braki") { blad("Uzupełnij wszystkie pola.");
+        } else { blad("Nie udało się zapisać. Spróbuj ponownie."); }
+        return;
+      }
+      TRAVELER.imie = imie; TRAVELER.nazwisko = nazwisko; TRAVELER.telefon = tel; TRAVELER.nick = (imie + " " + nazwisko).trim();
+      renderHeader();
+      ov.remove();
+      let msg = "Profil uzupełniony ✓";
+      if (data.polaczono) msg += ` · połączono z ${data.polaczono} os.`;
+      try { trzosToast(msg); } catch (_) {}
+      resolve();
+    });
+  });
 }
 /* Tryb gościa: konto zablokowane do komunikatora — widzi TYLKO rozmowy (lejek: potem odblokujemy do pełnej MANY). */
 async function wejdzJakoGosc() {
@@ -4841,7 +4900,11 @@ function formKontakt(k, onSave) {
         alert(`Masz już kontakt „${wer.lokalny.imie || "bez imienia"}" z tym numerem lub e-mailem — użyj istniejącego zamiast zakładać drugi.`);
         return;
       }
-      if (wer && wer.ok && wer.globalny && !edycja) { payload.target_traveler_id = wer.globalny.traveler_id; }
+      // Dopasowanie do konta MANA — przy ZAKŁADANIU oraz przy EDYCJI własnego, jeszcze niepołączonego kontaktu (wcześniej działało tylko przy zakładaniu → edycja z mailem/telefonem konta nie linkowała)
+      if (wer && wer.ok && wer.globalny && (!edycja || (!cudzy && !k.target_traveler_id))) {
+        payload.target_traveler_id = wer.globalny.traveler_id;
+        payload.polaczenie_status = "aktywne";
+      }
     }
     let error, kontaktId = edycja ? k.id : null;
     if (edycja && cudzy) {
@@ -4854,7 +4917,7 @@ function formKontakt(k, onSave) {
       error = ne; kontaktId = nd && nd.id;
     }
     if (error) { trzosToast("Błąd: " + error.message); return; }
-    let komunikat = "Zapisano ✓";
+    let komunikat = payload.target_traveler_id && (!edycja || !k.target_traveler_id) ? "Zapisano · osoba jest w MANA — połączono ✓" : "Zapisano ✓";
     if (ktoPlemie && !cudzy && kontaktId) {
       const { data: od } = await supabase.rpc("udostepnij_kontakt", { p_kontakt_id: kontaktId, p_plemie_id: ktoPlemie });
       if (od && od.ok) komunikat = `Zapisano · wysłano ofertę do plemienia (${od.wyslano})`;
