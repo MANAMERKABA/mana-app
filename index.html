@@ -1391,7 +1391,7 @@ async function pokazBannerZaproszenia() {
 async function wejdz() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: trav } = await supabase
-    .from("travels").select("id, nick, uklad_pokoi, jezyk, tryb_gosc, telefon, email, is_admin, public_id").eq("auth_user_id", session.user.id).maybeSingle();
+    .from("travels").select("id, nick, imie, nazwisko, uklad_pokoi, jezyk, tryb_gosc, telefon, email, is_admin, public_id").eq("auth_user_id", session.user.id).maybeSingle();
   if (!trav) { $("m-loader").textContent = "Nie znaleziono profilu podróżnika."; return; }
   TRAVELER = trav;
   supabase.rpc("rejestruj_aktywnosc").then(() => {}).catch(() => {});   // ślad aktywności (throttle 1h w bazie)
@@ -1706,11 +1706,11 @@ function subskrybujRealtime() {
 function renderHeader() {
   $("m-data").textContent = new Date().toLocaleDateString("pl-PL",
     { weekday: "long", day: "numeric", month: "long", timeZone: TZ });
-  const nick = (TRAVELER && TRAVELER.nick) ? TRAVELER.nick : "podróżnik";
-  const ini = (typeof inicjalyPl === "function") ? inicjalyPl(nick) : (nick[0] || "?").toUpperCase();
+  const imie = (TRAVELER && (TRAVELER.imie || TRAVELER.nick)) ? (TRAVELER.imie || TRAVELER.nick) : "podróżnik";
+  const ini = (imie[0] || "?").toUpperCase();
   document.querySelectorAll(".m-user").forEach((s) => {
-    s.innerHTML = `<span class="m-user__ini">${esc(ini)}</span><span class="m-user__nick">${esc(nick)}</span>`;
-    s.title = "Twoja wizytówka — " + nick;
+    s.innerHTML = `<span class="m-user__ini">${esc(ini)}</span><span class="m-user__nick">${esc(imie)}</span>`;
+    s.title = "Twoja wizytówka — " + imie;
     s.style.cursor = "pointer";
     if (!s._wiz) { s._wiz = true; s.addEventListener("click", otworzWizytowke); }
   });
@@ -1750,8 +1750,10 @@ function otworzWizytowke() {
         <span style="width:52px;height:52px;border-radius:50%;background:#1a7158;color:#fff;font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none;">${esc(ini)}</span>
         <div style="font-size:12px;color:var(--ink-soft);line-height:1.5;">To Twoja wizytówka — <b>warstwa podstawowa</b>, którą widzą osoby, z którymi się połączysz.</div>
       </div>
-      <label>Imię i nazwisko</label>
-      <input type="text" id="wiz-nick" maxlength="120" value="${esc(t.nick || "")}" placeholder="np. Adam Bielawski">
+      <label>Imię</label>
+      <input type="text" id="wiz-imie" maxlength="80" value="${esc(t.imie || "")}" placeholder="np. Adam">
+      <label>Nazwisko</label>
+      <input type="text" id="wiz-nazwisko" maxlength="80" value="${esc(t.nazwisko || "")}" placeholder="np. Bielawski">
       <label>Telefon</label>
       <input type="tel" id="wiz-tel" maxlength="40" value="${esc(fmtTel(t.telefon) || "")}" placeholder="+48 696 552 202">
       <label>E-mail (logowanie)</label>
@@ -1781,12 +1783,13 @@ function otworzWizytowke() {
   { const bw = ov.querySelector("#wiz-wyslij");
     if (bw) bw.addEventListener("click", () => wyslijWizytowke(t)); }
   ov.querySelector("#wiz-zapisz").addEventListener("click", async () => {
-    const nick = ov.querySelector("#wiz-nick").value.trim();
+    const imie = ov.querySelector("#wiz-imie").value.trim();
+    const nazwisko = ov.querySelector("#wiz-nazwisko").value.trim();
     const tel = ov.querySelector("#wiz-tel").value.trim();
     const jez = ov.querySelector("#wiz-jezyk").value;
-    const { data, error } = await supabase.rpc("zapisz_wizytowke", { p_nick: nick, p_telefon: tel, p_jezyk: jez });
+    const { data, error } = await supabase.rpc("zapisz_wizytowke", { p_imie: imie, p_nazwisko: nazwisko, p_telefon: tel, p_jezyk: jez });
     if (error || (data && data.ok === false)) { alert("Nie zapisano: " + ((data && data.error) || (error && error.message) || "")); return; }
-    if (TRAVELER) { TRAVELER.nick = nick || TRAVELER.nick; TRAVELER.telefon = tel; TRAVELER.jezyk = jez; }
+    if (TRAVELER) { TRAVELER.imie = imie || TRAVELER.imie; TRAVELER.nazwisko = nazwisko || null; TRAVELER.nick = [imie, nazwisko].filter(Boolean).join(" ") || TRAVELER.nick; TRAVELER.telefon = tel; TRAVELER.jezyk = jez; }
     if (typeof renderHeader === "function") renderHeader();
     zam();
     if (typeof trzosToast === "function") trzosToast("Wizytówka zapisana ✓");
