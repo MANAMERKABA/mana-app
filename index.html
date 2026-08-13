@@ -4663,11 +4663,12 @@ async function renderKontakty() {
   const box = $("sejf-kontakty");
   if (!box) return;
   box.innerHTML = `<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Wczytuję…</div>`;
-  const [rK, rPl, rOf, rPid] = await Promise.all([
+  const [rK, rPl, rOf, rPid, rPro] = await Promise.all([
     supabase.from("kontakty").select("*").order("imie", { ascending: true }),
     supabase.rpc("moje_plemiona_full"),
     supabase.rpc("moje_oferty_kontaktow"),
     supabase.rpc("kontakty_public_id"),
+    supabase.rpc("moje_prosby_kontaktu"),
   ]);
   if (rK.error) { box.innerHTML = `<div style="color:#c4513a;">Błąd: ${escP(rK.error.message)}</div>`; return; }
   KON_PLEMIE_MAP = {};
@@ -4675,6 +4676,7 @@ async function renderKontakty() {
   const PID_MAP = {}; (rPid.data || []).forEach((r) => { if (r.target_traveler_id) PID_MAP[r.target_traveler_id] = r.public_id; });
   const kon = (rK.data || []).filter((k) => k.owner_org_id == null && k.target_traveler_id !== (TRAVELER && TRAVELER.id)); // prywatne/rodzinne; bez firmowych (CRM=gospodarz) i bez siebie (=wizytówka)
   box.innerHTML = "";
+  renderProsbyKontaktu(box, rPro.data || []);
   renderOfertyKontaktow(box, rOf.data || []);
   if (!kon.length) { box.appendChild(el(`<div style="color:var(--ink-soft);font-size:14px;padding:8px 0;">Brak kontaktów — dodaj pierwszy albo „Dodaj z plemienia".</div>`)); return; }
   let konOtw = false;
@@ -4699,6 +4701,40 @@ async function renderKontakty() {
   }
   if (konOtw) { box.querySelectorAll(".kn-body").forEach((b) => { b.style.display = "block"; }); box.querySelectorAll(".kn-chev").forEach((c) => { c.textContent = "▾"; }); }
   filtrujKontakty();
+}
+// Tacka PRÓŚB O KONTAKT (punkt 2): ktoś ze wspólnego plemienia prosi o wymianę danych. Przyjmij → łączy obie strony pełną kartą.
+function renderProsbyKontaktu(box, prosby) {
+  if (!prosby || !prosby.length) return;
+  const sek = el(`<div style="margin:2px 0 16px;"><div style="font-size:12px;color:#1a5c44;font-weight:600;margin:0 2px 7px;">🤝 Prośby o kontakt · ${prosby.length}</div></div>`);
+  for (const pr of prosby) {
+    const imieNazw = [pr.imie, pr.nazwisko].filter(Boolean).join(" ") || pr.nick || "ktoś";
+    const ini = (imieNazw[0] || "?").toUpperCase();
+    const row = el(`<div style="border:1px solid #bcdccb;background:#eef7f1;border-radius:12px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="width:32px;height:32px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:14px;background:#1a7158;color:#fff;font-weight:600;">${esc(ini)}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14.5px;font-weight:500;">${esc(imieNazw)}</div>
+          <div style="font-size:11px;color:#4a7c65;">ID: ${escP(pr.public_id || "—")}${pr.plemie ? ` · z plemienia „${escP(pr.plemie)}"` : ""}</div>
+          <div style="font-size:11.5px;color:var(--ink-soft);margin-top:1px;">prosi o wymianę danych kontaktowych</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:9px;">
+        <button class="pk-przyj" style="border:none;background:#1a7158;color:#fff;border-radius:8px;font-size:12.5px;padding:7px 15px;cursor:pointer;">Przyjmij</button>
+        <button class="pk-odrz" style="${BG}font-size:12.5px;padding:7px 12px;">Odrzuć</button>
+      </div>
+    </div>`);
+    row.querySelector(".pk-przyj").addEventListener("click", async () => {
+      const { data, error } = await supabase.rpc("prosba_kontakt_odpowiedz", { p_prosba_id: pr.prosba_id, p_akcja: "przyjmij" });
+      if (error || (data && data.ok === false)) { trzosToast("Błąd: " + ((data && data.powod) || (error && error.message) || "")); renderKontakty(); return; }
+      trzosToast("Przyjęto — jesteście teraz połączeni ✓"); renderKontakty();
+    });
+    row.querySelector(".pk-odrz").addEventListener("click", async () => {
+      await supabase.rpc("prosba_kontakt_odpowiedz", { p_prosba_id: pr.prosba_id, p_akcja: "odrzuc" });
+      trzosToast("Odrzucono."); renderKontakty();
+    });
+    sek.appendChild(row);
+  }
+  box.appendChild(sek);
 }
 function renderOfertyKontaktow(box, oferty) {
   if (!oferty || !oferty.length) return;
@@ -5204,7 +5240,20 @@ async function otworzKarteCzlonka(c, p) {
       if (!data || !data.ok) { trzosToast(data && data.error === "nie_w_manie" ? "Ta osoba nie ma jeszcze konta MANA." : ((data && data.error) || "Nie udało się.")); return; }
       await otworzRozmowaPoId(data.plemie_id);
     }); }
-  { const bc = ov.querySelector(".kc-kontakt"); if (bc) bc.addEventListener("click", () => { trzosToast("Prośba o kontakt — już budujemy (punkt 2)."); }); }
+  { const bc = ov.querySelector(".kc-kontakt"); if (bc) bc.addEventListener("click", async () => {
+      bc.disabled = true;
+      const { data, error } = await supabase.rpc("prosba_o_kontakt", { p_target: c.traveler_id, p_plemie_id: p.id });
+      bc.disabled = false;
+      if (error) { trzosToast("Błąd: " + error.message); return; }
+      if (data && data.ok) { zam(); trzosToast("Wysłano prośbę o kontakt ✓"); return; }
+      const powod = data && data.powod;
+      trzosToast(
+        powod === "juz_macie_kontakt" ? "Macie już kontakt ✓" :
+        powod === "brak_wspolnego_plemienia" ? "Możesz prosić tylko osoby ze wspólnego plemienia." :
+        powod === "nie_w_manie" ? "Ta osoba nie ma jeszcze konta MANA." :
+        "Nie udało się wysłać prośby."
+      );
+    }); }
 }
 function kartaPlemienia(p) {
   const mojeId = TRAVELER && TRAVELER.id;
