@@ -5156,6 +5156,56 @@ async function odswiezNieprzeczytaneRozmowy() {
   } catch (e) {}
 }
 
+/* KATALOG CZŁONKÓW — karta członka: warstwa podstawowa (Imię+Nazwisko+ID), akcja „Napisz" (rozmowa po ID, bez danych).
+   „Poproś o kontakt" = punkt 2 (wymiana danych wg suwaków). ID dociągany RPC `plemie_katalog` (tylko dla członka plemienia). */
+async function otworzKarteCzlonka(c, p) {
+  const mojeId = TRAVELER && TRAVELER.id;
+  const jaSam = c.traveler_id === mojeId;
+  const maKonto = !!c.traveler_id && !c.zarzadzany;
+  if (!p._katalog) {
+    try { const { data } = await supabase.rpc("plemie_katalog", { p_plemie_id: p.id }); p._katalog = {}; (data || []).forEach((r) => { p._katalog[r.traveler_id] = r; }); }
+    catch (_) { p._katalog = {}; }
+  }
+  const info = (p._katalog && p._katalog[c.traveler_id]) || {};
+  const imieNazw = [info.imie, info.nazwisko].filter(Boolean).join(" ") || info.nick || c.nick || "uczestnik";
+  const pid = info.public_id || "";
+  const ini = (imieNazw[0] || "?").toUpperCase();
+  const ov = el(`<div class="m-overlay"><div class="m-modal" style="max-width:340px;">
+    <div class="m-modal__head"><span class="m-modal__tytul">Członek plemienia</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <span style="width:48px;height:48px;border-radius:50%;background:#1a7158;color:#fff;font-size:19px;font-weight:600;display:flex;align-items:center;justify-content:center;flex:none;">${esc(ini)}</span>
+        <div style="min-width:0;">
+          <div style="font-size:16px;font-weight:600;">${esc(imieNazw)}${jaSam ? ` <span style="font-size:11px;color:var(--ink-soft);font-weight:400;">· to Ty</span>` : ""}</div>
+          <div style="font-size:11px;color:var(--ink-soft);">z plemienia „${escP(p.nazwa)}"</div>
+        </div>
+      </div>
+      ${pid ? `<label>Identyfikator MANA</label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input type="text" value="${esc(pid)}" readonly style="flex:1;font-family:monospace;letter-spacing:1px;font-weight:600;">
+        <button type="button" class="kc-kop" style="${BG}white-space:nowrap;">Kopiuj</button>
+      </div>` : `<div style="font-size:12px;color:var(--ink-soft);">${maKonto ? "" : "Ta osoba nie ma jeszcze konta MANA."}</div>`}
+      ${(maKonto && !jaSam) ? `<div style="display:flex;gap:8px;margin-top:14px;">
+        <button type="button" class="kc-pisz" style="${BT}flex:1;">✍️ Napisz</button>
+        <button type="button" class="kc-kontakt" style="${BG}flex:1;">➕ Poproś o kontakt</button>
+      </div>
+      <div style="font-size:11px;color:var(--ink-soft);margin-top:8px;line-height:1.5;">„Napisz" otwiera rozmowę po ID — bez ujawniania Twoich danych. „Poproś o kontakt" wyśle prośbę o wymianę danych.</div>` : ""}
+    </div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zam = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zam);
+  { const bk = ov.querySelector(".kc-kop"); if (bk) bk.addEventListener("click", async () => { try { await navigator.clipboard.writeText(pid); trzosToast("ID skopiowane ✓"); } catch (_) { prompt("Identyfikator MANA:", pid); } }); }
+  { const bp = ov.querySelector(".kc-pisz"); if (bp) bp.addEventListener("click", async () => {
+      zam();
+      const { data, error } = await supabase.rpc("rozpocznij_rozmowe_traveler", { p_target: c.traveler_id });
+      if (error) { trzosToast("Nie udało się: " + error.message); return; }
+      if (!data || !data.ok) { trzosToast(data && data.error === "nie_w_manie" ? "Ta osoba nie ma jeszcze konta MANA." : ((data && data.error) || "Nie udało się.")); return; }
+      await otworzRozmowaPoId(data.plemie_id);
+    }); }
+  { const bc = ov.querySelector(".kc-kontakt"); if (bc) bc.addEventListener("click", () => { trzosToast("Prośba o kontakt — już budujemy (punkt 2)."); }); }
+}
 function kartaPlemienia(p) {
   const mojeId = TRAVELER && TRAVELER.id;
   const owner = p.owner_traveler_id === mojeId;
@@ -5188,7 +5238,8 @@ function kartaPlemienia(p) {
     const dziecko = !!c.zarzadzany;
     const mojWard = c.opiekun === mojeId; // moje dziecko — z loginem lub bez
     const etkZarz = (mojWard || dziecko) ? (c.birth_year ? " · dziecko" : " · bez loginu") : "";
-    const chip = el(`<span style="font-size:12px;background:#efece3;border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;">${escP(c.nick || "uczestnik")}${c.rola === "zalozyciel" ? " · zał." : ""}${etkZarz}</span>`);
+    const chip = el(`<span style="font-size:12px;background:#efece3;border-radius:20px;padding:3px 9px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;">${escP(c.nick || "uczestnik")}${c.rola === "zalozyciel" ? " · zał." : ""}${etkZarz}</span>`);
+    chip.addEventListener("click", (e) => { if (e.target.closest("button")) return; otworzKarteCzlonka(c, p); });
     if (mojWard) {
       const key = el(`<button title="Nadaj login / udostępnij link" style="border:none;background:none;cursor:pointer;font-size:13px;line-height:1;padding:0;">🔑</button>`);
       key.addEventListener("click", () => panelLoginDziecka(c, card));
