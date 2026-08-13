@@ -1392,7 +1392,7 @@ async function pokazBannerZaproszenia() {
 async function wejdz() {
   const { data: { session } } = await supabase.auth.getSession();
   const { data: trav } = await supabase
-    .from("travels").select("id, nick, imie, nazwisko, uklad_pokoi, jezyk, tryb_gosc, telefon, email, is_admin, public_id").eq("auth_user_id", session.user.id).maybeSingle();
+    .from("travels").select("id, nick, imie, nazwisko, uklad_pokoi, jezyk, tryb_gosc, telefon, email, is_admin, public_id, widocznosc").eq("auth_user_id", session.user.id).maybeSingle();
   if (!trav) { $("m-loader").textContent = "Nie znaleziono profilu podróżnika."; return; }
   TRAVELER = trav;
   supabase.rpc("rejestruj_aktywnosc").then(() => {}).catch(() => {});   // ślad aktywności (throttle 1h w bazie)
@@ -1836,6 +1836,9 @@ function otworzWizytowke() {
   { let pref = ""; for (const [kod] of KRAJE) { if (telS.startsWith(kod) && kod.length > pref.length) pref = kod; } if (pref) { telKod = pref; telNum = telS.slice(pref.length); } else { telNum = telS.replace(/^\+/, ""); } }
   const telKrajOpcje = KRAJE.map(([kod, nazwa]) => `<option value="${kod}"${kod === telKod ? " selected" : ""}>${nazwa} ${kod}</option>`).join("");
   const ini = (typeof inicjalyPl === "function") ? inicjalyPl(t.nick || "?") : ((t.nick || "?")[0] || "?").toUpperCase();
+  const WID_OPCJE = [["ukryte", "🔒 Ukryte — tylko ja"], ["po_polaczeniu", "🤝 Po połączeniu (gdy przyjmiesz prośbę)"], ["wspolczlonkom", "👥 Współczłonkom plemion (widać w katalogu)"]];
+  const _wid = t.widocznosc || {}; const wTel = _wid.telefon || "po_polaczeniu"; const wMail = _wid.email || "po_polaczeniu";
+  const wopt = (cur) => WID_OPCJE.map(([v, n]) => `<option value="${v}"${v === cur ? " selected" : ""}>${n}</option>`).join("");
   const ov = el(`<div class="m-overlay"><div class="m-modal">
     <div class="m-modal__head"><span class="m-modal__tytul">Twoja wizytówka</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
     <div class="m-form">
@@ -1860,7 +1863,15 @@ function otworzWizytowke() {
         <button type="button" id="wiz-kopiuj" style="${BG}white-space:nowrap;">Kopiuj</button>
       </div>
       <div style="font-size:11px;color:var(--ink-soft);margin:3px 0 6px;">Podaj go, żeby ktoś dodał Cię bez ujawniania telefonu.</div>
-      <button type="button" id="wiz-wyslij" style="${BG}width:100%;">📇 Wyślij wizytówkę</button>
+      <div style="margin-top:10px;padding:10px 12px;background:#f3efe6;border:1px solid var(--line);border-radius:10px;">
+        <div style="font-size:12.5px;font-weight:600;margin-bottom:8px;">Widoczność w plemionach</div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-bottom:8px;line-height:1.5;">Imię, nazwisko i ID widzą zawsze współczłonkowie. Poniżej decydujesz o telefonie i mailu.</div>
+        <label style="font-size:12px;">Telefon</label>
+        <select id="wiz-wid-tel" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:13px;margin-bottom:8px;">${wopt(wTel)}</select>
+        <label style="font-size:12px;">E-mail</label>
+        <select id="wiz-wid-mail" style="width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;font-size:13px;">${wopt(wMail)}</select>
+      </div>
+      <button type="button" id="wiz-wyslij" style="${BG}width:100%;margin-top:10px;">📇 Wyślij wizytówkę</button>
       <label>Język</label>
       <select id="wiz-jezyk">${opcje}</select>
       <div style="margin-top:12px;padding:10px 12px;background:#f3efe6;border:1px solid var(--line);border-radius:10px;font-size:12.5px;color:var(--ink-soft);">🔒 Dane wrażliwe (konto, karta, dokumenty) → <b>Sejf</b>, pod osobnym kodem. <i>(wkrótce)</i></div>
@@ -1884,9 +1895,11 @@ function otworzWizytowke() {
     const nazwisko = ov.querySelector("#wiz-nazwisko").value.trim();
     const tel = stdTel(ov.querySelector("#wiz-tel").value, ov.querySelector("#wiz-kraj").value);
     const jez = ov.querySelector("#wiz-jezyk").value;
+    const widocznosc = { telefon: ov.querySelector("#wiz-wid-tel").value, email: ov.querySelector("#wiz-wid-mail").value };
     const { data, error } = await supabase.rpc("zapisz_wizytowke", { p_imie: imie, p_nazwisko: nazwisko, p_telefon: tel, p_jezyk: jez });
     if (error || (data && data.ok === false)) { alert("Nie zapisano: " + ((data && data.error) || (error && error.message) || "")); return; }
-    if (TRAVELER) { TRAVELER.imie = imie || TRAVELER.imie; TRAVELER.nazwisko = nazwisko || null; TRAVELER.nick = [imie, nazwisko].filter(Boolean).join(" ") || TRAVELER.nick; TRAVELER.telefon = tel; TRAVELER.jezyk = jez; }
+    await supabase.rpc("ustaw_widocznosc", { p_widocznosc: widocznosc });
+    if (TRAVELER) { TRAVELER.imie = imie || TRAVELER.imie; TRAVELER.nazwisko = nazwisko || null; TRAVELER.nick = [imie, nazwisko].filter(Boolean).join(" ") || TRAVELER.nick; TRAVELER.telefon = tel; TRAVELER.jezyk = jez; TRAVELER.widocznosc = widocznosc; }
     if (typeof renderHeader === "function") renderHeader();
     zam();
     if (typeof trzosToast === "function") trzosToast("Wizytówka zapisana ✓");
@@ -5221,6 +5234,7 @@ async function otworzKarteCzlonka(c, p) {
         <input type="text" value="${esc(pid)}" readonly style="flex:1;font-family:monospace;letter-spacing:1px;font-weight:600;">
         <button type="button" class="kc-kop" style="${BG}white-space:nowrap;">Kopiuj</button>
       </div>` : `<div style="font-size:12px;color:var(--ink-soft);">${maKonto ? "" : "Ta osoba nie ma jeszcze konta MANA."}</div>`}
+      ${(info.telefon || info.email) ? `<div style="font-size:12.5px;color:var(--ink-soft);margin-top:8px;line-height:1.6;">${info.telefon ? `📞 ${escP(fmtTel(info.telefon))}<br>` : ""}${info.email ? `✉️ ${escP((info.email || "").toLowerCase())}` : ""}</div>` : ""}
       ${(maKonto && !jaSam) ? `<div style="display:flex;gap:8px;margin-top:14px;">
         <button type="button" class="kc-pisz" style="${BT}flex:1;">✍️ Napisz</button>
         <button type="button" class="kc-kontakt" style="${BG}flex:1;">➕ Poproś o kontakt</button>
