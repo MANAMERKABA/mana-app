@@ -4185,12 +4185,53 @@ function nazwaRozmowy(p, mojeId) {
 }
 /* Skrzynka Rozmów w Więziach — 1:1 wprost, grupy zwinięte pod paskiem „Plemiona" (przejrzystość) */
 let _rozmGrupyOtwarte = false;
+// Tacka PRÓŚB O ROZMOWĘ (punkt 4): message requests od niepołączonych. Przyjmij→otwiera czat; Zignoruj/Zablokuj.
+function renderProsbyRozmow(wrap, prosby) {
+  if (!prosby || !prosby.length) return;
+  const sek = el(`<div style="margin:0 0 12px;"><div style="font-size:12px;color:#8a6416;font-weight:600;margin:0 2px 7px;">✉️ Prośby o rozmowę · ${prosby.length}</div></div>`);
+  for (const pr of prosby) {
+    const imieNazw = [pr.imie, pr.nazwisko].filter(Boolean).join(" ") || pr.nick || "ktoś";
+    const ini = (imieNazw[0] || "?").toUpperCase();
+    const row = el(`<div style="border:1px solid #e6cf9a;background:#fbf5e8;border-radius:12px;padding:10px 12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="width:34px;height:34px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:14px;background:#1a7158;color:#fff;font-weight:600;">${esc(ini)}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:14.5px;font-weight:500;">${esc(imieNazw)}</div>
+          <div style="font-size:11px;color:#8a6416;">ID: ${escP(pr.public_id || "—")}${pr.plemie ? ` · z „${escP(pr.plemie)}"` : ""}</div>
+        </div>
+      </div>
+      ${pr.przedstaw ? `<div style="font-size:13px;color:var(--ink);background:#fff;border:1px solid #eadfc4;border-radius:8px;padding:7px 9px;margin-top:8px;white-space:pre-wrap;">„${esc(pr.przedstaw)}"</div>` : ""}
+      <div style="display:flex;gap:8px;margin-top:9px;">
+        <button class="prz-przyj" style="border:none;background:#1a7158;color:#fff;border-radius:8px;font-size:12.5px;padding:7px 15px;cursor:pointer;">Przyjmij</button>
+        <button class="prz-ign" style="${BG}font-size:12.5px;padding:7px 12px;">Zignoruj</button>
+        <button class="prz-blok" style="${BG}font-size:12.5px;padding:7px 12px;color:#c0392b;">Zablokuj</button>
+      </div>
+    </div>`);
+    row.querySelector(".prz-przyj").addEventListener("click", async () => {
+      const { data, error } = await supabase.rpc("prosba_rozmowa_odpowiedz", { p_prosba_id: pr.prosba_id, p_akcja: "przyjmij" });
+      if (error || (data && data.ok === false)) { trzosToast("Błąd: " + ((data && data.powod) || (error && error.message) || "")); renderRozmowyInbox(); return; }
+      trzosToast("Przyjęto ✓");
+      if (data && data.plemie_id) { await otworzRozmowaPoId(data.plemie_id); } else { renderRozmowyInbox(); }
+    });
+    row.querySelector(".prz-ign").addEventListener("click", async () => {
+      await supabase.rpc("prosba_rozmowa_odpowiedz", { p_prosba_id: pr.prosba_id, p_akcja: "zignoruj" });
+      trzosToast("Zignorowano."); renderRozmowyInbox();
+    });
+    row.querySelector(".prz-blok").addEventListener("click", async () => {
+      await supabase.rpc("prosba_rozmowa_odpowiedz", { p_prosba_id: pr.prosba_id, p_akcja: "zablokuj" });
+      trzosToast("Zablokowano."); renderRozmowyInbox();
+    });
+    sek.appendChild(row);
+  }
+  wrap.appendChild(sek);
+}
 async function renderRozmowyInbox() {
   const box = $("wiezi-sekcja-roz"); if (!box) return;
   box.innerHTML = `<div style="padding:12px 16px;color:var(--ink-soft);font-size:14px;">Wczytuję…</div>`;
-  const [rp, rn] = await Promise.all([
+  const [rp, rn, rPr] = await Promise.all([
     supabase.rpc("moje_plemiona_full"),
     supabase.rpc("nieprzeczytane_rozmowy"),
+    supabase.rpc("moje_prosby_rozmow"),
   ]);
   const plemiona = rp.data || [];
   const nieprzMap = {};
@@ -4209,6 +4250,7 @@ async function renderRozmowyInbox() {
   const nowa = el(`<button style="width:100%;border:1px dashed var(--turkus,#1f9e8f);background:#eef6f3;color:#1a7158;border-radius:12px;padding:11px;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:10px;">＋ Nowa rozmowa</button>`);
   nowa.addEventListener("click", nowaRozmowa);
   wrap.appendChild(nowa);
+  renderProsbyRozmow(wrap, rPr.data || []);
   const mkRow = (p) => {
     const n = nieprzMap[p.id] || 0;
     const ost = ostatnia[p.id];
@@ -5248,11 +5290,22 @@ async function otworzKarteCzlonka(c, p) {
   ov.querySelector(".m-modal__x").addEventListener("click", zam);
   { const bk = ov.querySelector(".kc-kop"); if (bk) bk.addEventListener("click", async () => { try { await navigator.clipboard.writeText(pid); trzosToast("ID skopiowane ✓"); } catch (_) { prompt("Identyfikator MANA:", pid); } }); }
   { const bp = ov.querySelector(".kc-pisz"); if (bp) bp.addEventListener("click", async () => {
+      bp.disabled = true;
+      const { data: st } = await supabase.rpc("rozmowa_stan", { p_target: c.traveler_id });
+      bp.disabled = false;
+      if (st && st.polaczony) {
+        zam();
+        const { data, error } = await supabase.rpc("rozpocznij_rozmowe_traveler", { p_target: c.traveler_id });
+        if (error) { trzosToast("Nie udało się: " + error.message); return; }
+        if (!data || !data.ok) { trzosToast((data && data.error) || "Nie udało się."); return; }
+        await otworzRozmowaPoId(data.plemie_id);
+        return;
+      }
+      if (st && st.prosba_status === "oczekujace") { trzosToast("Prośba o rozmowę już wysłana — czeka na odpowiedź."); return; }
+      if (st && st.prosba_status === "zablokowane") { trzosToast("Nie możesz napisać do tej osoby."); return; }
+      if (st && st.prosba_status === "ignorowane") { trzosToast("Prośba została odrzucona — nie można ponowić."); return; }
       zam();
-      const { data, error } = await supabase.rpc("rozpocznij_rozmowe_traveler", { p_target: c.traveler_id });
-      if (error) { trzosToast("Nie udało się: " + error.message); return; }
-      if (!data || !data.ok) { trzosToast(data && data.error === "nie_w_manie" ? "Ta osoba nie ma jeszcze konta MANA." : ((data && data.error) || "Nie udało się.")); return; }
-      await otworzRozmowaPoId(data.plemie_id);
+      formProsbaRozmowa(c, p, imieNazw);
     }); }
   { const bc = ov.querySelector(".kc-kontakt"); if (bc) bc.addEventListener("click", async () => {
       bc.disabled = true;
@@ -5268,6 +5321,44 @@ async function otworzKarteCzlonka(c, p) {
         "Nie udało się wysłać prośby."
       );
     }); }
+}
+/* PROŚBA O ROZMOWĘ (punkt 4): dla niepołączonego współczłonka — „przedstaw się" WYMAGANE + auto „skąd". */
+function formProsbaRozmowa(c, p, imieNazw) {
+  const ov = el(`<div class="m-overlay"><div class="m-modal" style="max-width:360px;">
+    <div class="m-modal__head"><span class="m-modal__tytul">Prośba o rozmowę</span><button class="m-modal__x" aria-label="Zamknij">&#10005;</button></div>
+    <div class="m-form">
+      <div style="font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-bottom:10px;">Do <b>${esc(imieNazw)}</b> z plemienia „${escP(p.nazwa)}". Nie jesteście jeszcze połączeni — przedstaw się w kilku słowach, żeby wiedział/a kto i po co pisze.</div>
+      <textarea id="pr-tekst" rows="4" maxlength="500" placeholder="Cześć! Jestem… piszę, bo…" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;resize:vertical;"></textarea>
+      <div id="pr-blad" style="display:none;color:#c0392b;font-size:12px;margin-top:6px;"></div>
+    </div>
+    <div class="m-modal__akcje"><button class="m-btn m-btn--zapisz" id="pr-wyslij" style="width:100%;">Wyślij prośbę</button></div>
+  </div></div>`);
+  document.body.appendChild(ov);
+  const zam = () => ov.remove();
+  ov.addEventListener("click", (e) => { if (e.target === ov) zam(); });
+  ov.querySelector(".m-modal__x").addEventListener("click", zam);
+  const blad = (t) => { const b = ov.querySelector("#pr-blad"); b.textContent = t; b.style.display = t ? "block" : "none"; };
+  const btn = ov.querySelector("#pr-wyslij");
+  btn.addEventListener("click", async () => {
+    const tekst = ov.querySelector("#pr-tekst").value.trim();
+    if (!tekst) { blad("Napisz kilka słów o sobie — to warunek wysłania."); return; }
+    btn.disabled = true; btn.textContent = "Wysyłam…";
+    const { data, error } = await supabase.rpc("prosba_o_rozmowe", { p_target: c.traveler_id, p_plemie_id: p.id, p_tekst: tekst });
+    btn.disabled = false; btn.textContent = "Wyślij prośbę";
+    if (error) { blad("Błąd: " + error.message); return; }
+    if (data && data.ok) { zam(); trzosToast("Wysłano prośbę o rozmowę ✓"); return; }
+    const pw = data && data.powod;
+    blad(
+      pw === "brak_przedstawienia" ? "Napisz kilka słów o sobie." :
+      pw === "juz_polaczeni" ? "Jesteście już połączeni — możesz pisać wprost." :
+      pw === "juz_wyslana" ? "Prośba już wysłana — czeka na odpowiedź." :
+      pw === "zablokowany" ? "Nie możesz napisać do tej osoby." :
+      pw === "zignorowano" ? "Poprzednia prośba została odrzucona — nie można ponowić." :
+      pw === "brak_wspolnego_plemienia" ? "Możesz pisać tylko do osób ze wspólnego plemienia." :
+      pw === "limit" ? "Wysłano dziś zbyt wiele próśb — spróbuj jutro." :
+      "Nie udało się wysłać prośby."
+    );
+  });
 }
 function kartaPlemienia(p) {
   const mojeId = TRAVELER && TRAVELER.id;
