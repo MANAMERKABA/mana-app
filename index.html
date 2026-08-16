@@ -732,7 +732,7 @@ window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();win
     <div style="padding:8px 16px 4px;">
       <div style="font-size:11px;color:var(--ink-soft);margin:0 2px 5px;letter-spacing:.03em;">Wybierz widok:</div>
       <div style="display:flex;gap:6px;background:#e5dfd2;border-radius:13px;padding:5px;">
-        <button class="wiezi-seg wiezi-seg--on" data-seg="kon" style="flex:1;border:none;border-radius:9px;padding:10px 6px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,box-shadow .15s;">📇 Kontakty</button>
+        <button class="wiezi-seg wiezi-seg--on" data-seg="kon" style="flex:1;border:none;border-radius:9px;padding:10px 6px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,box-shadow .15s;">📇 Kontakty<span class="wiezi-badge" id="wiezi-badge-kon" style="display:none;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;margin-left:5px;vertical-align:middle;"></span></button>
         <button class="wiezi-seg" data-seg="ple" style="flex:1;border:none;border-radius:9px;padding:10px 6px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,box-shadow .15s;">👥 Plemiona<span class="wiezi-badge" id="wiezi-badge-ple" style="display:none;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;margin-left:5px;vertical-align:middle;"></span></button>
         <button class="wiezi-seg" data-seg="roz" style="flex:1;border:none;border-radius:9px;padding:10px 6px;font-size:13.5px;font-weight:600;cursor:pointer;transition:background .15s,box-shadow .15s;">💬 Rozmowy<span class="wiezi-badge" id="wiezi-badge-roz" style="display:none;background:#c0392b;color:#fff;border-radius:9px;font-size:10.5px;min-width:16px;height:16px;line-height:16px;text-align:center;padding:0 4px;margin-left:5px;vertical-align:middle;"></span></button>
       </div>
@@ -4143,9 +4143,11 @@ async function kartaPuls(w, przetw) {
 }
 async function odswiezBadgeWiezi() {
   try {
-    const [rn, rp] = await Promise.all([
+    const [rn, rp, rPrR, rPrK] = await Promise.all([
       supabase.rpc("nieprzeczytane_rozmowy"),
       supabase.rpc("moje_plemiona_full"),
+      supabase.rpc("moje_prosby_rozmow"),
+      supabase.rpc("moje_prosby_kontaktu"),
     ]);
     const npr = {}; (rn.data || []).forEach((x) => { npr[x.plemie_id] = x.liczba; });
     let rozmC = 0, pleC = 0;
@@ -4153,9 +4155,12 @@ async function odswiezBadgeWiezi() {
       const n = npr[p.id] || 0;
       if (n > 0) { rozmC++; if (p.typ === "grupa") pleC++; }
     }
+    rozmC += (rPrR.data || []).length;               // prośby o rozmowę → badge Rozmowy
+    const konC = (rPrK.data || []).length;            // prośby o kontakt → badge Kontakty
     const setB = (id, n) => { const b = $(id); if (b) { if (n > 0) { b.textContent = n; b.style.display = "inline-flex"; } else { b.style.display = "none"; } } };
     setB("wiezi-badge-roz", rozmC);
     setB("wiezi-badge-ple", pleC);
+    setB("wiezi-badge-kon", konC);
   } catch (e) {}
 }
 function przelaczWiezi(seg) {
