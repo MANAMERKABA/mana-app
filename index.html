@@ -7088,7 +7088,7 @@ async function otworzRozmowe(p) {
     .eq("plemie_id", p.id).order("created_at", { ascending: true }).limit(300);
   lista.innerHTML = "";
   if (error) { lista.innerHTML = `<div style="color:#c4513a;font-size:13px;">Błąd: ${escP(error.message)}</div>`; }
-  else if (!wiad.length) { lista.appendChild(el(`<div style="color:var(--ink-soft);font-size:13px;text-align:center;padding:16px 0;">Brak wiadomości. Napisz pierwszą — zobaczą ją wszyscy w plemieniu.</div>`)); }
+  else if (!wiad.length) { lista.appendChild(el(`<div style="color:var(--ink-soft);font-size:13px;text-align:center;padding:16px 0;">${p.typ === "rozmowa" ? "Brak wiadomości. Napisz pierwszą wiadomość." : "Brak wiadomości. Napisz pierwszą — zobaczą ją wszyscy w plemieniu."}</div>`)); }
   else { wiad.forEach(dodajWiersz); }
   doDolu();
   oznaczPrzeczytane();
