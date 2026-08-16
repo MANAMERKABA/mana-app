@@ -1760,6 +1760,16 @@ function subskrybujRealtime() {
       const kk = $("wiezi-sekcja-kon");
       if (kk && kk.style.display !== "none" && typeof renderKontakty === "function") renderKontakty();
     })
+    .on("postgres_changes", { event: "*", schema: "public", table: "kontakt_prosby" }, () => {
+      if (typeof odswiezBadgeWiezi === "function") odswiezBadgeWiezi();
+      const kk = $("wiezi-sekcja-kon");
+      if (kk && kk.style.display !== "none" && typeof renderKontakty === "function") renderKontakty();
+    })
+    .on("postgres_changes", { event: "*", schema: "public", table: "rozmowa_prosby" }, () => {
+      if (typeof odswiezBadgeWiezi === "function") odswiezBadgeWiezi();
+      const rr = $("wiezi-sekcja-roz");
+      if (rr && rr.style.display !== "none" && typeof renderRozmowyInbox === "function") renderRozmowyInbox();
+    })
     .subscribe();
 }
 
